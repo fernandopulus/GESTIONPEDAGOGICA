@@ -6,15 +6,27 @@ import { read, utils, writeFile } from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logApiCall } from '../utils/apiLogger';
-
-const ACOMPANAMIENTO_KEY = 'acompanamientoDocenteRecords';
-const USERS_KEY = 'usuariosLiceo';
+import {
+    getAllUsers,
+    createUser,
+    updateUser,
+    deleteUser,
+} from '../../src/firebaseHelpers/users';
+import {
+    getAllAcompanamientos,
+    createAcompanamiento,
+    updateAcompanamiento,
+    deleteAcompanamiento,
+} from '../../src/firebaseHelpers/acompanamientos'; // AJUSTA la ruta según dónde guardes los helpers
 
 type RubricStructure = typeof defaultRubric;
 
 const AcompanamientoDocente: React.FC = () => {
     const [acompanamientos, setAcompanamientos] = useState<AcompanamientoDocente[]>([]);
     const [profesores, setProfesores] = useState<string[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [loadingProfesores, setLoadingProfesores] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const [view, setView] = useState<'list' | 'form'>('list');
     const [editingId, setEditingId] = useState<string | null>(null);
     const [isConsolidating, setIsConsolidating] = useState(false);
@@ -35,30 +47,43 @@ const AcompanamientoDocente: React.FC = () => {
 
     const [formData, setFormData] = useState<Omit<AcompanamientoDocente, 'id'>>(initialFormState);
 
-    useEffect(() => {
+    // Cargar acompañamientos desde Firestore
+    const fetchAcompanamientos = useCallback(async () => {
+        setLoading(true);
         try {
-            const data = localStorage.getItem(ACOMPANAMIENTO_KEY);
-            if (data) setAcompanamientos(JSON.parse(data));
-
-            const usersData = localStorage.getItem(USERS_KEY);
-            if (usersData) {
-                const allUsers: User[] = JSON.parse(usersData);
-                const teacherNames = allUsers
-                    .filter(user => user.profile === Profile.PROFESORADO)
-                    .map(user => user.nombreCompleto)
-                    .sort();
-                setProfesores(teacherNames);
-            }
+            const acompanamientosFS = await getAllAcompanamientos();
+            setAcompanamientos(acompanamientosFS);
+            setError(null);
         } catch (e) {
-            console.error("Error al cargar datos de localStorage", e);
+            console.error("Error al cargar acompañamientos desde Firestore", e);
+            setError("No se pudieron cargar los registros de acompañamiento desde la nube.");
+        } finally {
+            setLoading(false);
         }
     }, []);
 
-    const persistAcompanamientos = (data: AcompanamientoDocente[]) => {
-        setAcompanamientos(data);
-        localStorage.setItem(ACOMPANAMIENTO_KEY, JSON.stringify(data));
-        window.dispatchEvent(new Event('storage')); // Notify dashboard of changes
-    };
+    // Cargar profesores desde Firestore
+    const fetchProfesores = useCallback(async () => {
+        setLoadingProfesores(true);
+        try {
+            const allUsers = await getAllUsers();
+            const teacherNames = allUsers
+                .filter(user => user.profile === Profile.PROFESORADO)
+                .map(user => user.nombreCompleto)
+                .sort();
+            setProfesores(teacherNames);
+        } catch (e) {
+            console.error("Error al cargar profesores desde Firestore", e);
+            setError("No se pudieron cargar la lista de profesores desde la nube.");
+        } finally {
+            setLoadingProfesores(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchAcompanamientos();
+        fetchProfesores();
+    }, [fetchAcompanamientos, fetchProfesores]);
 
     const handleFieldChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -225,27 +250,36 @@ const AcompanamientoDocente: React.FC = () => {
         setIsGeneratingPDF(false);
     };
 
-    const handleSave = (e: FormEvent) => {
+    const handleSave = async (e: FormEvent) => {
         e.preventDefault();
         if (!formData.docente || !formData.curso || !formData.asignatura) {
             alert('Docente, curso y asignatura son campos obligatorios.');
             return;
         }
 
-        let savedRecordId = editingId;
-        if (editingId) {
-            const updated = acompanamientos.map(a => a.id === editingId ? { ...formData, id: editingId } : a);
-            persistAcompanamientos(updated);
-        } else {
-            const newRecord = { ...formData, id: crypto.randomUUID() };
-            persistAcompanamientos([newRecord, ...acompanamientos]);
-            setEditingId(newRecord.id); 
-            setFormData(newRecord);
-            savedRecordId = newRecord.id;
-        }
-        
-        if (savedRecordId) {
-            alert("¡Guardado correctamente!");
+        try {
+            let savedRecordId = editingId;
+            
+            if (editingId) {
+                // Actualizar registro existente
+                await updateAcompanamiento(editingId, formData);
+            } else {
+                // Crear nuevo registro
+                const newRecord = await createAcompanamiento(formData);
+                setEditingId(newRecord.id); 
+                setFormData({ ...formData });
+                savedRecordId = newRecord.id;
+            }
+            
+            // Recargar acompañamientos después de la operación
+            await fetchAcompanamientos();
+            
+            if (savedRecordId) {
+                alert("¡Guardado correctamente!");
+            }
+        } catch (err) {
+            console.error("Error al guardar acompañamiento:", err);
+            setError("Error al guardar el registro en la nube.");
         }
     };
 
@@ -253,17 +287,25 @@ const AcompanamientoDocente: React.FC = () => {
         setFormData(initialFormState);
         setEditingId(null);
         setView('form');
+        setError(null);
     };
     
     const handleEdit = (record: AcompanamientoDocente) => {
         setFormData(record);
         setEditingId(record.id);
         setView('form');
+        setError(null);
     };
 
-    const handleDelete = (id: string) => {
+    const handleDelete = async (id: string) => {
         if (window.confirm("¿Está seguro de que desea eliminar este registro de acompañamiento?")) {
-            persistAcompanamientos(acompanamientos.filter(a => a.id !== id));
+            try {
+                await deleteAcompanamiento(id);
+                await fetchAcompanamientos(); // Recargar después de eliminar
+            } catch (err) {
+                console.error("Error al eliminar acompañamiento:", err);
+                setError("No se pudo eliminar el registro en la nube.");
+            }
         }
     };
 
@@ -275,8 +317,18 @@ const AcompanamientoDocente: React.FC = () => {
                     Crear Nuevo
                 </button>
             </div>
+
+            {loading && <div className="text-center text-amber-600 py-4">Cargando registros desde la nube...</div>}
+            {error && <div className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</div>}
+
+            {!loading && acompanamientos.length === 0 && (
+                <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 p-4 rounded-lg">
+                    No hay registros de acompañamiento en la nube.
+                </div>
+            )}
+
             <div className="space-y-4">
-                {acompanamientos.length > 0 ? (
+                {!loading && acompanamientos.length > 0 && (
                     acompanamientos.map(record => (
                         <div key={record.id} className="p-4 border dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-700/50 flex justify-between items-center">
                             <div>
@@ -290,8 +342,6 @@ const AcompanamientoDocente: React.FC = () => {
                             </div>
                         </div>
                     ))
-                ) : (
-                    <p className="text-slate-500 dark:text-slate-400 text-center py-6">No hay registros de acompañamiento. Haga clic en "Crear Nuevo" para comenzar.</p>
                 )}
             </div>
         </div>
@@ -305,11 +355,13 @@ const AcompanamientoDocente: React.FC = () => {
                     <button type="button" onClick={() => setView('list')} className="text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-semibold">&larr; Volver al listado</button>
                  </div>
 
+                {error && <div className="text-red-600 bg-red-100 p-3 rounded-md">{error}</div>}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 border rounded-lg bg-slate-50 dark:bg-slate-700/50 dark:border-slate-700">
                      <div>
                         <label htmlFor="docente" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Docente</label>
-                        <select name="docente" value={formData.docente} onChange={handleFieldChange} required className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600">
-                             <option value="">Seleccione</option>
+                        <select name="docente" value={formData.docente} onChange={handleFieldChange} required className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" disabled={loadingProfesores}>
+                             <option value="">{loadingProfesores ? 'Cargando...' : 'Seleccione'}</option>
                              {profesores.map(p => <option key={p} value={p}>{p}</option>)}
                         </select>
                     </div>
