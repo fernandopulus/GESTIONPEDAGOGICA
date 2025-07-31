@@ -1,0 +1,9 @@
+{
+  "name": "GPEDAGOGICA2",
+  "description": "Una aplicación web para la gestión pedagógica del Liceo Industrial de Recoleta, permitiendo el acceso a módulos específicos para Subdirección, Profesorado, Coordinación TP y Estudiantes. Los datos se gestionan localmente.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ],
+  "prompt": ""
+}

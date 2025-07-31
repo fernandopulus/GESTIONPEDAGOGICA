@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gestión Pedagógica LIR</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=swap');
+      /* A small style override to ensure the scrollbar in the sidebar looks good */
+      .sidebar-scroll::-webkit-scrollbar {
+        width: 4px;
+      }
+      .sidebar-scroll::-webkit-scrollbar-thumb {
+        background-color: #475569; /* slate-600 */
+        border-radius: 20px;
+      }
+      .sidebar-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .font-handwritten {
+        font-family: 'Caveat', cursive;
+      }
+    </style>
+    <style>
+.react-flow__renderer{position:relative;width:100%;height:100%;z-index:1;pointer-events:none}.react-flow__zoompane{width:100%;height:100%;z-index:1}.react-flow__selectionpane{z-index:4;pointer-events:all}.react-flow__selection{position:absolute;background:rgba(0,130,255,.2);border:1px solid #0082ff;pointer-events:none;z-index:9999}.react-flow__pane{width:100%;height:100%;position:absolute;top:0;left:0;pointer-events:all;z-index:2}.react-flow__pane.draggable{cursor:grab}.react-flow__pane.draggable.dragging{cursor:grabbing}.react-flow__pane.selection{cursor:crosshair}.react-flow__pane:not(.draggable,.selection){pointer-events:none}.react-flow__edge-updater{position:absolute;pointer-events:none}.react-flow__connection{position:absolute;width:1px;height:1px;background:#555;z-index:3;pointer-events:none}.react-flow__connection .react-flow__connection-path{fill:none}.react-flow__nodes{pointer-events:none}.react-flow__node{position:absolute;pointer-events:all;-webkit-user-select:none;user-select:none}.react-flow__nodes-selection,.react-flow__nodes-selection-rect{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;transform-origin:0 0}.react-flow__nodes-selection-rect{stroke:rgba(0,130,255,.8);stroke-width:1;fill:rgba(0,130,255,.2)}.react-flow__handle{position:absolute;pointer-events:all;min-width:5px;min-height:5px;width:.5rem;height:.5rem;background:#1a192b;border:1px solid #fff;border-radius:100%}.react-flow__handle.connecting{cursor:grabbing}.react-flow__handle-bottom{top:auto;left:50%;bottom:-4px;transform:translate(-50%,0)}.react-flow__handle-top{top:-4px;left:50%;transform:translate(-50%,0)}.react-flow__handle-left{top:50%;left:-4px;transform:translate(0,-50%)}.react-flow__handle-right{right:-4px;top:50%;transform:translate(0,-50%)}.react-flow__edge{pointer-events:all}.react-flow__edge path,.react-flow__connection-path{stroke:#b1b1b7;stroke-width:1;fill:none}.react-flow__edge.selected path,.react-flow__edge:focus path{stroke:#555;stroke-width:2}.react-flow__edge.animated path{stroke-dasharray:5;animation:dashdraw .5s linear infinite}.react-flow__edge-text{pointer-events:none;position:absolute;-webkit-user-select:none;user-select:none}.react-flow__edge-textbg{font-size:10px}.react-flow__edge-text,g{transform-origin:50% 50%}.react-flow__edge .react-flow__edge-text{pointer-events:all}.react-flow__attribution{font-size:12px;position:absolute;z-index:4;bottom:10px;right:10px;display:flex;align-items:center;opacity:.75;background:rgba(255,255,255,.9);padding:5px 10px;border-radius:5px;gap:5px;pointer-events:all}.react-flow__attribution a{text-decoration:none;color:#1a192b}.react-flow__controls{position:absolute;z-index:4;bottom:10px;left:10px;display:flex;flex-direction:column;gap:1px;pointer-events:all}.react-flow__controls-button{background:#fefefe;border:none;padding:5px;border-radius:3px;box-shadow:0 0 2px 1px rgba(0,0,0,.08);display:flex;cursor:pointer}.react-flow__controls-button:hover{background:#f0f0f0}.react-flow__controls-button svg{width:12px;height:12px}.react-flow__controls-interactive{pointer-events:none}.react-flow__minimap{position:absolute;z-index:4;bottom:10px;right:10px;background-color:#fff;border-radius:5px;box-shadow:0 0 10px 1px rgba(0,0,0,.1);pointer-events:all}.react-flow__minimap-mask{fill:rgba(240,240,240,.6)}.react-flow__minimap-node{fill:#e2e2e2;stroke:#fff;stroke-width:1}.react-flow__background{position:absolute;width:100%;height:100%;top:0;left:0}.react-flow__background.dots .react-flow__background-pattern{fill:#aaa}.react-flow__background.lines .react-flow__background-pattern{stroke:#aaa;stroke-width:.4}@keyframes dashdraw{from{stroke-dashoffset:10}}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.1.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.10.0",
+    "xlsx": "https://esm.sh/xlsx@^0.18.5",
+    "jspdf": "https://esm.sh/jspdf@^2.5.1",
+    "html2canvas": "https://esm.sh/html2canvas@^1.4.1",
+    "jspdf-autotable": "https://esm.sh/jspdf-autotable@^5.0.2",
+    "reactflow": "https://esm.sh/reactflow@11.11.4",
+    "html-to-image": "https://esm.sh/html-to-image@^1.11.13"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-slate-100 antialiased">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+</body>
+</html>
