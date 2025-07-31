@@ -373,7 +373,7 @@ const Administracion: React.FC = () => {
       </div>
     )}
   </div>
-)}
+)
 
 
 export default Administracion;
