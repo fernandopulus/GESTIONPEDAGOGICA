@@ -327,26 +327,53 @@ const Administracion: React.FC = () => {
     const inputStyles = "w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400";
 
     // --- JSX (igual que antes) ---
-    return (
-        <div className="space-y-8 animate-fade-in">
-            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Administración</h1>
-            <div className="border-b border-slate-200 dark:border-slate-700">
-                <nav className="-mb-px flex space-x-6" aria-label="Tabs">
-                    <button onClick={() => setActiveTab('Usuarios')} className={`${activeTab === 'Usuarios' ? 'border-amber-500 text-amber-600 dark:text-amber-400' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:border-slate-600'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm focus:outline-none`}>
-                        Gestión de Usuarios
-                    </button>
-                    <button onClick={() => setActiveTab('Monitor de Uso')} className={`${activeTab === 'Monitor de Uso' ? 'border-amber-500 text-amber-600 dark:text-amber-400' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:border-slate-600'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm focus:outline-none`}>
-                        Monitor de Uso
-                    </button>
-                </nav>
-            </div>
-            {/* ...TODO tu JSX de administración igual que antes... */}
-            {/* ...no necesitas cambiar los forms ni la tabla, solo la fuente de datos! */}
-            {/* ...el resto del código permanece igual... */}
-            {/* (Por límite de espacio, puedes copiar tu JSX original aquí, que ya lo tienes listo) */}
-            {/* Si quieres que lo copie y adapte todo con todos los campos incluidos, avísame ;) */}
+    {activeTab === 'Usuarios' && (
+  <div className="space-y-8">
+    {loading && <div className="text-center text-amber-600">Cargando usuarios desde la nube...</div>}
+    {userError && <div className="text-red-600 bg-red-100 p-3 rounded-md">{userError}</div>}
+    {/* Si no hay usuarios */}
+    {!loading && users.length === 0 && (
+      <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 p-4 rounded-lg">
+        No hay usuarios registrados en la nube.
+      </div>
+    )}
+    {/* Tabla de usuarios */}
+    {!loading && users.length > 0 && (
+      <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
+        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Listado de Usuarios</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+            <thead className="bg-slate-50 dark:bg-slate-700">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Nombre Completo</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Email</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Perfil / Curso</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
+              {filteredUsers.map(user => (
+                <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-700">
+                  <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-200">{user.nombreCompleto}</td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">{user.email}</td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm">
+                    <span className="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-300">
+                      {user.profile} {user.curso && `(${user.curso})`}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center space-x-2">
+                    <button onClick={() => handleUserEdit(user)} title="Editar" className="text-yellow-600 hover:text-yellow-800 p-1 rounded-full hover:bg-yellow-100 dark:hover:bg-yellow-900/40">✏️</button>
+                    <button onClick={() => handleUserDelete(user.id)} title="Eliminar" className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/40">🗑️</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-    );
-};
+      </div>
+    )}
+  </div>
+)}
+
 
 export default Administracion;
