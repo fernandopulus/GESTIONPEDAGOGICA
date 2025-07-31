@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
 import { Profile, CalendarEvent, EventType, EvaluacionSubtype, EvaluacionEvent, ActoEvent, ActividadFocalizadaEvent, SalidaPedagogicaEvent } from '../../types';
 import { EVENT_TYPE_CONFIG, EVALUACION_SUBTYPES, ASIGNATURAS, CURSOS } from '../../constants';
+import {
+    getAllEvents,
+    createEvent,
+    updateEvent,
+    deleteEvent,
+} from '../../src/firebaseHelpers/calendar'; // AJUSTA la ruta según dónde guardes los helpers
 
-const CALENDAR_KEY = 'eventosCalendario';
 const DAYS_OF_WEEK = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 const getEventTitle = (event: CalendarEvent): string => {
@@ -27,7 +32,8 @@ const EventModal: React.FC<{
     onDelete?: () => void;
     event?: CalendarEvent | null;
     date: string;
-}> = ({ isOpen, onClose, onSave, onDelete, event, date }) => {
+    isLoading?: boolean;
+}> = ({ isOpen, onClose, onSave, onDelete, event, date, isLoading }) => {
     const [formState, setFormState] = useState<Partial<CalendarEvent>>({});
 
     useEffect(() => {
@@ -52,7 +58,6 @@ const EventModal: React.FC<{
     }, [event]);
     
     const inputStyles = "w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400";
-
 
     const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -118,7 +123,6 @@ const EventModal: React.FC<{
                 // Should not happen
                 break;
         }
-        onClose();
     };
 
     if (!isOpen) return null;
@@ -232,14 +236,32 @@ const EventModal: React.FC<{
                     <div className="bg-slate-50 dark:bg-slate-700 px-6 py-4 rounded-b-xl flex justify-between items-center">
                          <div>
                             {event && onDelete && (
-                                <button type="button" onClick={onDelete} className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-semibold">
-                                    Eliminar
+                                <button 
+                                    type="button" 
+                                    onClick={onDelete} 
+                                    disabled={isLoading}
+                                    className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-semibold disabled:opacity-50"
+                                >
+                                    {isLoading ? 'Eliminando...' : 'Eliminar'}
                                 </button>
                             )}
                         </div>
                         <div className="flex gap-3">
-                            <button type="button" onClick={onClose} className="bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500">Cancelar</button>
-                            <button type="submit" className="bg-slate-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-700 dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600">Guardar</button>
+                            <button 
+                                type="button" 
+                                onClick={onClose} 
+                                disabled={isLoading}
+                                className="bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500 disabled:opacity-50"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                type="submit" 
+                                disabled={isLoading}
+                                className="bg-slate-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-700 dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600 disabled:opacity-50"
+                            >
+                                {isLoading ? 'Guardando...' : 'Guardar'}
+                            </button>
                         </div>
                     </div>
                 </form>
@@ -248,7 +270,6 @@ const EventModal: React.FC<{
     );
 };
 
-
 interface CalendarioAcademicoProps {
     profile: Profile;
 }
@@ -256,29 +277,32 @@ interface CalendarioAcademicoProps {
 const CalendarioAcademico: React.FC<CalendarioAcademicoProps> = ({ profile }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [events, setEvents] = useState<CalendarEvent[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [modalLoading, setModalLoading] = useState(false);
     const [filteredTypes, setFilteredTypes] = useState<EventType[]>(Object.values(EventType));
     const [isModalOpen, setModalOpen] = useState(false);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
 
-    useEffect(() => {
+    // Cargar eventos desde Firestore
+    const fetchEvents = useCallback(async () => {
+        setLoading(true);
         try {
-            const storedEvents = localStorage.getItem(CALENDAR_KEY);
-            if (storedEvents) {
-                setEvents(JSON.parse(storedEvents));
-            }
+            const eventsFS = await getAllEvents();
+            setEvents(eventsFS);
+            setError(null);
         } catch (e) {
-            console.error("Error al cargar eventos de localStorage", e);
+            console.error("Error al cargar eventos desde Firestore", e);
+            setError("No se pudieron cargar los eventos desde la nube.");
+        } finally {
+            setLoading(false);
         }
     }, []);
 
     useEffect(() => {
-        try {
-            localStorage.setItem(CALENDAR_KEY, JSON.stringify(events));
-        } catch (e) {
-            console.error("Error al guardar eventos en localStorage", e);
-        }
-    }, [events]);
+        fetchEvents();
+    }, [fetchEvents]);
 
     const calendarGrid = useMemo(() => {
         const year = currentDate.getFullYear();
@@ -333,23 +357,56 @@ const CalendarioAcademico: React.FC<CalendarioAcademicoProps> = ({ profile }) =>
         setModalOpen(true);
     };
 
-    const handleSaveEvent = (eventData: Omit<CalendarEvent, 'id'>) => {
-        if (editingEvent) {
-            setEvents(events.map(e => e.id === editingEvent.id ? { ...eventData, id: e.id } as CalendarEvent : e));
-        } else {
-            setEvents([...events, { ...eventData, id: crypto.randomUUID() } as CalendarEvent]);
+    const handleSaveEvent = async (eventData: Omit<CalendarEvent, 'id'>) => {
+        setModalLoading(true);
+        try {
+            if (editingEvent) {
+                // Actualizar evento existente
+                await updateEvent(editingEvent.id, eventData);
+            } else {
+                // Crear nuevo evento
+                await createEvent(eventData);
+            }
+            
+            // Recargar eventos después de la operación
+            await fetchEvents();
+            setModalOpen(false);
+        } catch (err) {
+            console.error("Error al guardar evento:", err);
+            setError("Error al guardar el evento en la nube.");
+        } finally {
+            setModalLoading(false);
         }
     };
     
-    const handleDeleteEvent = () => {
+    const handleDeleteEvent = async () => {
         if(!editingEvent) return;
-        setEvents(events.filter(e => e.id !== editingEvent.id));
-        setModalOpen(false);
-    }
+        
+        setModalLoading(true);
+        try {
+            await deleteEvent(editingEvent.id);
+            await fetchEvents(); // Recargar después de eliminar
+            setModalOpen(false);
+        } catch (err) {
+            console.error("Error al eliminar evento:", err);
+            setError("No se pudo eliminar el evento en la nube.");
+        } finally {
+            setModalLoading(false);
+        }
+    };
     
     return (
         <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md space-y-6 animate-fade-in">
             <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Calendario Académico</h1>
+            
+            {loading && <div className="text-center text-amber-600 py-4">Cargando eventos desde la nube...</div>}
+            {error && <div className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</div>}
+            
+            {!loading && events.length === 0 && (
+                <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 p-4 rounded-lg">
+                    No hay eventos registrados en la nube.
+                </div>
+            )}
             
             <div className="mb-4 p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300 rounded-r-lg">
                 <div className="flex">
@@ -447,6 +504,7 @@ const CalendarioAcademico: React.FC<CalendarioAcademicoProps> = ({ profile }) =>
                 onDelete={handleDeleteEvent}
                 event={editingEvent}
                 date={selectedDate!}
+                isLoading={modalLoading}
             />}
         </div>
     );
