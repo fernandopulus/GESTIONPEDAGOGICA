@@ -5,10 +5,11 @@ import { read, utils } from 'xlsx';
 import MonitorDeUso from './MonitorDeUso';
 import {
     getAllUsers,
+    getUserByEmail
     createUser,
     updateUser,
     deleteUser,
-} from '../../firebaseHelpers/users'; // AJUSTA la ruta según dónde guardaste los helpers
+} from '../../src/firebaseHelpers/users'; // AJUSTA la ruta según dónde guardaste los helpers
 
 const ALL_PROFILES = Object.values(Profile);
 
