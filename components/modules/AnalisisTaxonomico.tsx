@@ -2,8 +2,12 @@ import React, { useState, useEffect, useMemo, useCallback, ChangeEvent } from 'r
 import { User, AnalisisTaxonomico, BloomLevel } from '../../types';
 import { GoogleGenAI, Type } from "@google/genai";
 import { logApiCall } from '../utils/apiLogger';
+import {
+    getAllAnalisis,
+    createAnalisis,
+    deleteAnalisis,
+} from '../../src/firebaseHelpers/analisis'; // AJUSTA la ruta según dónde guardes los helpers
 
-const ANALISIS_KEY = 'analisisTaxonomicos';
 const BLOOM_LEVELS: BloomLevel[] = ['Recordar', 'Comprender', 'Aplicar', 'Analizar', 'Evaluar', 'Crear'];
 const bloomColors: Record<BloomLevel, string> = {
     Recordar: 'bg-sky-500',
@@ -21,37 +25,38 @@ const Spinner: React.FC = () => (
     </svg>
 );
 
-
 interface AnalisisTaxonomicoProps {
     currentUser: User;
 }
 
 const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) => {
     const [history, setHistory] = useState<AnalisisTaxonomico[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const [selectedAnalysis, setSelectedAnalysis] = useState<AnalisisTaxonomico | null>(null);
     const [documentName, setDocumentName] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [fileData, setFileData] = useState<{ mimeType: string; data: string } | null>(null);
 
-
-    useEffect(() => {
+    // Cargar análisis desde Firestore
+    const fetchAnalisis = useCallback(async () => {
+        setLoading(true);
         try {
-            const data = localStorage.getItem(ANALISIS_KEY);
-            if (data) {
-                const allAnalyses: AnalisisTaxonomico[] = JSON.parse(data);
-                setHistory(allAnalyses);
-            }
+            const analisisFS = await getAllAnalisis();
+            setHistory(analisisFS);
+            setError(null);
         } catch (e) {
-            console.error("Error al cargar historial de análisis", e);
+            console.error("Error al cargar análisis desde Firestore", e);
+            setError("No se pudieron cargar los análisis desde la nube.");
+        } finally {
+            setLoading(false);
         }
     }, []);
 
-    const persistHistory = (data: AnalisisTaxonomico[]) => {
-        setHistory(data);
-        localStorage.setItem(ANALISIS_KEY, JSON.stringify(data));
-    };
+    useEffect(() => {
+        fetchAnalisis();
+    }, [fetchAnalisis]);
 
     const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -151,8 +156,7 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
             });
 
             const result = JSON.parse(response.text);
-            const newAnalysis: AnalisisTaxonomico = {
-                id: crypto.randomUUID(),
+            const newAnalysis: Omit<AnalisisTaxonomico, 'id'> = {
                 documentName,
                 uploadDate: new Date().toISOString(),
                 userId: currentUser.id,
@@ -160,9 +164,16 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
                 summary: result.summary,
             };
             
-            const updatedHistory = [newAnalysis, ...history];
-            persistHistory(updatedHistory);
-            setSelectedAnalysis(newAnalysis);
+            // Guardar en Firestore
+            const savedAnalysis = await createAnalisis(newAnalysis);
+            
+            // Recargar historial
+            await fetchAnalisis();
+            
+            // Seleccionar el análisis recién creado
+            setSelectedAnalysis(savedAnalysis);
+            
+            // Limpiar formulario
             setDocumentName('');
             setSelectedFile(null);
             setFileData(null);
@@ -175,12 +186,18 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
         }
     };
 
-    const handleDelete = (id: string) => {
+    const handleDelete = async (id: string) => {
         if (window.confirm("¿Está seguro de eliminar este análisis?")) {
-            const updatedHistory = history.filter(h => h.id !== id);
-            persistHistory(updatedHistory);
-            if (selectedAnalysis?.id === id) {
-                setSelectedAnalysis(null);
+            try {
+                await deleteAnalisis(id);
+                await fetchAnalisis(); // Recargar después de eliminar
+                
+                if (selectedAnalysis?.id === id) {
+                    setSelectedAnalysis(null);
+                }
+            } catch (err) {
+                console.error("Error al eliminar análisis:", err);
+                setError("No se pudo eliminar el análisis en la nube.");
             }
         }
     };
@@ -193,6 +210,9 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
     return (
         <div className="space-y-8 animate-fade-in">
             <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Análisis Taxonómico de Evaluaciones</h1>
+
+            {loading && <div className="text-center text-amber-600 py-4">Cargando análisis desde la nube...</div>}
+            {error && <div className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</div>}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-1 space-y-6">
@@ -222,7 +242,6 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
                                 <input type="text" id="documentName" value={documentName} onChange={(e) => setDocumentName(e.target.value)} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" />
                             </div>
                             
-                            {error && <p className="text-sm text-red-600 bg-red-100 p-3 rounded-md">{error}</p>}
                             <button onClick={handleAnalyze} disabled={isLoading || !fileData} className="w-full bg-slate-800 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-700 disabled:bg-slate-400 flex items-center justify-center">
                                 {isLoading ? <Spinner /> : 'Analizar con IA'}
                             </button>
@@ -231,13 +250,20 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
 
                     <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
                          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Historial de Análisis</h2>
+                         
+                         {!loading && history.length === 0 && (
+                            <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 p-4 rounded-lg text-sm">
+                                No hay análisis guardados en la nube.
+                            </div>
+                         )}
+
                          <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                            {history.length > 0 ? history.map(item => (
+                            {!loading && history.length > 0 && history.map(item => (
                                 <button key={item.id} onClick={() => setSelectedAnalysis(item)} className={`w-full text-left p-3 rounded-md border ${selectedAnalysis?.id === item.id ? 'bg-amber-100 border-amber-300 dark:bg-amber-900/30 dark:border-amber-700' : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-700/50 dark:hover:bg-slate-700'}`}>
                                     <p className="font-semibold truncate">{item.documentName}</p>
                                     <p className="text-xs text-slate-500 dark:text-slate-400">{new Date(item.uploadDate).toLocaleString('es-CL')}</p>
                                 </button>
-                            )) : <p className="text-sm text-slate-500 text-center py-4">No hay análisis guardados.</p>}
+                            ))}
                          </div>
                     </div>
                 </div>
