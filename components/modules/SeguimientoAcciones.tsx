@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
 import { AccionPedagogica, EstadoAccion } from '../../types';
 import { AREAS_PEDAGOGICAS, ESTADOS_ACCION } from '../../constants';
-
-const ACCIONES_KEY = 'accionesPedagogicas';
+import {
+    getAllAcciones,
+    createAccion,
+    updateAccion,
+    deleteAccion,
+} from '../../src/firebaseHelpers/acciones'; // AJUSTA la ruta según dónde guardes los helpers
 
 const initialAccionState: Omit<AccionPedagogica, 'id'> = {
     fechaRegistro: new Date().toISOString().split('T')[0],
@@ -21,23 +25,32 @@ const estadoColors: Record<EstadoAccion, string> = {
 
 const SeguimientoAcciones: React.FC = () => {
     const [acciones, setAcciones] = useState<AccionPedagogica[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const [formData, setFormData] = useState<Omit<AccionPedagogica, 'id'>>(initialAccionState);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterArea, setFilterArea] = useState('');
     const [filterEstado, setFilterEstado] = useState('');
-    const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
+    // Cargar acciones desde Firestore
+    const fetchAcciones = useCallback(async () => {
+        setLoading(true);
         try {
-            const data = localStorage.getItem(ACCIONES_KEY);
-            if (data) {
-                setAcciones(JSON.parse(data));
-            }
+            const accionesFS = await getAllAcciones();
+            setAcciones(accionesFS);
+            setError(null);
         } catch (e) {
-            console.error("Error al leer acciones de localStorage", e);
+            console.error("Error al cargar acciones desde Firestore", e);
+            setError("No se pudieron cargar las acciones pedagógicas desde la nube.");
+        } finally {
+            setLoading(false);
         }
     }, []);
+
+    useEffect(() => {
+        fetchAcciones();
+    }, [fetchAcciones]);
 
     const handleFieldChange = useCallback((e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -50,7 +63,7 @@ const SeguimientoAcciones: React.FC = () => {
         setError(null);
     }, []);
 
-    const handleSubmit = useCallback((e: FormEvent) => {
+    const handleSubmit = useCallback(async (e: FormEvent) => {
         e.preventDefault();
         const { fechaRegistro, responsable, area, descripcion, fechaCumplimiento, estado } = formData;
         if (!fechaRegistro || !responsable || !area || !descripcion || !fechaCumplimiento) {
@@ -58,14 +71,23 @@ const SeguimientoAcciones: React.FC = () => {
             return;
         }
 
-        const updatedAcciones = editingId
-            ? acciones.map(a => a.id === editingId ? { ...formData, id: editingId } : a)
-            : [{ ...formData, id: crypto.randomUUID() }, ...acciones];
-        
-        setAcciones(updatedAcciones);
-        localStorage.setItem(ACCIONES_KEY, JSON.stringify(updatedAcciones));
-        handleResetForm();
-    }, [formData, editingId, acciones, handleResetForm]);
+        try {
+            if (editingId) {
+                // Actualizar acción existente
+                await updateAccion(editingId, formData);
+            } else {
+                // Crear nueva acción
+                await createAccion(formData);
+            }
+            
+            // Recargar acciones después de la operación
+            await fetchAcciones();
+            handleResetForm();
+        } catch (err) {
+            console.error("Error al guardar acción:", err);
+            setError("Error al guardar la acción en la nube.");
+        }
+    }, [formData, editingId, fetchAcciones, handleResetForm]);
 
     const handleEdit = useCallback((accion: AccionPedagogica) => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -73,26 +95,34 @@ const SeguimientoAcciones: React.FC = () => {
         setFormData(accion);
     }, []);
 
-    const handleDelete = useCallback((id: string) => {
+    const handleDelete = useCallback(async (id: string) => {
         if (window.confirm('¿Está seguro de que desea eliminar esta acción?')) {
-            const updatedAcciones = acciones.filter(a => a.id !== id);
-            setAcciones(updatedAcciones);
-            localStorage.setItem(ACCIONES_KEY, JSON.stringify(updatedAcciones));
+            try {
+                await deleteAccion(id);
+                await fetchAcciones(); // Recargar después de eliminar
+            } catch (err) {
+                console.error("Error al eliminar acción:", err);
+                setError("No se pudo eliminar la acción en la nube.");
+            }
         }
-    }, [acciones]);
+    }, [fetchAcciones]);
 
-    const handleChangeEstado = useCallback((id: string) => {
-        const updatedAcciones = acciones.map(accion => {
-            if (accion.id === id) {
+    const handleChangeEstado = useCallback(async (id: string) => {
+        try {
+            const accion = acciones.find(a => a.id === id);
+            if (accion) {
                 const currentIndex = ESTADOS_ACCION.indexOf(accion.estado);
                 const nextIndex = (currentIndex + 1) % ESTADOS_ACCION.length;
-                return { ...accion, estado: ESTADOS_ACCION[nextIndex] };
+                const newEstado = ESTADOS_ACCION[nextIndex];
+                
+                await updateAccion(id, { estado: newEstado });
+                await fetchAcciones(); // Recargar después de actualizar
             }
-            return accion;
-        });
-        setAcciones(updatedAcciones);
-        localStorage.setItem(ACCIONES_KEY, JSON.stringify(updatedAcciones));
-    }, [acciones]);
+        } catch (err) {
+            console.error("Error al cambiar estado:", err);
+            setError("No se pudo cambiar el estado de la acción en la nube.");
+        }
+    }, [acciones, fetchAcciones]);
 
     const filteredAcciones = useMemo(() => {
         return acciones.filter(accion => {
@@ -112,6 +142,9 @@ const SeguimientoAcciones: React.FC = () => {
             <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
                 <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">Seguimiento de Acciones Pedagógicas</h1>
                 <p className="text-slate-500 dark:text-slate-400 mb-6">{editingId ? 'Editando acción existente.' : 'Registre una nueva acción de seguimiento.'}</p>
+
+                {loading && <div className="text-center text-amber-600 py-4">Cargando acciones desde la nube...</div>}
+                {error && <div className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</div>}
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -145,7 +178,6 @@ const SeguimientoAcciones: React.FC = () => {
                             </select>
                         </div>
                     </div>
-                     {error && <p className="text-red-600 bg-red-100 dark:bg-red-900/40 dark:text-red-300 p-3 rounded-md mt-4">{error}</p>}
                     <div className="pt-4 flex justify-end items-center gap-4">
                         {editingId && <button type="button" onClick={handleResetForm} className="bg-slate-200 text-slate-700 font-bold py-2 px-6 rounded-lg hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500">Cancelar</button>}
                         <button type="submit" className="bg-slate-800 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600">
@@ -157,6 +189,13 @@ const SeguimientoAcciones: React.FC = () => {
 
             <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
                 <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">Tabla de Seguimiento</h2>
+                
+                {!loading && acciones.length === 0 && (
+                    <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 p-4 rounded-lg mb-4">
+                        No hay acciones pedagógicas registradas en la nube.
+                    </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <input
                         type="text"
@@ -187,7 +226,7 @@ const SeguimientoAcciones: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
-                            {filteredAcciones.length > 0 ? filteredAcciones.map(a => (
+                            {!loading && filteredAcciones.length > 0 ? filteredAcciones.map(a => (
                                 <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-700">
                                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-200">{a.responsable}</td>
                                     <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">{a.area}</td>
@@ -209,7 +248,7 @@ const SeguimientoAcciones: React.FC = () => {
                                         <button onClick={() => handleDelete(a.id)} title="Eliminar" className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/40">🗑️</button>
                                     </td>
                                 </tr>
-                            )) : (
+                            )) : !loading && (
                                 <tr>
                                     <td colSpan={6} className="px-6 py-10 text-center text-slate-500 dark:text-slate-400">
                                         No se encontraron acciones con los filtros actuales.
