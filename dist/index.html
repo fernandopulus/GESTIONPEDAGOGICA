@@ -1,89 +1,51 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Welcome to Firebase Hosting</title>
-
-    <!-- update the version number as needed -->
-    <script defer src="/__/firebase/12.0.0/firebase-app-compat.js"></script>
-    <!-- include only the Firebase features as you need -->
-    <script defer src="/__/firebase/12.0.0/firebase-auth-compat.js"></script>
-    <script defer src="/__/firebase/12.0.0/firebase-database-compat.js"></script>
-    <script defer src="/__/firebase/12.0.0/firebase-firestore-compat.js"></script>
-    <script defer src="/__/firebase/12.0.0/firebase-functions-compat.js"></script>
-    <script defer src="/__/firebase/12.0.0/firebase-messaging-compat.js"></script>
-    <script defer src="/__/firebase/12.0.0/firebase-storage-compat.js"></script>
-    <script defer src="/__/firebase/12.0.0/firebase-analytics-compat.js"></script>
-    <script defer src="/__/firebase/12.0.0/firebase-remote-config-compat.js"></script>
-    <script defer src="/__/firebase/12.0.0/firebase-performance-compat.js"></script>
-    <!-- 
-      initialize the SDK after all desired features are loaded, set useEmulator to false
-      to avoid connecting the SDK to running emulators.
-    -->
-    <script defer src="/__/firebase/init.js?useEmulator=true"></script>
-
-    <style media="screen">
-      body { background: #ECEFF1; color: rgba(0,0,0,0.87); font-family: Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
-      #message { background: white; max-width: 360px; margin: 100px auto 16px; padding: 32px 24px; border-radius: 3px; }
-      #message h2 { color: #ffa100; font-weight: bold; font-size: 16px; margin: 0 0 8px; }
-      #message h1 { font-size: 22px; font-weight: 300; color: rgba(0,0,0,0.6); margin: 0 0 16px;}
-      #message p { line-height: 140%; margin: 16px 0 24px; font-size: 14px; }
-      #message a { display: block; text-align: center; background: #039be5; text-transform: uppercase; text-decoration: none; color: white; padding: 16px; border-radius: 4px; }
-      #message, #message a { box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
-      #load { color: rgba(0,0,0,0.4); text-align: center; font-size: 13px; }
-      @media (max-width: 600px) {
-        body, #message { margin-top: 0; background: white; box-shadow: none; }
-        body { border-top: 16px solid #ffa100; }
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gestión Pedagógica LIR</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=swap');
+      /* A small style override to ensure the scrollbar in the sidebar looks good */
+      .sidebar-scroll::-webkit-scrollbar {
+        width: 4px;
+      }
+      .sidebar-scroll::-webkit-scrollbar-thumb {
+        background-color: #475569; /* slate-600 */
+        border-radius: 20px;
+      }
+      .sidebar-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .font-handwritten {
+        font-family: 'Caveat', cursive;
       }
     </style>
-  </head>
-  <body>
-    <div id="message">
-      <h2>Welcome</h2>
-      <h1>Firebase Hosting Setup Complete</h1>
-      <p>You're seeing this because you've successfully setup Firebase Hosting. Now it's time to go build something extraordinary!</p>
-      <a target="_blank" href="https://firebase.google.com/docs/hosting/">Open Hosting Documentation</a>
-    </div>
-    <p id="load">Firebase SDK Loading&hellip;</p>
+    <style>
+.react-flow__renderer{position:relative;width:100%;height:100%;z-index:1;pointer-events:none}.react-flow__zoompane{width:100%;height:100%;z-index:1}.react-flow__selectionpane{z-index:4;pointer-events:all}.react-flow__selection{position:absolute;background:rgba(0,130,255,.2);border:1px solid #0082ff;pointer-events:none;z-index:9999}.react-flow__pane{width:100%;height:100%;position:absolute;top:0;left:0;pointer-events:all;z-index:2}.react-flow__pane.draggable{cursor:grab}.react-flow__pane.draggable.dragging{cursor:grabbing}.react-flow__pane.selection{cursor:crosshair}.react-flow__pane:not(.draggable,.selection){pointer-events:none}.react-flow__edge-updater{position:absolute;pointer-events:none}.react-flow__connection{position:absolute;width:1px;height:1px;background:#555;z-index:3;pointer-events:none}.react-flow__connection .react-flow__connection-path{fill:none}.react-flow__nodes{pointer-events:none}.react-flow__node{position:absolute;pointer-events:all;-webkit-user-select:none;user-select:none}.react-flow__nodes-selection,.react-flow__nodes-selection-rect{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;transform-origin:0 0}.react-flow__nodes-selection-rect{stroke:rgba(0,130,255,.8);stroke-width:1;fill:rgba(0,130,255,.2)}.react-flow__handle{position:absolute;pointer-events:all;min-width:5px;min-height:5px;width:.5rem;height:.5rem;background:#1a192b;border:1px solid #fff;border-radius:100%}.react-flow__handle.connecting{cursor:grabbing}.react-flow__handle-bottom{top:auto;left:50%;bottom:-4px;transform:translate(-50%,0)}.react-flow__handle-top{top:-4px;left:50%;transform:translate(-50%,0)}.react-flow__handle-left{top:50%;left:-4px;transform:translate(0,-50%)}.react-flow__handle-right{right:-4px;top:50%;transform:translate(0,-50%)}.react-flow__edge{pointer-events:all}.react-flow__edge path,.react-flow__connection-path{stroke:#b1b1b7;stroke-width:1;fill:none}.react-flow__edge.selected path,.react-flow__edge:focus path{stroke:#555;stroke-width:2}.react-flow__edge.animated path{stroke-dasharray:5;animation:dashdraw .5s linear infinite}.react-flow__edge-text{pointer-events:none;position:absolute;-webkit-user-select:none;user-select:none}.react-flow__edge-textbg{font-size:10px}.react-flow__edge-text,g{transform-origin:50% 50%}.react-flow__edge .react-flow__edge-text{pointer-events:all}.react-flow__attribution{font-size:12px;position:absolute;z-index:4;bottom:10px;right:10px;display:flex;align-items:center;opacity:.75;background:rgba(255,255,255,.9);padding:5px 10px;border-radius:5px;gap:5px;pointer-events:all}.react-flow__attribution a{text-decoration:none;color:#1a192b}.react-flow__controls{position:absolute;z-index:4;bottom:10px;left:10px;display:flex;flex-direction:column;gap:1px;pointer-events:all}.react-flow__controls-button{background:#fefefe;border:none;padding:5px;border-radius:3px;box-shadow:0 0 2px 1px rgba(0,0,0,.08);display:flex;cursor:pointer}.react-flow__controls-button:hover{background:#f0f0f0}.react-flow__controls-button svg{width:12px;height:12px}.react-flow__controls-interactive{pointer-events:none}.react-flow__minimap{position:absolute;z-index:4;bottom:10px;right:10px;background-color:#fff;border-radius:5px;box-shadow:0 0 10px 1px rgba(0,0,0,.1);pointer-events:all}.react-flow__minimap-mask{fill:rgba(240,240,240,.6)}.react-flow__minimap-node{fill:#e2e2e2;stroke:#fff;stroke-width:1}.react-flow__background{position:absolute;width:100%;height:100%;top:0;left:0}.react-flow__background.dots .react-flow__background-pattern{fill:#aaa}.react-flow__background.lines .react-flow__background-pattern{stroke:#aaa;stroke-width:.4}@keyframes dashdraw{from{stroke-dashoffset:10}}
+</style>
 
-    <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        const loadEl = document.querySelector('#load');
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-        // // The Firebase SDK is initialized and available here!
-        //
-        // firebase.auth().onAuthStateChanged(user => { });
-        // firebase.database().ref('/path/to/ref').on('value', snapshot => { });
-        // firebase.firestore().doc('/foo/bar').get().then(() => { });
-        // firebase.functions().httpsCallable('yourFunction')().then(() => { });
-        // firebase.messaging().requestPermission().then(() => { });
-        // firebase.storage().ref('/path/to/ref').getDownloadURL().then(() => { });
-        // firebase.analytics(); // call to activate
-        // firebase.analytics().logEvent('tutorial_completed');
-        // firebase.performance(); // call to activate
-        //
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-
-        try {
-          let app = firebase.app();
-          let features = [
-            'auth', 
-            'database', 
-            'firestore',
-            'functions',
-            'messaging', 
-            'storage', 
-            'analytics', 
-            'remoteConfig',
-            'performance',
-          ].filter(feature => typeof app[feature] === 'function');
-          loadEl.textContent = `Firebase SDK loaded with ${features.join(', ')}`;
-        } catch (e) {
-          console.error(e);
-          loadEl.textContent = 'Error loading the Firebase SDK, check the console.';
-        }
-      });
-    </script>
-  </body>
+<link rel="stylesheet" href="/index.css">
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.1.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.10.0",
+    "xlsx": "https://esm.sh/xlsx@^0.18.5",
+    "jspdf": "https://esm.sh/jspdf@^2.5.1",
+    "html2canvas": "https://esm.sh/html2canvas@^1.4.1",
+    "jspdf-autotable": "https://esm.sh/jspdf-autotable@^5.0.2",
+    "reactflow": "https://esm.sh/reactflow@11.11.4",
+    "html-to-image": "https://esm.sh/html-to-image@^1.11.13"
+  }
+}
+</script>
+  <script type="module" crossorigin src="/assets/index-C2JxPZJl.js"></script>
+</head>
+<body class="bg-slate-100 antialiased">
+    <div id="root"></div>
+</body>
 </html>
