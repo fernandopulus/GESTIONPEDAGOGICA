@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AcompanamientoDocente, User } from '../../types';
 import { RUBRICA_ACOMPANAMIENTO_DOCENTE as defaultRubric, PDFIcon } from '../../constants';
+import { 
+    subscribeToAcompanamientosByDocente, 
+    getRubricaConfiguration 
+} from '../../firebaseHelpers/acompanamientoHelpers';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const ACOMPANAMIENTO_KEY = 'acompanamientoDocenteRecords';
-const CUSTOM_RUBRICA_KEY = 'acompanamientoDocenteCustomRubrica';
 type RubricStructure = typeof defaultRubric;
 
 interface BarChartProps {
@@ -20,8 +22,12 @@ const BarChart: React.FC<BarChartProps> = ({ data }) => {
             {data.map((item, index) => (
                 <div key={item.label + index}>
                     <div className="flex justify-between items-center text-sm mb-1">
-                        <span className="font-medium text-slate-700 dark:text-slate-300 truncate pr-2">{item.label.replace('Dominio A: ', 'A: ').replace('Dominio B: ', 'B: ').replace('Dominio C: ', 'C: ')}</span>
-                        <span className="font-semibold text-slate-600 dark:text-slate-400">{item.value.toFixed(2)} / 4.00</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300 truncate pr-2">
+                            {item.label.replace('Dominio A: ', 'A: ').replace('Dominio B: ', 'B: ').replace('Dominio C: ', 'C: ')}
+                        </span>
+                        <span className="font-semibold text-slate-600 dark:text-slate-400">
+                            {item.value.toFixed(2)} / 4.00
+                        </span>
                     </div>
                     <div className="bg-slate-200 dark:bg-slate-700 rounded-full h-4">
                         <div 
@@ -35,7 +41,6 @@ const BarChart: React.FC<BarChartProps> = ({ data }) => {
     );
 };
 
-
 interface AcompanamientoDocenteProfesorProps {
     currentUser: User;
 }
@@ -44,25 +49,44 @@ const AcompanamientoDocenteProfesor: React.FC<AcompanamientoDocenteProfesorProps
     const [misAcompanamientos, setMisAcompanamientos] = useState<AcompanamientoDocente[]>([]);
     const [selectedAcompanamiento, setSelectedAcompanamiento] = useState<AcompanamientoDocente | null>(null);
     const [rubrica, setRubrica] = useState<RubricStructure>(defaultRubric);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        try {
-            const allData = localStorage.getItem(ACOMPANAMIENTO_KEY);
-            if (allData) {
-                const allRecords: AcompanamientoDocente[] = JSON.parse(allData);
-                const myRecords = allRecords
-                    .filter(rec => rec.docente === currentUser.nombreCompleto)
-                    .sort((a,b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-                setMisAcompanamientos(myRecords);
+        // Cargar rúbrica personalizada
+        const loadRubrica = async () => {
+            try {
+                const rubricaConfig = await getRubricaConfiguration();
+                if (rubricaConfig) {
+                    setRubrica(rubricaConfig);
+                }
+            } catch (err) {
+                console.error("Error al cargar rúbrica:", err);
+                // Si hay error, usar la rúbrica por defecto
             }
+        };
 
-            const customRubricData = localStorage.getItem(CUSTOM_RUBRICA_KEY);
-            if (customRubricData) {
-                setRubrica(JSON.parse(customRubricData));
+        // Suscribirse a los acompañamientos del docente
+        const unsubscribe = subscribeToAcompanamientosByDocente(
+            currentUser.nombreCompleto,
+            (acompanamientos) => {
+                setMisAcompanamientos(acompanamientos);
+                setLoading(false);
+                setError(null);
+            },
+            (error) => {
+                setError(error.message);
+                setLoading(false);
             }
-        } catch (e) {
-            console.error("Error al cargar datos de acompañamiento", e);
-        }
+        );
+
+        loadRubrica();
+
+        return () => {
+            if (unsubscribe) {
+                unsubscribe();
+            }
+        };
     }, [currentUser.nombreCompleto]);
     
     const domainPerformance = useMemo(() => {
@@ -130,18 +154,61 @@ const AcompanamientoDocenteProfesor: React.FC<AcompanamientoDocenteProfesorProps
         doc.save(`Acompanamiento_${currentUser.nombreCompleto.replace(/\s/g, '_')}.pdf`);
     };
 
+    if (loading) {
+        return (
+            <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md animate-fade-in">
+                <div className="text-center py-16">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500 mx-auto"></div>
+                    <p className="mt-4 text-slate-500 dark:text-slate-400">Cargando acompañamientos...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md animate-fade-in">
+                <div className="text-center py-16">
+                    <span className="text-5xl">⚠️</span>
+                    <h2 className="mt-4 text-xl font-bold text-red-600 dark:text-red-400">Error</h2>
+                    <p className="text-slate-500 dark:text-slate-400 mt-2">{error}</p>
+                    <button 
+                        onClick={() => window.location.reload()} 
+                        className="mt-4 bg-sky-500 text-white px-4 py-2 rounded-lg hover:bg-sky-600 transition-colors"
+                    >
+                        Reintentar
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     if (selectedAcompanamiento) {
         return (
             <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md animate-fade-in">
                 <div className="flex justify-between items-center mb-6">
                     <div>
-                        <button onClick={() => setSelectedAcompanamiento(null)} className="text-sm font-semibold text-slate-500 hover:underline mb-2">&larr; Volver a mi historial</button>
-                        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Detalle del Acompañamiento</h2>
+                        <button 
+                            onClick={() => setSelectedAcompanamiento(null)} 
+                            className="text-sm font-semibold text-slate-500 hover:underline mb-2"
+                        >
+                            &larr; Volver a mi historial
+                        </button>
+                        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                            Detalle del Acompañamiento
+                        </h2>
                         <p className="text-slate-500 dark:text-slate-400">
-                            {new Date(selectedAcompanamiento.fecha).toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' })} | {selectedAcompanamiento.curso} - {selectedAcompanamiento.asignatura}
+                            {new Date(selectedAcompanamiento.fecha).toLocaleDateString('es-CL', { 
+                                year: 'numeric', 
+                                month: 'long', 
+                                day: 'numeric' 
+                            })} | {selectedAcompanamiento.curso} - {selectedAcompanamiento.asignatura}
                         </p>
                     </div>
-                     <button onClick={() => handleExportPDF(selectedAcompanamiento)} className="bg-red-600 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 hover:bg-red-700">
+                    <button 
+                        onClick={() => handleExportPDF(selectedAcompanamiento)} 
+                        className="bg-red-600 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 hover:bg-red-700 transition-colors"
+                    >
                         <PDFIcon /> Exportar PDF
                     </button>
                 </div>
@@ -151,16 +218,22 @@ const AcompanamientoDocenteProfesor: React.FC<AcompanamientoDocenteProfesorProps
                         <div className="prose dark:prose-invert max-w-none prose-slate">
                             <h3>Retroalimentación Consolidada (IA)</h3>
                             <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg">
-                                 <p className="whitespace-pre-wrap">{selectedAcompanamiento.retroalimentacionConsolidada || 'No se ha generado retroalimentación.'}</p>
+                                <p className="whitespace-pre-wrap">
+                                    {selectedAcompanamiento.retroalimentacionConsolidada || 'No se ha generado retroalimentación.'}
+                                </p>
                             </div>
                             <h3>Observaciones Generales</h3>
-                             <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg">
-                                <p className="whitespace-pre-wrap">{selectedAcompanamiento.observacionesGenerales || 'Sin observaciones.'}</p>
+                            <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg">
+                                <p className="whitespace-pre-wrap">
+                                    {selectedAcompanamiento.observacionesGenerales || 'Sin observaciones.'}
+                                </p>
                             </div>
                         </div>
                     </div>
-                     <div>
-                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4">Desempeño por Dominio</h3>
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4">
+                            Desempeño por Dominio
+                        </h3>
                         <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg">
                             <BarChart data={domainPerformance} />
                         </div>
@@ -172,8 +245,12 @@ const AcompanamientoDocenteProfesor: React.FC<AcompanamientoDocenteProfesorProps
     
     return (
         <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md animate-fade-in">
-            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">Mis Acompañamientos</h1>
-            <p className="text-slate-500 dark:text-slate-400 mb-6">Aquí encontrarás el historial de tus observaciones de clase y la retroalimentación asociada.</p>
+            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">
+                Mis Acompañamientos
+            </h1>
+            <p className="text-slate-500 dark:text-slate-400 mb-6">
+                Aquí encontrarás el historial de tus observaciones de clase y la retroalimentación asociada.
+            </p>
             
             <div className="space-y-4">
                 {misAcompanamientos.length > 0 ? (
@@ -185,20 +262,28 @@ const AcompanamientoDocenteProfesor: React.FC<AcompanamientoDocenteProfesorProps
                         >
                             <div className="flex justify-between items-center">
                                 <div>
-                                    <p className="font-bold text-slate-800 dark:text-slate-200">{record.curso} - {record.asignatura}</p>
+                                    <p className="font-bold text-slate-800 dark:text-slate-200">
+                                        {record.curso} - {record.asignatura}
+                                    </p>
                                     <p className="text-sm text-slate-500 dark:text-slate-400">
                                         Fecha: {new Date(record.fecha).toLocaleDateString('es-CL')}
                                     </p>
                                 </div>
-                                <span className="font-semibold text-blue-600 dark:text-blue-400 text-sm">Ver Detalles</span>
+                                <span className="font-semibold text-blue-600 dark:text-blue-400 text-sm">
+                                    Ver Detalles
+                                </span>
                             </div>
                         </button>
                     ))
                 ) : (
                     <div className="text-center py-16 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
                         <span className="text-5xl">👍</span>
-                        <h2 className="mt-4 text-xl font-bold text-slate-700 dark:text-slate-300">Sin Registros</h2>
-                        <p className="text-slate-500 dark:text-slate-400 mt-2">Aún no tienes acompañamientos de clase registrados.</p>
+                        <h2 className="mt-4 text-xl font-bold text-slate-700 dark:text-slate-300">
+                            Sin Registros
+                        </h2>
+                        <p className="text-slate-500 dark:text-slate-400 mt-2">
+                            Aún no tienes acompañamientos de clase registrados.
+                        </p>
                     </div>
                 )}
             </div>
