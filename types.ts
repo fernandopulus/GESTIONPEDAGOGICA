@@ -4,10 +4,10 @@ import type { Position, Node as ReactFlowNode, Edge as ReactFlowEdge } from 'rea
 // --- General ---
 
 export enum Profile {
-  SUBDIRECCION = 'Subdirección Pedagógica',
-  PROFESORADO = 'Profesorado',
-  COORDINACION_TP = 'Coordinación Técnico Profesional',
-  ESTUDIANTE = 'Estudiantes',
+  SUBDIRECCION = 'SUBDIRECCION',
+  PROFESORADO = 'PROFESORADO',
+  COORDINACION_TP = 'COORDINACION_TP',
+  ESTUDIANTE = 'ESTUDIANTE',
 }
 
 export interface Module {
