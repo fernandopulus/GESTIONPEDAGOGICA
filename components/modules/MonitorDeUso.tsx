@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ApiCallLog } from '../../types';
+import {
+    getAllApiLogs,
+    getFirestoreStats,
+} from '../../src/firebaseHelpers/monitoring'; // AJUSTA la ruta según dónde guardes los helpers
 
-const API_LOGS_KEY = 'apiCallLogs';
 const DAILY_API_CALL_LIMIT = 500;
 
 const StatCard: React.FC<{ title: string; value: string | number; description?: string; alert?: boolean }> = ({ title, value, description, alert }) => (
@@ -41,26 +44,55 @@ const BarChart: React.FC<{ title: string; data: { label: string; value: number }
 
 const MonitorDeUso: React.FC = () => {
     const [logs, setLogs] = useState<ApiCallLog[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [firestoreStats, setFirestoreStats] = useState({
+        documentsCreatedToday: 0,
+        readsToday: 0,
+        writesToday: 0,
+        totalDocuments: 0,
+        collectionsActivity: [] as { label: string; value: number }[],
+        dailyActivity: [] as { label: string; value: number }[]
+    });
 
-    const loadLogs = useCallback(() => {
+    // Cargar logs de API desde Firestore
+    const loadLogs = useCallback(async () => {
+        setLoading(true);
         try {
-            const data = localStorage.getItem(API_LOGS_KEY);
-            if (data) {
-                setLogs(JSON.parse(data));
-            }
+            const apiLogs = await getAllApiLogs();
+            setLogs(apiLogs);
+            setError(null);
         } catch (e) {
-            console.error("Error al cargar logs de la API:", e);
+            console.error("Error al cargar logs de la API desde Firestore:", e);
+            setError("No se pudieron cargar los logs de API desde la nube.");
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    // Cargar estadísticas de Firestore
+    const loadFirestoreStats = useCallback(async () => {
+        try {
+            const stats = await getFirestoreStats();
+            setFirestoreStats(stats);
+        } catch (e) {
+            console.error("Error al cargar estadísticas de Firestore:", e);
+            // No setear error aquí para no interferir con los logs de API
         }
     }, []);
 
     useEffect(() => {
         loadLogs();
-        // Escuchar cambios en el almacenamiento para actualizar en tiempo real
-        window.addEventListener('storage', loadLogs);
-        return () => {
-            window.removeEventListener('storage', loadLogs);
-        };
-    }, [loadLogs]);
+        loadFirestoreStats();
+        
+        // Recargar cada 5 minutos
+        const interval = setInterval(() => {
+            loadLogs();
+            loadFirestoreStats();
+        }, 5 * 60 * 1000);
+
+        return () => clearInterval(interval);
+    }, [loadLogs, loadFirestoreStats]);
 
     const { stats, userStats, moduleStats } = useMemo(() => {
         const now = new Date();
@@ -97,15 +129,37 @@ const MonitorDeUso: React.FC = () => {
 
     return (
         <div className="space-y-8">
+            {loading && <div className="text-center text-amber-600 py-4">Cargando estadísticas desde la nube...</div>}
+            {error && <div className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</div>}
+
             {/* API Call Monitoring */}
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
                 <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">Monitor de Llamadas a la API de IA</h2>
+                
+                {!loading && logs.length === 0 && (
+                    <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 p-4 rounded-lg mb-6">
+                        No hay registros de llamadas a la API en la nube.
+                    </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <StatCard title="Llamadas Hoy" value={stats.today} description={`Límite recomendado: ${DAILY_API_CALL_LIMIT}`} alert={stats.today > DAILY_API_CALL_LIMIT} />
-                    <StatCard title="Llamadas esta Semana" value={stats.week} />
-                    <StatCard title="Llamadas este Mes" value={stats.month} />
+                    <StatCard 
+                        title="Llamadas Hoy" 
+                        value={loading ? '--' : stats.today} 
+                        description={`Límite recomendado: ${DAILY_API_CALL_LIMIT}`} 
+                        alert={stats.today > DAILY_API_CALL_LIMIT} 
+                    />
+                    <StatCard 
+                        title="Llamadas esta Semana" 
+                        value={loading ? '--' : stats.week} 
+                    />
+                    <StatCard 
+                        title="Llamadas este Mes" 
+                        value={loading ? '--' : stats.month} 
+                    />
                 </div>
-                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
                     <BarChart title="Uso por Módulo" data={moduleStats} colorClass="bg-sky-500" />
                     <div className="bg-white dark:bg-slate-800 rounded-xl">
                         <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4">Uso por Usuario</h3>
@@ -120,7 +174,7 @@ const MonitorDeUso: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
-                                    {userStats.length > 0 ? userStats.map(user => (
+                                    {!loading && userStats.length > 0 ? userStats.map(user => (
                                         <tr key={user.email}>
                                             <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-200">{user.email}</td>
                                             <td className="px-4 py-2 text-center text-sm">{user.today}</td>
@@ -128,7 +182,9 @@ const MonitorDeUso: React.FC = () => {
                                             <td className="px-4 py-2 text-center text-sm font-bold">{user.total}</td>
                                         </tr>
                                     )) : (
-                                        <tr><td colSpan={4} className="text-center py-6 text-slate-500">No hay registros.</td></tr>
+                                        <tr><td colSpan={4} className="text-center py-6 text-slate-500">
+                                            {loading ? 'Cargando...' : 'No hay registros.'}
+                                        </td></tr>
                                     )}
                                 </tbody>
                              </table>
@@ -136,19 +192,42 @@ const MonitorDeUso: React.FC = () => {
                     </div>
                 </div>
             </div>
-            {/* Firestore Monitoring - Placeholder */}
+
+            {/* Firestore Monitoring - Ahora funcional */}
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
-                <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">Monitor de Almacenamiento</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Esta sección se conectará a Firebase en una futura actualización.</p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 opacity-50">
-                    <StatCard title="Documentos Creados (Hoy)" value="--" />
-                    <StatCard title="Lecturas de Firestore (Hoy)" value="--" />
-                    <StatCard title="Espacio en Storage" value="-- GB" />
+                <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">Monitor de Almacenamiento Firestore</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Estadísticas de uso de Firestore en tiempo real.</p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <StatCard 
+                        title="Documentos Creados (Hoy)" 
+                        value={firestoreStats.documentsCreatedToday} 
+                        description="Nuevos documentos"
+                    />
+                    <StatCard 
+                        title="Lecturas de Firestore (Hoy)" 
+                        value={firestoreStats.readsToday} 
+                        description="Operaciones de lectura"
+                    />
+                    <StatCard 
+                        title="Total de Documentos" 
+                        value={firestoreStats.totalDocuments} 
+                        description="En todas las colecciones"
+                    />
                 </div>
-                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8 opacity-50">
-                    <BarChart title="Actividad de Firestore (Últimos 7 días)" data={[]} colorClass="bg-green-500" />
-                    <BarChart title="Uso de Storage por tipo de archivo" data={[]} colorClass="bg-purple-500" />
-                 </div>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+                    <BarChart 
+                        title="Actividad por Colección" 
+                        data={firestoreStats.collectionsActivity} 
+                        colorClass="bg-green-500" 
+                    />
+                    <BarChart 
+                        title="Actividad Diaria (Últimos 7 días)" 
+                        data={firestoreStats.dailyActivity} 
+                        colorClass="bg-purple-500" 
+                    />
+                </div>
             </div>
         </div>
     );
