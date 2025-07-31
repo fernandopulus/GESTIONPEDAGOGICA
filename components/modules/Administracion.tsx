@@ -5,7 +5,7 @@ import { read, utils } from 'xlsx';
 import MonitorDeUso from './MonitorDeUso';
 import {
     getAllUsers,
-    getUserByEmail
+    getUserByEmail,
     createUser,
     updateUser,
     deleteUser,
