@@ -1,67 +1,111 @@
 import React, { useState, useEffect } from "react";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
+import { auth, db } from "./src/firebase"; // ajusta el path según corresponda
 import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "./src/firebase"; // Ajusta el path si es necesario
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
+import ProfileSelector from "./components/ProfileSelector";
 import { Profile, User } from "./types";
+import { MainLogo } from "./constants";
 
 const App: React.FC = () => {
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [currentUser, setCurrentUser] = useState<User | null>(null); // <--- tu modelo de usuario con perfil
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [firestoreUser, setFirestoreUser] = useState<User | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [isAdminSelectingProfile, setIsAdminSelectingProfile] = useState(false);
+  const [adminProfile, setAdminProfile] = useState<Profile | null>(null);
 
-  // Mantiene la sesión con Firebase y carga el usuario Firestore
+  // Mantiene sesión con Firebase
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
-      setCurrentUser(null);
-      if (user && user.email) {
-        // Busca el documento de usuario en Firestore
-        const userDoc = await getDoc(doc(db, "usuarios", user.email));
-        if (userDoc.exists()) {
-          setCurrentUser(userDoc.data() as User);
-        } else {
-          setLoginError("Usuario no registrado en base de datos interna.");
-        }
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      if (!user) {
+        setFirestoreUser(null);
+        setAdminProfile(null);
+        setIsAdminSelectingProfile(false);
       }
     });
     return () => unsubscribe();
   }, []);
+
+  // Carga el usuario extendido desde Firestore cada vez que cambia currentUser
+  useEffect(() => {
+    const fetchFirestoreUser = async () => {
+      if (currentUser?.email) {
+        const ref = doc(db, "usuarios", currentUser.email);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          setFirestoreUser(snap.data() as User);
+          // Si es SUBDIRECCION, habilita selección de perfil
+          if ((snap.data() as User).profile === Profile.SUBDIRECCION) {
+            setIsAdminSelectingProfile(true);
+          }
+        } else {
+          setFirestoreUser(null);
+        }
+      }
+    };
+    fetchFirestoreUser();
+  }, [currentUser]);
 
   // Lógica de login con Firebase Auth
   const handleLoginAttempt = async (email: string, password: string) => {
     setLoginError(null);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // El listener de onAuthStateChanged se encargará de buscar en Firestore
+      // El flujo de selección de perfil ahora se maneja en useEffect arriba,
+      // basado en los datos de Firestore
     } catch (error: any) {
       setLoginError("Credenciales incorrectas o usuario no registrado.");
     }
   };
 
-  // Lógica de logout
-  const handleLogout = async () => {
-    await signOut(auth);
-    setFirebaseUser(null);
-    setCurrentUser(null);
+  // Cambia perfil para admin
+  const handleProfileSelectForAdmin = (profile: Profile) => {
+    setAdminProfile(profile);
+    setIsAdminSelectingProfile(false);
   };
 
-  // Renderiza según el estado de la sesión
+  // Cierra sesión
+  const handleLogout = async () => {
+    await signOut(auth);
+    setCurrentUser(null);
+    setFirestoreUser(null);
+    setAdminProfile(null);
+    setIsAdminSelectingProfile(false);
+  };
+
+  // Renderizado de contenido según estado de sesión
   const renderContent = () => {
-    if (!firebaseUser) return <Login onLoginAttempt={handleLoginAttempt} error={loginError} />;
-    if (!currentUser) return <div className="p-12 text-center text-lg">Cargando usuario...</div>;
+    if (currentUser && isAdminSelectingProfile && firestoreUser?.profile === Profile.SUBDIRECCION) {
+      return (
+        <ProfileSelector
+          onSelectProfile={handleProfileSelectForAdmin}
+          isAdminView={true}
+        />
+      );
+    }
+    if (currentUser && firestoreUser) {
+      // Si se seleccionó un perfil alternativo, pásalo al Dashboard
+      return (
+        <Dashboard
+          currentUser={{
+            ...firestoreUser,
+            profile: adminProfile || firestoreUser.profile,
+          }}
+          onLogout={handleLogout}
+          // Pasa props extra según tu diseño
+        />
+      );
+    }
     return (
-      <Dashboard
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        // Puedes agregar más props si tu Dashboard lo requiere
-      />
+      <Login onLoginAttempt={handleLoginAttempt} error={loginError} />
     );
   };
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans">
+      {/* Puedes agregar un header/logo si quieres */}
       {renderContent()}
     </div>
   );
