@@ -1,119 +1,61 @@
 import React, { useState, useEffect } from "react";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "./src/firebase"; // Ajusta si tu firebase.ts está en otro lado
+import { auth, db } from "./src/firebase"; // Ajusta el path si es necesario
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
-import ProfileSelector from "./components/ProfileSelector";
 import { Profile, User } from "./types";
-import { MainLogo } from "./constants";
 
 const App: React.FC = () => {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [userProfile, setUserProfile] = useState<User | null>(null);
-  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null); // <--- tu modelo de usuario con perfil
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [isAdminSelectingProfile, setIsAdminSelectingProfile] = useState(false);
-  const [adminProfile, setAdminProfile] = useState<Profile | null>(null);
 
-  // Mantiene sesión con Firebase Auth
+  // Mantiene la sesión con Firebase y carga el usuario Firestore
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
+      setCurrentUser(null);
+      if (user && user.email) {
+        // Busca el documento de usuario en Firestore
+        const userDoc = await getDoc(doc(db, "usuarios", user.email));
+        if (userDoc.exists()) {
+          setCurrentUser(userDoc.data() as User);
+        } else {
+          setLoginError("Usuario no registrado en base de datos interna.");
+        }
+      }
     });
     return () => unsubscribe();
   }, []);
 
-  // Al autenticar, carga perfil extendido desde Firestore
-  useEffect(() => {
-    const fetchProfile = async () => {
-      if (!firebaseUser) {
-        setUserProfile(null);
-        return;
-      }
-      setLoadingProfile(true);
-      try {
-        const userDoc = doc(db, "usuarios", firebaseUser.email!); // Usa email como ID del doc
-        const snap = await getDoc(userDoc);
-        if (snap.exists()) {
-          setUserProfile(snap.data() as User);
-        } else {
-          setUserProfile(null);
-        }
-      } catch (error) {
-        setUserProfile(null);
-      } finally {
-        setLoadingProfile(false);
-      }
-    };
-    fetchProfile();
-  }, [firebaseUser]);
-
-  // Lógica de login
+  // Lógica de login con Firebase Auth
   const handleLoginAttempt = async (email: string, password: string) => {
     setLoginError(null);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // El efecto de arriba buscará el perfil Firestore automáticamente
-      if (email.toLowerCase() === "subdi@lir.cl") {
-        setIsAdminSelectingProfile(true);
-      } else {
-        setIsAdminSelectingProfile(false);
-      }
+      // El listener de onAuthStateChanged se encargará de buscar en Firestore
     } catch (error: any) {
       setLoginError("Credenciales incorrectas o usuario no registrado.");
     }
   };
 
-  // Cambia perfil para admin
-  const handleProfileSelectForAdmin = (profile: Profile) => {
-    setAdminProfile(profile);
-    setIsAdminSelectingProfile(false);
-    // Aquí podrías actualizar el perfil en Firestore si lo deseas
-  };
-
-  // Cierra sesión
+  // Lógica de logout
   const handleLogout = async () => {
     await signOut(auth);
     setFirebaseUser(null);
-    setUserProfile(null);
-    setAdminProfile(null);
-    setIsAdminSelectingProfile(false);
+    setCurrentUser(null);
   };
 
-  // Renderizado de contenido según estado de sesión
+  // Renderiza según el estado de la sesión
   const renderContent = () => {
-    if (!firebaseUser) {
-      return <Login onLoginAttempt={handleLoginAttempt} error={loginError} />;
-    }
-    if (loadingProfile) {
-      return <div className="p-12 text-center text-slate-700">Cargando perfil de usuario...</div>;
-    }
-    if (!userProfile) {
-      return (
-        <div className="p-12 text-center text-red-600">
-          No existe un perfil en Firestore para este usuario.<br />
-          Solicita acceso o que el administrador cree tu perfil en <b>usuarios</b>.<br />
-          Email: {firebaseUser.email}
-        </div>
-      );
-    }
-    if (firebaseUser && isAdminSelectingProfile) {
-      return (
-        <ProfileSelector
-          onSelectProfile={handleProfileSelectForAdmin}
-          isAdminView={true}
-        />
-      );
-    }
+    if (!firebaseUser) return <Login onLoginAttempt={handleLoginAttempt} error={loginError} />;
+    if (!currentUser) return <div className="p-12 text-center text-lg">Cargando usuario...</div>;
     return (
       <Dashboard
-        currentUser={{
-          ...userProfile,
-          profile: adminProfile || userProfile.profile // Permite cambiar de perfil si eres admin
-        }}
+        currentUser={currentUser}
         onLogout={handleLogout}
-        // Pasa otros props que necesites
+        // Puedes agregar más props si tu Dashboard lo requiere
       />
     );
   };
