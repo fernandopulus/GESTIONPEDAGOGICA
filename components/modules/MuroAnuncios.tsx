@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
 import { Anuncio, Profile, User, DestinatariosAnuncio, TipoDestinatario } from '../../types';
 import { CURSOS } from '../../constants';
-
-const ANUNCIOS_KEY = 'anunciosMuro';
+import {
+    getAllAnuncios,
+    createAnuncio,
+    updateAnuncio,
+    deleteAnuncio,
+} from '../../src/firebaseHelpers/anuncios'; // AJUSTA la ruta según dónde guardes los helpers
 
 const postItStyles = [
     { bg: 'bg-yellow-200 dark:bg-yellow-800/50', rotate: 'transform -rotate-2' },
@@ -17,16 +21,9 @@ interface MuroAnunciosProps {
 }
 
 const MuroAnuncios: React.FC<MuroAnunciosProps> = ({ currentUser }) => {
-    const [anuncios, setAnuncios] = useState<Anuncio[]>(() => {
-        try {
-            const data = localStorage.getItem(ANUNCIOS_KEY);
-            return data ? JSON.parse(data) : [];
-        } catch (e) {
-            console.error("Error al leer anuncios de localStorage en la inicialización", e);
-            return [];
-        }
-    });
-
+    const [anuncios, setAnuncios] = useState<Anuncio[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const [formData, setFormData] = useState({
         titulo: '',
         mensaje: '',
@@ -34,14 +31,24 @@ const MuroAnuncios: React.FC<MuroAnunciosProps> = ({ currentUser }) => {
     });
     const [destinatarios, setDestinatarios] = useState<DestinatariosAnuncio>({ tipo: 'Todos', cursos: [] });
 
-    useEffect(() => {
+    // Cargar anuncios desde Firestore
+    const fetchAnuncios = useCallback(async () => {
+        setLoading(true);
         try {
-            localStorage.setItem(ANUNCIOS_KEY, JSON.stringify(anuncios));
+            const anunciosFS = await getAllAnuncios();
+            setAnuncios(anunciosFS);
+            setError(null);
         } catch (e) {
-            console.error("Error al guardar anuncios en localStorage", e);
+            console.error("Error al cargar anuncios desde Firestore", e);
+            setError("No se pudieron cargar los anuncios desde la nube.");
+        } finally {
+            setLoading(false);
         }
-    }, [anuncios]);
+    }, []);
 
+    useEffect(() => {
+        fetchAnuncios();
+    }, [fetchAnuncios]);
 
     const handleFieldChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -62,7 +69,7 @@ const MuroAnuncios: React.FC<MuroAnunciosProps> = ({ currentUser }) => {
         });
     };
 
-    const handleSubmit = (e: FormEvent) => {
+    const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         if (!formData.titulo || !formData.mensaje) {
             alert('Título y mensaje son obligatorios.');
@@ -73,33 +80,57 @@ const MuroAnuncios: React.FC<MuroAnunciosProps> = ({ currentUser }) => {
             return;
         }
 
-        const newAnuncio: Anuncio = {
-            id: crypto.randomUUID(),
-            fechaPublicacion: new Date().toISOString(),
-            destacado: false,
-            autor: currentUser.nombreCompleto,
-            profileCreador: currentUser.profile,
-            destinatarios,
-            ...formData,
-        };
+        try {
+            const newAnuncio: Omit<Anuncio, 'id'> = {
+                fechaPublicacion: new Date().toISOString(),
+                destacado: false,
+                autor: currentUser.nombreCompleto,
+                profileCreador: currentUser.profile,
+                destinatarios,
+                ...formData,
+            };
 
-        setAnuncios(prev => [newAnuncio, ...prev]);
-        setFormData({
-            titulo: '',
-            mensaje: '',
-            adjunto: '',
-        });
-        setDestinatarios({ tipo: 'Todos', cursos: [] });
-    };
-
-    const handleDelete = (id: string) => {
-        if (window.confirm('¿Está seguro de que desea eliminar este anuncio?')) {
-            setAnuncios(prev => prev.filter(a => a.id !== id));
+            await createAnuncio(newAnuncio);
+            
+            // Recargar anuncios después de crear
+            await fetchAnuncios();
+            
+            // Limpiar formulario
+            setFormData({
+                titulo: '',
+                mensaje: '',
+                adjunto: '',
+            });
+            setDestinatarios({ tipo: 'Todos', cursos: [] });
+        } catch (err) {
+            console.error("Error al crear anuncio:", err);
+            setError("Error al publicar el anuncio en la nube.");
         }
     };
 
-    const handleTogglePin = (id: string) => {
-        setAnuncios(prev => prev.map(a => a.id === id ? { ...a, destacado: !a.destacado } : a));
+    const handleDelete = async (id: string) => {
+        if (window.confirm('¿Está seguro de que desea eliminar este anuncio?')) {
+            try {
+                await deleteAnuncio(id);
+                await fetchAnuncios(); // Recargar después de eliminar
+            } catch (err) {
+                console.error("Error al eliminar anuncio:", err);
+                setError("No se pudo eliminar el anuncio en la nube.");
+            }
+        }
+    };
+
+    const handleTogglePin = async (id: string) => {
+        try {
+            const anuncio = anuncios.find(a => a.id === id);
+            if (anuncio) {
+                await updateAnuncio(id, { destacado: !anuncio.destacado });
+                await fetchAnuncios(); // Recargar después de actualizar
+            }
+        } catch (err) {
+            console.error("Error al actualizar anuncio:", err);
+            setError("No se pudo actualizar el estado del anuncio en la nube.");
+        }
     };
 
     const sortedAnuncios = useMemo(() => {
@@ -149,11 +180,14 @@ const MuroAnuncios: React.FC<MuroAnunciosProps> = ({ currentUser }) => {
     
     const inputStyles = "w-full border-slate-300 rounded-md shadow-sm focus:ring-amber-400 focus:border-amber-400 dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400";
 
-
     return (
         <div className="space-y-8 animate-fade-in">
             <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
                 <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">Muro de Anuncios</h1>
+                
+                {loading && <div className="text-center text-amber-600 py-4">Cargando anuncios desde la nube...</div>}
+                {error && <div className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</div>}
+                
                 {currentUser.profile !== Profile.ESTUDIANTE ? (
                     <>
                         <p className="text-slate-500 dark:text-slate-400 mb-6">Publique un nuevo anuncio para toda la comunidad escolar.</p>
@@ -219,8 +253,14 @@ const MuroAnuncios: React.FC<MuroAnunciosProps> = ({ currentUser }) => {
                 )}
             </div>
 
+            {!loading && filteredAndSortedAnuncios.length === 0 && (
+                <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 p-4 rounded-lg">
+                    No hay anuncios para mostrar en la nube.
+                </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-8 py-4">
-                {filteredAndSortedAnuncios.length > 0 ? filteredAndSortedAnuncios.map((anuncio, index) => {
+                {!loading && filteredAndSortedAnuncios.length > 0 && filteredAndSortedAnuncios.map((anuncio, index) => {
                     const style = postItStyles[index % postItStyles.length];
                     return (
                         <div 
@@ -266,11 +306,7 @@ const MuroAnuncios: React.FC<MuroAnunciosProps> = ({ currentUser }) => {
                             </div>
                         </div>
                     )
-                }) : (
-                     <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-md text-center col-span-full">
-                        <p className="text-slate-500 dark:text-slate-400 text-lg">No hay anuncios para mostrar con los filtros actuales.</p>
-                     </div>
-                )}
+                })}
             </div>
         </div>
     );
