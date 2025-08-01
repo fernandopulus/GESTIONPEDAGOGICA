@@ -130,6 +130,7 @@ const Administracion: React.FC = () => {
         const finalCursos = profile === Profile.PROFESORADO ? cursos : undefined;
         const finalAsignaturas = profile === Profile.PROFESORADO ? asignaturas : undefined;
         const finalPassword = userFormData.password?.trim() ? userFormData.password.trim() : undefined;
+        const finalRut = userFormData.rut?.trim() ? userFormData.rut.trim() : undefined;
 
         try {
             if (editingUserId) {
@@ -137,6 +138,7 @@ const Administracion: React.FC = () => {
                 await updateUser(userFormData.email, {
                     ...userFormData,
                     password: finalPassword, // Si es undefined, mantendrá la contraseña anterior
+                    rut: finalRut,
                     curso: finalCurso,
                     cursos: finalCursos,
                     asignaturas: finalAsignaturas,
@@ -146,6 +148,7 @@ const Administracion: React.FC = () => {
                 await createUser({
                     ...userFormData,
                     password: finalPassword,
+                    rut: finalRut,
                     curso: finalCurso,
                     cursos: finalCursos,
                     asignaturas: finalAsignaturas,
@@ -167,10 +170,10 @@ const Administracion: React.FC = () => {
         setUserFormData({ 
             nombreCompleto: user.nombreCompleto, 
             email: user.email, 
-            rut: user.rut, 
+            rut: user.rut || '',
             profile: user.profile,
             password: '', // Always leave blank for security
-            curso: user.curso,
+            curso: user.curso || '',
             cursos: user.cursos || [],
             asignaturas: user.asignaturas || []
         });
