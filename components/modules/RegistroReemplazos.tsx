@@ -10,7 +10,7 @@ import {
   subscribeToProfesores,
   searchReemplazos,
   getReemplazosStats
-} from '../../firebase/reemplazosHelper';
+} from '../../src/firebaseHelpers/reemplazosHelper';
 
 const BLOQUES = Array.from({ length: 12 }, (_, i) => i + 1);
 

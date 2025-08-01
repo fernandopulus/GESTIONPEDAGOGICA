@@ -24,7 +24,7 @@ import {
   CalendarEvent,
   EventType,
   ActividadFocalizadaEvent
-} from '../types';
+} from '../../types'; 
 
 // Colecciones de Firestore
 const PLANIFICACIONES_COLLECTION = 'planificaciones';

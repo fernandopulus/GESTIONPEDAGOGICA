@@ -15,7 +15,8 @@ import {
   saveCalendarEvent,
   checkEventExists,
   getCalendarEventsByUser
-} from '../../firebase/planificacionHelper';
+} from '../../src/firebaseHelpers/planificacionHelper';
+
 
 // ===== HOOKS PERSONALIZADOS =====
 
