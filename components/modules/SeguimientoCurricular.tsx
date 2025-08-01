@@ -109,20 +109,28 @@ const usePlanificacionesGlobales = (currentUser: User) => {
     }, [currentUser]);
 
     useEffect(() => {
-        if (!currentUser?.email) {
+        if (!currentUser?.email && !currentUser?.id) {
             setError('Usuario no autenticado');
             setLoading(false);
             return;
         }
 
         console.log('🔄 Configurando suscripción a planificaciones...');
+        console.log('🔍 Usuario actual:', {
+            email: currentUser.email,
+            id: currentUser.id,
+            profile: currentUser.profile,
+            canViewAll: canViewAllPlans
+        });
         
         try {
             let unsubscribe: (() => void) | undefined;
 
             if (canViewAllPlans) {
                 // SUBDIRECCION ve todas las planificaciones
+                console.log('👑 Cargando todas las planificaciones (vista admin)');
                 unsubscribe = subscribeToAllPlanificaciones((data) => {
+                    console.log('✅ Planificaciones admin cargadas:', data.length);
                     setPlanificaciones(data);
                     setLoading(false);
                     setError(null);
@@ -130,7 +138,9 @@ const usePlanificacionesGlobales = (currentUser: User) => {
             } else {
                 // Otros usuarios solo ven sus planificaciones
                 const userId = currentUser.email || currentUser.id || '';
+                console.log('👤 Cargando planificaciones del usuario:', userId);
                 unsubscribe = subscribeToUserPlanificaciones(userId, (data) => {
+                    console.log('✅ Planificaciones del usuario cargadas:', data.length);
                     setPlanificaciones(data);
                     setLoading(false);
                     setError(null);
@@ -154,6 +164,12 @@ interface SeguimientoCurricularProps {
 }
 
 const SeguimientoCurricular: React.FC<SeguimientoCurricularProps> = ({ currentUser }) => {
+    // LOGS DE DEBUG TEMPORALES
+    console.log('🔍 SeguimientoCurricular - currentUser recibido:', currentUser);
+    console.log('🔍 currentUser.email:', currentUser?.email);
+    console.log('🔍 currentUser.id:', currentUser?.id);
+    console.log('🔍 currentUser.profile:', currentUser?.profile);
+
     const { planificaciones, loading, error, canViewAllPlans } = usePlanificacionesGlobales(currentUser);
     const [selectedNivel, setSelectedNivel] = useState<string>('1º');
     const [openAsignatura, setOpenAsignatura] = useState<string | null>(null);
@@ -182,10 +198,13 @@ const SeguimientoCurricular: React.FC<SeguimientoCurricularProps> = ({ currentUs
     ];
 
     // Verificar autenticación
-    if (!currentUser || !currentUser.email) {
+    if (!currentUser || (!currentUser.email && !currentUser.id)) {
         return (
             <div className="flex justify-center items-center py-8">
-                <p className="text-slate-500 dark:text-slate-400">Error: Usuario no autenticado</p>
+                <div className="text-center">
+                    <p className="text-slate-500 dark:text-slate-400 mb-2">Error: Usuario no autenticado</p>
+                    <p className="text-sm text-slate-400">Datos recibidos: {JSON.stringify(currentUser)}</p>
+                </div>
             </div>
         );
     }

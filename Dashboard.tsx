@@ -147,13 +147,20 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onLogout, onUserUpda
         if (activeModule.name === 'Generador de Actas') return <GeneradorActas />;
 
         if (profile === Profile.SUBDIRECCION) {
-            if (activeModule.name === 'Dashboard') return <DashboardSubdireccion />;
+            if (activeModule.name === 'Dashboard') {
+    console.log('=== DASHBOARD PRINCIPAL DEBUG ===');
+    console.log('🔍 Dashboard principal - currentUser antes de pasar:', currentUser);
+    console.log('🔍 Dashboard principal - profile del usuario:', currentUser?.profile);
+    console.log('🔍 Dashboard principal - email del usuario:', currentUser?.email);
+    console.log('=====================================');
+    return <DashboardSubdireccion currentUser={currentUser} />;
+}
             if (activeModule.name === 'Administración') return <Administracion />;
-            if (activeModule.name === 'Seguimiento Curricular') return <SeguimientoCurricular />;
-            if (activeModule.name === 'Acompañamiento docente') return <AcompanamientoDocente />;
+            if (activeModule.name === 'Seguimiento Curricular') return <SeguimientoCurricular currentUser={currentUser} />;
+            if (activeModule.name === 'Acompañamiento docente') return <AcompanamientoDocente currentUser={currentUser} />;
             if (activeModule.name === 'Análisis Taxonómico') return <AnalisisTaxonomico currentUser={currentUser} />;
             if (activeModule.name === 'Interdisciplinario') return <Interdisciplinario />;
-            if (activeModule.name === 'Registro de inasistencias y reemplazos docentes') return <RegistroReemplazos />;
+            if (activeModule.name === 'Registro de inasistencias y reemplazos docentes') return <RegistroReemplazos currentUser={currentUser} />;
             if (activeModule.name === 'Crear horarios') return <CrearHorarios />;
             if (activeModule.name === 'Seguimiento de acciones pedagógicas') return <SeguimientoAcciones />;
             if (activeModule.name === 'Inclusión') return <Inclusion currentUser={currentUser} />;

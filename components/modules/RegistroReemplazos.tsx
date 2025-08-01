@@ -215,12 +215,15 @@ const StatsCard: React.FC<StatsCardProps> = ({ userId }) => {
 // ===== COMPONENTE PRINCIPAL =====
 
 interface RegistroReemplazosProps {
-  currentUser: { uid: string; nombreCompleto: string };
+  currentUser: User;
 }
 
 const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) => {
-  const { reemplazos, save: saveReemplazoData, remove: deleteReemplazoData, search, loading: reemplazosLoading, error: reemplazosError } = useReemplazos(currentUser.uid);
-  const { profesorNames, loading: profesoresLoading } = useProfesores(currentUser.uid);
+  // Usar email como identificador principal en lugar de uid
+  const userId = currentUser.email || currentUser.id || '';
+  
+  const { reemplazos, save: saveReemplazoData, remove: deleteReemplazoData, search, loading: reemplazosLoading, error: reemplazosError } = useReemplazos(userId);
+  const { profesorNames, loading: profesoresLoading } = useProfesores(userId);
   
   const [formData, setFormData] = useState(initialState);
   const [filter, setFilter] = useState('');
@@ -362,7 +365,7 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
 
   // Verificar que el usuario tiene UID antes de renderizar
 // Verificar que el usuario está autenticado
-  if (!currentUser || !currentUser.email) {
+  if (!currentUser || (!currentUser.email && !currentUser.id)) {
     return (
       <div className="flex justify-center items-center py-8">
         <div className="text-center">
@@ -376,7 +379,7 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Estadísticas del mes */}
-      <StatsCard userId={currentUser.uid} />
+      <StatsCard userId={userId} />
 
       {/* Formulario de registro */}
       <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">

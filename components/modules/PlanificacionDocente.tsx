@@ -1294,7 +1294,7 @@ const { planificaciones, save: savePlan, update: updatePlan, remove: deletePlan,
   
   // Verificar que el usuario tiene UID antes de renderizar
 // Verificar que el usuario está autenticado
-  if (!currentUser || !currentUser.email) {
+  if (!currentUser || (!currentUser.email && !currentUser.id)) {
     return (
       <div className="flex justify-center items-center py-8">
         <div className="text-center">
