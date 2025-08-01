@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useCallback, FormEvent, ChangeEvent } from 'react';
 import { AsignacionHorario, HorariosGenerados, HorarioCelda, User, Profile } from '../../types';
 import { CURSOS, ASIGNATURAS, DIAS_SEMANA, HORARIO_BLOQUES, BLOCK_ALLOCATION_RULES } from '../../constants';
-import { GoogleGenAI, Type } from "@google/genai";
-import { logApiCall } from '../utils/apiLogger';
-
-const ASIGNACIONES_KEY = 'asignacionesHorario';
-const HORARIOS_KEY = 'horariosGenerados';
-const USERS_KEY = 'usuariosLiceo';
+// import { GoogleGenAI } from "@google/generative-ai"; // Se elimina esta línea que causa el error
+import {
+    subscribeToAsignaciones,
+    addAsignacion,
+    deleteAsignacion,
+    saveHorarios,
+    subscribeToHorarios,
+    subscribeToProfesores,
+} from '../../src/firebaseHelpers/horariosHelper'; // AJUSTA la ruta a tu nuevo helper
 
 const HorarioGlobal: React.FC<{ horarios: HorariosGenerados }> = ({ horarios }) => {
     if (Object.keys(horarios).length === 0) {
@@ -75,6 +78,7 @@ const CrearHorarios: React.FC = () => {
     const [selectedCurso, setSelectedCurso] = useState<string>(CURSOS[0]);
 
     const [loading, setLoading] = useState(false);
+    const [dataLoading, setDataLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
 
@@ -85,46 +89,50 @@ const CrearHorarios: React.FC = () => {
     const [aiInstructions, setAiInstructions] = useState<string>('');
 
     useEffect(() => {
-        try {
-            const storedAsignaciones = localStorage.getItem(ASIGNACIONES_KEY);
-            if (storedAsignaciones) setAsignaciones(JSON.parse(storedAsignaciones));
-            
-            const storedHorarios = localStorage.getItem(HORARIOS_KEY);
-            if (storedHorarios) setHorarios(JSON.parse(storedHorarios));
+        setDataLoading(true);
+        const unsubAsignaciones = subscribeToAsignaciones(setAsignaciones);
+        const unsubHorarios = subscribeToHorarios(setHorarios);
+        
+        // La carga de datos se considerará completa DESPUÉS de recibir la lista de profesores.
+        const unsubProfesores = subscribeToProfesores((users) => {
+            const teacherNames = users.map(user => user.nombreCompleto).sort();
+            setProfesores(teacherNames);
+            setDataLoading(false); // <-- CAMBIO CLAVE: Mover esto aquí
+        });
 
-            const usersData = localStorage.getItem(USERS_KEY);
-            if (usersData) {
-                const allUsers: User[] = JSON.parse(usersData);
-                const teacherNames = allUsers
-                    .filter(user => user.profile === Profile.PROFESORADO)
-                    .map(user => user.nombreCompleto)
-                    .sort();
-                setProfesores(teacherNames);
-            }
-
-        } catch (e) {
-            console.error("Error al cargar datos de localStorage", e);
-            setError("No se pudieron cargar los datos guardados.");
-        }
+        return () => {
+            unsubAsignaciones();
+            unsubHorarios();
+            unsubProfesores();
+        };
     }, []);
 
-    const handleAddAsignacion = (e: FormEvent) => {
+    const handleAddAsignacion = async (e: FormEvent) => {
         e.preventDefault();
+        setError(null);
         if (!newAsignacion.curso || !newAsignacion.asignatura || !newAsignacion.profesor) {
             setError("Todos los campos de la asignación son obligatorios.");
             return;
         }
-        const updatedAsignaciones = [...asignaciones, { ...newAsignacion, id: crypto.randomUUID() }];
-        setAsignaciones(updatedAsignaciones);
-        localStorage.setItem(ASIGNACIONES_KEY, JSON.stringify(updatedAsignaciones));
-        setNewAsignacion({ curso: '', asignatura: '', profesor: '' });
-        setError(null);
+        try {
+            // No necesitamos agregar un 'id' aquí, Firestore lo hará.
+            await addAsignacion({ 
+                curso: newAsignacion.curso, 
+                asignatura: newAsignacion.asignatura, 
+                profesor: newAsignacion.profesor 
+            });
+            setNewAsignacion({ curso: '', asignatura: '', profesor: '' });
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Error al guardar la asignación.");
+        }
     };
 
-    const handleDeleteAsignacion = (id: string) => {
-        const updatedAsignaciones = asignaciones.filter(a => a.id !== id);
-        setAsignaciones(updatedAsignaciones);
-        localStorage.setItem(ASIGNACIONES_KEY, JSON.stringify(updatedAsignaciones));
+    const handleDeleteAsignacion = async (id: string) => {
+        try {
+            await deleteAsignacion(id);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Error al eliminar la asignación.");
+        }
     };
 
     const handleGenerateHorario = async () => {
@@ -137,8 +145,8 @@ const CrearHorarios: React.FC = () => {
         setSuccess(null);
 
         try {
-            logApiCall('Crear Horarios');
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
+            const apiKey = ""; 
+            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
             
             const prompt = `
                 Eres un asistente experto en planificación de horarios escolares para un liceo técnico en Chile. 
@@ -187,16 +195,14 @@ const CrearHorarios: React.FC = () => {
                 }
                 Cada clave de primer nivel es un curso. Cada curso tiene claves para cada día de la semana. Cada día tiene claves para cada bloque del 1 al 10. Si un bloque está vacío, usa \`{ "asignatura": null, "profesor": null }\`.
             `;
-
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: { responseMimeType: 'application/json' },
-            });
             
-            const generatedData = JSON.parse(response.text);
-            setHorarios(generatedData);
-            localStorage.setItem(HORARIOS_KEY, JSON.stringify(generatedData));
+            const model = ai.getGenerativeModel({ model: "gemini-pro"});
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+
+            const generatedData = JSON.parse(text);
+            await saveHorarios(generatedData);
             setSuccess("¡Horario generado y guardado con éxito!");
 
         } catch (e) {
@@ -215,11 +221,11 @@ const CrearHorarios: React.FC = () => {
         });
     };
     
-    const handleSaveEdit = () => {
+    const handleSaveEdit = async () => {
         if (!editingCell) return;
         const { dia, bloque } = editingCell;
         
-        const updatedHorarios = { ...horarios };
+        const updatedHorarios = JSON.parse(JSON.stringify(horarios));
         if (!updatedHorarios[selectedCurso]) updatedHorarios[selectedCurso] = {};
         if (!updatedHorarios[selectedCurso][dia]) updatedHorarios[selectedCurso][dia] = {};
         
@@ -228,9 +234,12 @@ const CrearHorarios: React.FC = () => {
             profesor: editValue.profesor || null,
         };
 
-        setHorarios(updatedHorarios);
-        localStorage.setItem(HORARIOS_KEY, JSON.stringify(updatedHorarios));
-        setEditingCell(null);
+        try {
+            await saveHorarios(updatedHorarios);
+            setEditingCell(null);
+        } catch(err) {
+            setError(err instanceof Error ? err.message : "Error al guardar la edición.");
+        }
     };
     
     const inputStyles = "w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400";
@@ -289,7 +298,6 @@ const CrearHorarios: React.FC = () => {
     
     const renderEditionView = () => (
          <div className="space-y-8">
-            {/* 1. Configuración */}
             <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
                 <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">Crear Horarios</h1>
                 <h2 className="text-xl font-bold text-slate-700 dark:text-slate-300 border-b dark:border-slate-600 pb-2 mb-4">🔧 1. Configuración de Asignaciones</h2>
@@ -329,10 +337,8 @@ const CrearHorarios: React.FC = () => {
                 </div>
             </div>
 
-            {/* 2. Generación */}
             <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
                 <h2 className="text-xl font-bold text-slate-700 dark:text-slate-300 border-b dark:border-slate-600 pb-2 mb-4">🧠 2. Generación Automática con IA</h2>
-                
                 <div className="mb-4">
                     <label htmlFor="aiInstructions" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Instrucciones para la IA (Opcional)</label>
                     <textarea
@@ -345,10 +351,9 @@ const CrearHorarios: React.FC = () => {
                         className={inputStyles}
                     />
                 </div>
-
                 <div className="flex items-center space-x-4">
                      <button onClick={handleGenerateHorario} disabled={loading} className="bg-amber-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-amber-600 disabled:bg-slate-400 disabled:cursor-not-allowed flex items-center">
-                        {loading && <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
+                        {loading && <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
                         {loading ? 'Generando...' : 'Generar Horario Completo'}
                     </button>
                     {error && <p className="text-red-600">{error}</p>}
@@ -356,7 +361,6 @@ const CrearHorarios: React.FC = () => {
                 </div>
             </div>
 
-            {/* 3. Visualización */}
             <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
                 <h2 className="text-xl font-bold text-slate-700 dark:text-slate-300 border-b dark:border-slate-600 pb-2 mb-4">📅 3. Visualización y Edición por Curso</h2>
                 <div className="mb-4">
@@ -373,6 +377,10 @@ const CrearHorarios: React.FC = () => {
             </div>
         </div>
     );
+
+    if (dataLoading) {
+        return <div className="text-center py-10">Cargando datos...</div>;
+    }
 
     return (
         <div className="space-y-8 animate-fade-in">
