@@ -114,55 +114,71 @@ const Administracion: React.FC = () => {
     }, []);
 
     const handleUserSubmit = useCallback(async (e: FormEvent) => {
-        e.preventDefault();
-        const { nombreCompleto, email, profile, curso, cursos, asignaturas } = userFormData;
+    e.preventDefault();
+    const { nombreCompleto, email, profile, curso, cursos, asignaturas } = userFormData;
+    
+    if (!nombreCompleto.trim() || !email.trim()) {
+        setUserError('Nombre Completo y Email son obligatorios.');
+        return;
+    }
+    if (profile === Profile.ESTUDIANTE && !curso) {
+        setUserError('El campo "Curso" es obligatorio para el perfil de Estudiante.');
+        return;
+    }
+
+    const finalCurso = profile === Profile.ESTUDIANTE ? normalizeCurso(curso || '') : undefined;
+    const finalCursos = profile === Profile.PROFESORADO ? cursos : undefined;
+    const finalAsignaturas = profile === Profile.PROFESORADO ? asignaturas : undefined;
+    const finalPassword = userFormData.password?.trim() ? userFormData.password.trim() : undefined;
+    const finalRut = userFormData.rut?.trim() ? userFormData.rut.trim() : undefined;
+
+    // Crear objeto base con campos obligatorios
+    const baseUserData = {
+        nombreCompleto: userFormData.nombreCompleto,
+        email: userFormData.email,
+        profile: userFormData.profile,
+    };
+
+    // Agregar campos opcionales solo si tienen valor
+    const userDataToSave: any = { ...baseUserData };
+    
+    if (finalPassword !== undefined) {
+        userDataToSave.password = finalPassword;
+    }
+    
+    if (finalRut !== undefined) {
+        userDataToSave.rut = finalRut;
+    }
+    
+    if (finalCurso !== undefined) {
+        userDataToSave.curso = finalCurso;
+    }
+    
+    if (finalCursos !== undefined) {
+        userDataToSave.cursos = finalCursos;
+    }
+    
+    if (finalAsignaturas !== undefined) {
+        userDataToSave.asignaturas = finalAsignaturas;
+    }
+
+    try {
+        if (editingUserId) {
+            // Actualizar usuario existente
+            await updateUser(userFormData.email, userDataToSave);
+        } else {
+            // Crear nuevo usuario
+            await createUser(userDataToSave);
+        }
         
-        if (!nombreCompleto.trim() || !email.trim()) {
-            setUserError('Nombre Completo y Email son obligatorios.');
-            return;
-        }
-        if (profile === Profile.ESTUDIANTE && !curso) {
-            setUserError('El campo "Curso" es obligatorio para el perfil de Estudiante.');
-            return;
-        }
-
-        const finalCurso = profile === Profile.ESTUDIANTE ? normalizeCurso(curso || '') : undefined;
-        const finalCursos = profile === Profile.PROFESORADO ? cursos : undefined;
-        const finalAsignaturas = profile === Profile.PROFESORADO ? asignaturas : undefined;
-        const finalPassword = userFormData.password?.trim() ? userFormData.password.trim() : undefined;
-        const finalRut = userFormData.rut?.trim() ? userFormData.rut.trim() : undefined;
-
-        try {
-            if (editingUserId) {
-                // Actualizar usuario existente
-                await updateUser(userFormData.email, {
-                    ...userFormData,
-                    password: finalPassword, // Si es undefined, mantendrá la contraseña anterior
-                    rut: finalRut,
-                    curso: finalCurso,
-                    cursos: finalCursos,
-                    asignaturas: finalAsignaturas,
-                });
-            } else {
-                // Crear nuevo usuario
-                await createUser({
-                    ...userFormData,
-                    password: finalPassword,
-                    rut: finalRut,
-                    curso: finalCurso,
-                    cursos: finalCursos,
-                    asignaturas: finalAsignaturas,
-                });
-            }
-            
-            // Recargar usuarios después de la operación
-            await fetchUsers();
-            handleUserResetForm();
-        } catch (err) {
-            console.error("Error al guardar usuario:", err);
-            setUserError("Error al guardar el usuario en la nube.");
-        }
-    }, [userFormData, editingUserId, fetchUsers, handleUserResetForm]);
+        // Recargar usuarios después de la operación
+        await fetchUsers();
+        handleUserResetForm();
+    } catch (err) {
+        console.error("Error al guardar usuario:", err);
+        setUserError("Error al guardar el usuario en la nube.");
+    }
+}, [userFormData, editingUserId, fetchUsers, handleUserResetForm]);
 
     const handleUserEdit = useCallback((user: User) => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
