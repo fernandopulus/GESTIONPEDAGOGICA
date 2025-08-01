@@ -131,7 +131,7 @@ const AcompanamientoDocente: React.FC = () => {
 
         try {
             logApiCall('Acompañamiento - Consolidar Feedback');
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
+            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: prompt,

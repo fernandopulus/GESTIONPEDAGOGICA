@@ -404,7 +404,7 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
     
     try {
       logApiCall('Planificación - Actividad Calendario');
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
       const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
       
       const newActividad: Omit<ActividadPlanificada, 'id'> = {
@@ -820,6 +820,12 @@ const { planificaciones, save: savePlan, update: updatePlan, remove: deletePlan,
     setLoading(true);
     setError(null);
 
+      // LOGS DE DEBUG - AGREGAR ESTAS LÍNEAS
+    console.log('🔍 Debug API Key:');
+    console.log('VITE_GOOGLE_AI_API_KEY:', import.meta.env.VITE_GOOGLE_AI_API_KEY);
+    console.log('VITE_GEMINI_API_KEY:', import.meta.env.VITE_GEMINI_API_KEY);
+    console.log('Todas las variables env:', import.meta.env);
+
     if(!unidadFormData.contenidos || !unidadFormData.nombreUnidad){
       setError("Los campos 'Nombre de Unidad' y 'Contenidos Clave' son obligatorios.");
       setLoading(false);
@@ -828,7 +834,7 @@ const { planificaciones, save: savePlan, update: updatePlan, remove: deletePlan,
 
     try {
       logApiCall('Planificación - Unidad');
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
       const prompt = buildUnidadPrompt();
       
       const responseSchema = {
@@ -912,7 +918,7 @@ const { planificaciones, save: savePlan, update: updatePlan, remove: deletePlan,
 
     try {
       logApiCall('Planificación - Utilizar Clase');
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
       const schema = {
         type: Type.OBJECT,
         properties: {

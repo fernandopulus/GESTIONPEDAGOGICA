@@ -36,7 +36,7 @@ const SopaDeLetras: React.FC<{ onBack: () => void; }> = ({ onBack }) => {
         if (!aiTheme.trim()) return;
         setLoading(p => ({ ...p, ai: true }));
         try {
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
+            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
             const prompt = `Genera una lista de ${numWords} palabras clave, en español, relacionadas con el tema "${aiTheme}". Las palabras no deben contener espacios ni caracteres especiales.`;
             const schema = { type: Type.OBJECT, properties: { palabras: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ["palabras"] };
             const response = await ai.models.generateContent({

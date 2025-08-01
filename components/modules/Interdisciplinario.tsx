@@ -259,7 +259,7 @@ const PlanificacionForm: React.FC<{
         }
 
         try {
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
+            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
             const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
             setFormData(prev => ({ ...prev, [targetField]: response.text.replace(/(\*\*|\*)/g, '') }));
         } catch (error) {

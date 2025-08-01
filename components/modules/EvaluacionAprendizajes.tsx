@@ -340,7 +340,7 @@ const PruebasSubmodule: React.FC = () => {
 
         try {
             logApiCall('Evaluación - Pruebas');
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
+            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: prompt,
@@ -802,7 +802,7 @@ const RubricasSubmodule: React.FC<{
 
         try {
             logApiCall('Evaluación - Rúbricas');
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
+            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: prompt,
@@ -857,7 +857,7 @@ const RubricasSubmodule: React.FC<{
 
         try {
             logApiCall('Evaluación - Rúbricas (Añadir Dimensión)');
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
+            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: prompt,
@@ -1136,7 +1136,7 @@ const RubricasInteractivas: React.FC<{
         
         try {
             logApiCall('Evaluación - Rúbricas Interactivas (Feedback)');
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
+            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
             const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
             setModifiedRubrica(prev => {
                 if (!prev) return null;

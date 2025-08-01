@@ -150,7 +150,7 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
                     puntajeMaxParcial += 3;
                     try {
                         logApiCall('Autoaprendizaje - Evaluar Desarrollo');
-                        const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
+                        const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
                         const prompt = `Evalúa la siguiente respuesta de un estudiante a la pregunta de desarrollo, basándote en la rúbrica proporcionada. Asigna un puntaje de 0 a 3. Pregunta: "${devContent.pregunta}". Rúbrica: "${devContent.rubrica}". Respuesta: "${devAnswer[i] || ''}". Proporciona también una frase corta de feedback.`;
                         const schema = { type: Type.OBJECT, properties: { puntaje: { type: Type.INTEGER, description: "Un puntaje de 0 a 3." }, feedback: { type: Type.STRING } }, required: ["puntaje", "feedback"] };
                         const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: "application/json", responseSchema: schema }});
@@ -433,7 +433,7 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
         
         try {
             logApiCall('Autoaprendizaje - Retroalimentación Detallada');
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
+            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
             const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: feedbackPrompt, config: { responseMimeType: "application/json" }});
             detailedFeedback = JSON.parse(response.text.trim().replace(/(\*\*|\*)/g, ''));
         } catch (e) {
