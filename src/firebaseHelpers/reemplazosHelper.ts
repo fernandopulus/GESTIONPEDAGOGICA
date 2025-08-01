@@ -1,25 +1,24 @@
 // src/firebaseHelpers/reemplazosHelper.ts
 
-import { 
-  collection, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  getDocs, 
+import {
+  collection,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  getDocs,
   getDoc,
-  query, 
-  where, 
-  orderBy, 
+  query,
+  where,
+  orderBy,
   limit,
   onSnapshot,
   Timestamp,
-  writeBatch,
-  startAfter,
-  QueryDocumentSnapshot
 } from 'firebase/firestore';
-import { db } from './config';
+import { db } from './config'; // Asegúrate de que la ruta a tu config sea correcta
 import { Reemplazo, User, Profile } from '../../types';
+
+// --- INTERFACES Y CONSTANTES ---
 
 // Interfaz extendida para Firebase (agrega campos de metadatos)
 interface ReemplazoFirebase extends Reemplazo {
@@ -32,34 +31,46 @@ interface ReemplazoFirebase extends Reemplazo {
 const REEMPLAZOS_COLLECTION = 'reemplazos_docentes';
 const USERS_COLLECTION = 'usuarios';
 
-// Helper para convertir datos de Firestore
-const convertFirestoreReemplazo = (doc: any): ReemplazoFirebase => {
-  const data = doc.data();
+// --- HELPERS DE CONVERSIÓN ---
+
+/**
+ * Convierte un documento de Firestore a un objeto de tipo Reemplazo.
+ */
+const convertFirestoreReemplazo = (docSnapshot: any): ReemplazoFirebase => {
+  const data = docSnapshot.data();
   return {
-    id: doc.id,
+    id: docSnapshot.id,
     ...data,
-    fechaCreacion: data.fechaCreacion?.toDate?.()?.toISOString() || data.fechaCreacion,
-    fechaActualizacion: data.fechaActualizacion?.toDate?.()?.toISOString() || data.fechaActualizacion
+    fechaCreacion: data.fechaCreacion?.toDate?.().toISOString() || data.fechaCreacion,
+    fechaActualizacion: data.fechaActualizacion?.toDate?.().toISOString() || data.fechaActualizacion,
   };
 };
 
-const convertFirestoreUser = (doc: any): User => {
-  const data = doc.data();
+/**
+ * Convierte un documento de Firestore a un objeto de tipo User.
+ */
+const convertFirestoreUser = (docSnapshot: any): User => {
+  const data = docSnapshot.data();
   return {
-    id: doc.id,
-    ...data
+    id: docSnapshot.id,
+    ...data,
   };
 };
 
-// ===== REEMPLAZOS =====
+// =================================
+// ===== GESTIÓN DE REEMPLAZOS =====
+// =================================
 
+/**
+ * Guarda un nuevo registro de reemplazo en Firestore.
+ */
 export const saveReemplazo = async (reemplazo: Omit<Reemplazo, 'id'>, userId: string): Promise<string> => {
   try {
     const reemplazoData = {
       ...reemplazo,
-      userId,
+      userId, // Asocia el registro al usuario que lo crea
       fechaCreacion: Timestamp.fromDate(new Date()),
-      fechaActualizacion: Timestamp.fromDate(new Date())
+      fechaActualizacion: Timestamp.fromDate(new Date()),
     };
 
     const docRef = await addDoc(collection(db, REEMPLAZOS_COLLECTION), reemplazoData);
@@ -70,19 +81,21 @@ export const saveReemplazo = async (reemplazo: Omit<Reemplazo, 'id'>, userId: st
   }
 };
 
+/**
+ * Actualiza un registro de reemplazo existente.
+ */
 export const updateReemplazo = async (id: string, updates: Partial<Reemplazo>, userId: string): Promise<void> => {
   try {
     const docRef = doc(db, REEMPLAZOS_COLLECTION, id);
-    
-    // Verificar que el documento pertenece al usuario
     const docSnap = await getDoc(docRef);
+
     if (!docSnap.exists() || docSnap.data().userId !== userId) {
       throw new Error('No tienes permisos para actualizar este reemplazo');
     }
 
     await updateDoc(docRef, {
       ...updates,
-      fechaActualizacion: Timestamp.fromDate(new Date())
+      fechaActualizacion: Timestamp.fromDate(new Date()),
     });
   } catch (error) {
     console.error('Error al actualizar reemplazo:', error);
@@ -90,11 +103,14 @@ export const updateReemplazo = async (id: string, updates: Partial<Reemplazo>, u
   }
 };
 
+/**
+ * Elimina un registro de reemplazo.
+ */
 export const deleteReemplazo = async (id: string, userId: string): Promise<void> => {
   try {
     const docRef = doc(db, REEMPLAZOS_COLLECTION, id);
-    
     const docSnap = await getDoc(docRef);
+
     if (!docSnap.exists() || docSnap.data().userId !== userId) {
       throw new Error('No tienes permisos para eliminar este reemplazo');
     }
@@ -106,7 +122,14 @@ export const deleteReemplazo = async (id: string, userId: string): Promise<void>
   }
 };
 
-export const getReemplazosByUser = async (userId: string, limitCount: number = 50): Promise<ReemplazoFirebase[]> => {
+/**
+ * Se suscribe en tiempo real a los reemplazos de un usuario específico.
+ */
+export const subscribeToReemplazos = (
+  userId: string,
+  callback: (reemplazos: ReemplazoFirebase[]) => void,
+  limitCount: number = 50
+): (() => void) => {
   try {
     const q = query(
       collection(db, REEMPLAZOS_COLLECTION),
@@ -115,98 +138,88 @@ export const getReemplazosByUser = async (userId: string, limitCount: number = 5
       limit(limitCount)
     );
 
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(convertFirestoreReemplazo);
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const reemplazos = snapshot.docs.map(convertFirestoreReemplazo);
+        callback(reemplazos);
+      },
+      (error) => {
+        console.error('Error en suscripción a reemplazos:', error);
+        callback([]);
+      }
+    );
   } catch (error) {
-    console.error('Error al obtener reemplazos:', error);
-    return [];
+    console.error('Error al crear la suscripción de reemplazos:', error);
+    return () => {}; // Devuelve una función de desuscripción vacía en caso de error inicial
   }
 };
 
-export const subscribeToReemplazos = (
-  userId: string, 
-  callback: (reemplazos: ReemplazoFirebase[]) => void,
-  limitCount: number = 50
-): (() => void) => {
-  const q = query(
-    collection(db, REEMPLAZOS_COLLECTION),
-    where('userId', '==', userId),
-    orderBy('diaAusencia', 'desc'),
-    limit(limitCount)
-  );
-
-  return onSnapshot(q, (snapshot) => {
-    const reemplazos = snapshot.docs.map(convertFirestoreReemplazo);
-    callback(reemplazos);
-  }, (error) => {
-    console.error('Error en suscripción a reemplazos:', error);
-  });
-};
-
-// ===== PROFESORES (SECCIÓN CORREGIDA) =====
+// ===============================
+// ===== GESTIÓN DE PROFESORES =====
+// ===============================
 
 /**
  * Se suscribe en tiempo real a la lista de usuarios que tienen el perfil de "Profesorado".
- * Esta función NO depende del usuario actual, ya que debe obtener la lista completa para los menús desplegables.
+ * Esta función es para obtener la lista completa de docentes para menús desplegables.
  *
  * @param callback La función que se ejecutará cada vez que la lista de profesores cambie.
  * @returns Una función para cancelar la suscripción y evitar fugas de memoria.
  */
-export const subscribeToProfesores = (
-  callback: (profesores: User[]) => void
-): (() => void) => {
-  
-  // La consulta correcta: trae todos los documentos de la colección 'usuarios'
-  // donde el campo 'profile' es exactamente 'Profesorado'.
-  // Usamos el enum 'Profile' importado para evitar errores de tipeo.
-  const q = query(
-    collection(db, USERS_COLLECTION), 
-    where('profile', '==', Profile.PROFESORADO)
-  );
+export const subscribeToProfesores = (callback: (profesores: User[]) => void): (() => void) => {
+  try {
+    // La consulta correcta: trae todos los documentos de la colección 'usuarios'
+    // donde el campo 'profile' es exactamente 'Profesorado'.
+    const q = query(collection(db, USERS_COLLECTION), where('profile', '==', Profile.PROFESORADO));
 
-  const unsubscribe = onSnapshot(q, 
-    (querySnapshot) => {
-      // Mapeamos cada documento al tipo 'User' usando el helper
-      const profesores = querySnapshot.docs.map(convertFirestoreUser);
-      
-      // Entregamos la lista de profesores al componente que nos llamó
-      callback(profesores);
-    }, 
-    (error) => {
-      // Es crucial manejar los errores aquí. Si las reglas de seguridad fallan,
-      // el error se mostrará en la consola del navegador.
-      console.error("Error al obtener la lista de profesores:", error);
-      // En caso de error, devolvemos un array vacío para no romper la UI.
-      callback([]);
-    }
-  );
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        // Mapeamos cada documento al tipo 'User' usando el helper
+        const profesores = querySnapshot.docs.map(convertFirestoreUser);
+        // Entregamos la lista de profesores al componente que nos llamó
+        callback(profesores);
+      },
+      (error) => {
+        // Es crucial manejar los errores aquí. Si las reglas de seguridad fallan,
+        // el error se mostrará en la consola del navegador.
+        console.error('Error al obtener la lista de profesores:', error);
+        // En caso de error, devolvemos un array vacío para no romper la UI.
+        callback([]);
+      }
+    );
 
-  // Devolvemos la función de desuscripción que nos da onSnapshot.
-  // React la usará para limpiar el listener cuando el componente se desmonte.
-  return unsubscribe;
+    // Devolvemos la función de desuscripción que nos da onSnapshot.
+    return unsubscribe;
+  } catch (error) {
+    console.error('Error al crear la suscripción de profesores:', error);
+    return () => {};
+  }
 };
 
+// ==================================
 // ===== ESTADÍSTICAS Y REPORTES =====
+// ==================================
 
-export const getReemplazosStats = async (userId: string, month?: string, year?: string) => {
+/**
+ * Obtiene estadísticas agregadas de los reemplazos.
+ */
+export const getReemplazosStats = async (userId: string) => {
   try {
-    let q = query(
-      collection(db, REEMPLAZOS_COLLECTION),
-      where('userId', '==', userId)
-    );
+    const q = query(collection(db, REEMPLAZOS_COLLECTION), where('userId', '==', userId));
 
     const querySnapshot = await getDocs(q);
     const reemplazos = querySnapshot.docs.map(convertFirestoreReemplazo);
 
     const totalReemplazos = reemplazos.length;
-    const horasRealizadas = reemplazos.filter(r => r.resultado === 'Hora realizada').length;
-    const horasCubiertas = reemplazos.filter(r => r.resultado === 'Hora cubierta, no realizada').length;
-    
+    const horasRealizadas = reemplazos.filter((r) => r.resultado === 'Hora realizada').length;
+    const horasCubiertas = reemplazos.filter((r) => r.resultado === 'Hora cubierta, no realizada').length;
+
     return {
       totalReemplazos,
       horasRealizadas,
       horasCubiertas,
-      porcentajeRealizadas: totalReemplazos > 0 ? (horasRealizadas / totalReemplazos) * 100 : 0
+      porcentajeRealizadas: totalReemplazos > 0 ? (horasRealizadas / totalReemplazos) * 100 : 0,
     };
   } catch (error) {
     console.error('Error al obtener estadísticas:', error);
@@ -214,33 +227,39 @@ export const getReemplazosStats = async (userId: string, month?: string, year?: 
   }
 };
 
+// ===================
 // ===== UTILIDADES =====
+// ===================
 
-export const searchReemplazos = async (
-  userId: string,
-  searchTerm: string
-): Promise<ReemplazoFirebase[]> => {
+/**
+ * Busca en los reemplazos de un usuario. El filtro se aplica en el cliente.
+ */
+export const searchReemplazos = async (userId: string, searchTerm: string): Promise<ReemplazoFirebase[]> => {
   try {
+    if (!searchTerm.trim()) return [];
+
     const q = query(
       collection(db, REEMPLAZOS_COLLECTION),
       where('userId', '==', userId),
       orderBy('diaAusencia', 'desc'),
-      limit(100)
+      limit(100) // Limita la búsqueda a los 100 registros más recientes
     );
 
     const querySnapshot = await getDocs(q);
     const allReemplazos = querySnapshot.docs.map(convertFirestoreReemplazo);
 
-    // Filtrar en el cliente. Para datasets muy grandes, considera usar un servicio de búsqueda como Algolia.
+    // Para datasets muy grandes, considera usar un servicio de búsqueda como Algolia.
     const searchTermLower = searchTerm.toLowerCase();
-    
-    return allReemplazos.filter(reemplazo => {
-      return reemplazo.docenteAusente.toLowerCase().includes(searchTermLower) ||
-             reemplazo.docenteReemplazante.toLowerCase().includes(searchTermLower) ||
-             reemplazo.curso.toLowerCase().includes(searchTermLower) ||
-             reemplazo.diaAusencia.includes(searchTermLower) ||
-             reemplazo.asignaturaAusente.toLowerCase().includes(searchTermLower) ||
-             reemplazo.asignaturaReemplazante.toLowerCase().includes(searchTermLower);
+
+    return allReemplazos.filter((reemplazo) => {
+      return (
+        reemplazo.docenteAusente.toLowerCase().includes(searchTermLower) ||
+        reemplazo.docenteReemplazante.toLowerCase().includes(searchTermLower) ||
+        reemplazo.curso.toLowerCase().includes(searchTermLower) ||
+        reemplazo.diaAusencia.includes(searchTermLower) ||
+        reemplazo.asignaturaAusente.toLowerCase().includes(searchTermLower) ||
+        reemplazo.asignaturaReemplazante.toLowerCase().includes(searchTermLower)
+      );
     });
   } catch (error) {
     console.error('Error en búsqueda de reemplazos:', error);

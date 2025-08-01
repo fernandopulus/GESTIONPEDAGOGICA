@@ -53,9 +53,9 @@ const EventModal: React.FC<{
                 horario: '',
                 responsable: '',
                 cursos: [],
-            } as Partial<CalendarEvent>);
+            });
         }
-    }, [event]);
+    }, [event, isOpen]);
     
     const inputStyles = "w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400";
 
@@ -80,49 +80,63 @@ const EventModal: React.FC<{
     const handleSubmit = (e: FormEvent) => {
         e.preventDefault();
         
+        let eventData: Omit<CalendarEvent, 'id'>;
+
         switch (formState.type) {
             case EventType.EVALUACION:
-                onSave({
+                const evaluacionData: Omit<EvaluacionEvent, 'id'> = {
                     date,
                     type: EventType.EVALUACION,
                     subtype: formState.subtype!,
                     asignatura: formState.asignatura!,
                     curso: formState.curso!,
                     contenidos: formState.contenidos!,
-                    enlace: (formState.subtype === EvaluacionSubtype.RUBRICA || formState.subtype === EvaluacionSubtype.PAUTA_COTEJO) ? formState.enlace : undefined,
-                } as Omit<EvaluacionEvent, 'id'>);
+                };
+
+                // Condicionalmente añadir el campo 'enlace' solo si es relevante y tiene valor
+                if ((formState.subtype === EvaluacionSubtype.RUBRICA || formState.subtype === EvaluacionSubtype.PAUTA_COTEJO) && formState.enlace?.trim()) {
+                    evaluacionData.enlace = formState.enlace.trim();
+                }
+                
+                eventData = evaluacionData;
                 break;
+
             case EventType.ACTO:
-                onSave({
+                eventData = {
                     date,
                     type: EventType.ACTO,
                     responsables: formState.responsables!,
                     ubicacion: formState.ubicacion!,
                     horario: formState.horario!,
-                } as Omit<ActoEvent, 'id'>);
+                };
                 break;
+
             case EventType.ACTIVIDAD_FOCALIZADA:
-                onSave({
+                eventData = {
                     date,
                     type: EventType.ACTIVIDAD_FOCALIZADA,
                     responsables: formState.responsables!,
                     ubicacion: formState.ubicacion!,
                     horario: formState.horario!,
-                } as Omit<ActividadFocalizadaEvent, 'id'>);
+                };
                 break;
+
             case EventType.SALIDA_PEDAGOGICA:
-                onSave({
+                eventData = {
                     date,
                     type: EventType.SALIDA_PEDAGOGICA,
                     responsable: formState.responsable!,
                     ubicacion: formState.ubicacion!,
                     cursos: formState.cursos!,
-                } as Omit<SalidaPedagogicaEvent, 'id'>);
+                };
                 break;
+
             default:
-                // Should not happen
-                break;
+                console.error("Tipo de evento no reconocido");
+                return;
         }
+        
+        onSave(eventData);
     };
 
     if (!isOpen) return null;
@@ -156,12 +170,12 @@ const EventModal: React.FC<{
                         </div>
                         <div>
                             <label htmlFor="contenidos" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Contenidos</label>
-                            <textarea id="contenidos" name="contenidos" value={formState.contenidos} onChange={handleChange} required rows={3} className={inputStyles}></textarea>
+                            <textarea id="contenidos" name="contenidos" value={formState.contenidos || ''} onChange={handleChange} required rows={3} className={inputStyles}></textarea>
                         </div>
                         {(formState.subtype === EvaluacionSubtype.RUBRICA || formState.subtype === EvaluacionSubtype.PAUTA_COTEJO) && (
                             <div>
                                 <label htmlFor="enlace" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Enlace al Documento (URL)</label>
-                                <input id="enlace" name="enlace" type="url" value={formState.enlace} onChange={handleChange} placeholder="https://..." className={inputStyles} />
+                                <input id="enlace" name="enlace" type="url" value={formState.enlace || ''} onChange={handleChange} placeholder="https://..." className={inputStyles} />
                             </div>
                         )}
                     </>
@@ -172,15 +186,15 @@ const EventModal: React.FC<{
                     <>
                         <div>
                             <label htmlFor="responsables" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Responsables</label>
-                            <input id="responsables" name="responsables" type="text" value={formState.responsables} onChange={handleChange} required className={inputStyles} />
+                            <input id="responsables" name="responsables" type="text" value={formState.responsables || ''} onChange={handleChange} required className={inputStyles} />
                         </div>
                         <div>
                             <label htmlFor="ubicacion" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Ubicación</label>
-                            <input id="ubicacion" name="ubicacion" type="text" value={formState.ubicacion} onChange={handleChange} required className={inputStyles} />
+                            <input id="ubicacion" name="ubicacion" type="text" value={formState.ubicacion || ''} onChange={handleChange} required className={inputStyles} />
                         </div>
                         <div>
                             <label htmlFor="horario" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Horario</label>
-                            <input id="horario" name="horario" type="text" value={formState.horario} onChange={handleChange} required className={inputStyles} />
+                            <input id="horario" name="horario" type="text" value={formState.horario || ''} onChange={handleChange} required className={inputStyles} />
                         </div>
                     </>
                 );
@@ -189,11 +203,11 @@ const EventModal: React.FC<{
                      <>
                         <div>
                             <label htmlFor="responsable" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Responsable</label>
-                            <input id="responsable" name="responsable" type="text" value={formState.responsable} onChange={handleChange} required className={inputStyles} />
+                            <input id="responsable" name="responsable" type="text" value={formState.responsable || ''} onChange={handleChange} required className={inputStyles} />
                         </div>
                         <div>
                             <label htmlFor="ubicacion" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Ubicación/Destino</label>
-                            <input id="ubicacion" name="ubicacion" type="text" value={formState.ubicacion} onChange={handleChange} required className={inputStyles} />
+                            <input id="ubicacion" name="ubicacion" type="text" value={formState.ubicacion || ''} onChange={handleChange} required className={inputStyles} />
                         </div>
                          <fieldset>
                             <legend className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Cursos Involucrados</legend>
@@ -285,7 +299,6 @@ const CalendarioAcademico: React.FC<CalendarioAcademicoProps> = ({ profile }) =>
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
 
-    // Cargar eventos desde Firestore
     const fetchEvents = useCallback(async () => {
         setLoading(true);
         try {
@@ -361,19 +374,17 @@ const CalendarioAcademico: React.FC<CalendarioAcademicoProps> = ({ profile }) =>
         setModalLoading(true);
         try {
             if (editingEvent) {
-                // Actualizar evento existente
                 await updateEvent(editingEvent.id, eventData);
             } else {
-                // Crear nuevo evento
                 await createEvent(eventData);
             }
             
-            // Recargar eventos después de la operación
             await fetchEvents();
             setModalOpen(false);
         } catch (err) {
             console.error("Error al guardar evento:", err);
-            setError("Error al guardar el evento en la nube.");
+            const errorMessage = err instanceof Error ? err.message : "Error desconocido";
+            setError(`Error al guardar el evento: ${errorMessage}`);
         } finally {
             setModalLoading(false);
         }
@@ -385,11 +396,12 @@ const CalendarioAcademico: React.FC<CalendarioAcademicoProps> = ({ profile }) =>
         setModalLoading(true);
         try {
             await deleteEvent(editingEvent.id);
-            await fetchEvents(); // Recargar después de eliminar
+            await fetchEvents();
             setModalOpen(false);
         } catch (err) {
             console.error("Error al eliminar evento:", err);
-            setError("No se pudo eliminar el evento en la nube.");
+            const errorMessage = err instanceof Error ? err.message : "Error desconocido";
+            setError(`No se pudo eliminar el evento: ${errorMessage}`);
         } finally {
             setModalLoading(false);
         }
@@ -423,7 +435,6 @@ const CalendarioAcademico: React.FC<CalendarioAcademicoProps> = ({ profile }) =>
                 </div>
             </div>
 
-            {/* Filters */}
             <div>
                  <h2 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">Filtrar por tipo de evento:</h2>
                  <div className="flex flex-wrap gap-2 items-center">
@@ -440,7 +451,6 @@ const CalendarioAcademico: React.FC<CalendarioAcademicoProps> = ({ profile }) =>
                  </div>
             </div>
 
-            {/* Calendar */}
             <div className="border dark:border-slate-700 rounded-lg overflow-hidden">
                 <header className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-700/50 border-b dark:border-slate-700">
                     <button onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() - 1)))} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300">

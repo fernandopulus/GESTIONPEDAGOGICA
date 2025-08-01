@@ -79,15 +79,13 @@ const useReemplazos = (userId: string) => {
   return { reemplazos, loading, error, save, remove, search };
 };
 
-// Hook para manejar profesores con Firebase
-// El código nuevo y correcto
-const useProfesores = (userId: string) => {
+// Hook para manejar profesores con Firebase (CORREGIDO)
+const useProfesores = () => {
   const [profesores, setProfesores] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // La llamada a la función ahora es correcta: solo se le pasa el callback.
-    // El userId ya no es necesario para esta operación.
+    // Se llama a la función SIN el userId porque necesitamos todos los profesores.
     const unsubscribe = subscribeToProfesores((data) => {
       setProfesores(data);
       setLoading(false);
@@ -96,15 +94,7 @@ const useProfesores = (userId: string) => {
     // Devolvemos la función de desuscripción para que React limpie el listener.
     return unsubscribe;
 
-  }, []); // El array de dependencias ahora está vacío porque la suscripción no depende de nada.
-
-  const profesorNames = useMemo(() => 
-    profesores.map(p => p.nombreCompleto).sort(), 
-    [profesores]
-  );
-
-  return { profesores, profesorNames, loading };
-};
+  }, []); // El array de dependencias está vacío porque la suscripción no depende de props o estado.
 
   const profesorNames = useMemo(() => 
     profesores.map(p => p.nombreCompleto).sort(), 
@@ -169,7 +159,7 @@ const StatsCard: React.FC<StatsCardProps> = ({ userId }) => {
       const month = (currentDate.getMonth() + 1).toString();
       const year = currentDate.getFullYear().toString();
       
-      const monthlyStats = await getReemplazosStats(userId, month, year);
+      const monthlyStats = await getReemplazosStats(userId);
       setStats(monthlyStats);
     } catch (error) {
       console.error('Error al cargar estadísticas:', error);
@@ -234,7 +224,8 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
   const userId = currentUser.email || currentUser.id || '';
   
   const { reemplazos, save: saveReemplazoData, remove: deleteReemplazoData, search, loading: reemplazosLoading, error: reemplazosError } = useReemplazos(userId);
-  const { profesorNames, loading: profesoresLoading } = useProfesores(userId);
+  // La llamada a useProfesores ya no necesita el userId
+  const { profesorNames, loading: profesoresLoading } = useProfesores();
   
   const [formData, setFormData] = useState(initialState);
   const [filter, setFilter] = useState('');
@@ -305,14 +296,12 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
       return;
     }
 
-    // Validar que no sea el mismo docente
     if (docenteAusente === docenteReemplazante) {
       setError('El docente ausente y el reemplazante no pueden ser la misma persona.');
       setIsSubmitting(false);
       return;
     }
 
-    // Validar fecha
     const selectedDate = new Date(diaAusencia);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -338,19 +327,19 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
       await saveReemplazoData(newReemplazo);
       setFormData(initialState);
       
-      // Mostrar mensaje de éxito
       const message = resultado === 'Hora realizada' 
         ? '✅ Reemplazo registrado - Hora realizada' 
         : '⚠️ Reemplazo registrado - Hora cubierta, no realizada';
       
-      // Crear notificación temporal
       const notification = document.createElement('div');
       notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
       notification.textContent = message;
       document.body.appendChild(notification);
       
       setTimeout(() => {
-        document.body.removeChild(notification);
+        if (document.body.contains(notification)) {
+            document.body.removeChild(notification);
+        }
       }, 3000);
 
     } catch (error) {
@@ -374,8 +363,6 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
 
   const inputStyles = "w-full border-slate-300 rounded-md shadow-sm focus:ring-amber-400 focus:border-amber-400 dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400 disabled:opacity-50 disabled:cursor-not-allowed";
 
-  // Verificar que el usuario tiene UID antes de renderizar
-// Verificar que el usuario está autenticado
   if (!currentUser || (!currentUser.email && !currentUser.id)) {
     return (
       <div className="flex justify-center items-center py-8">
@@ -389,10 +376,8 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
 
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* Estadísticas del mes */}
       <StatsCard userId={userId} />
 
-      {/* Formulario de registro */}
       <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
         <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">Registro de Inasistencias y Reemplazos</h1>
         <p className="text-slate-500 dark:text-slate-400 mb-6">Complete el formulario para registrar una nueva suplencia.</p>
@@ -405,7 +390,6 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Columna Docente Ausente */}
               <div className="space-y-4">
                 <h2 className="text-xl font-bold text-slate-700 dark:text-slate-300 border-b dark:border-slate-600 pb-2">Docente Ausente</h2>
                 <div>
@@ -478,7 +462,6 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
                 />
               </div>
 
-              {/* Columna Docente Reemplazante */}
               <div className="space-y-4">
                 <h2 className="text-xl font-bold text-slate-700 dark:text-slate-300 border-b dark:border-slate-600 pb-2">Docente Reemplazante</h2>
                 <div>
@@ -514,7 +497,6 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
                   </select>
                 </div>
 
-                {/* Preview del resultado */}
                 {formData.asignaturaAusente && formData.asignaturaReemplazante && (
                   <div className="mt-6 p-4 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600">
                     <h3 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Vista Previa del Resultado:</h3>
@@ -563,11 +545,9 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
         )}
       </div>
 
-      {/* Historial de reemplazos */}
       <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
         <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">Historial de Reemplazos</h2>
         
-        {/* Buscador */}
         <div className="mb-6">
           <div className="relative">
             <input
@@ -684,7 +664,6 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
           </div>
         )}
 
-        {/* Información adicional */}
         {filteredReemplazos.length > 0 && !filter && (
           <div className="mt-4 text-sm text-slate-500 dark:text-slate-400 text-center">
             Mostrando los últimos {filteredReemplazos.length} registros
