@@ -1,4 +1,5 @@
 // src/firebaseHelpers/reemplazosHelper.ts
+
 import { 
   collection, 
   doc, 
@@ -93,7 +94,6 @@ export const deleteReemplazo = async (id: string, userId: string): Promise<void>
   try {
     const docRef = doc(db, REEMPLAZOS_COLLECTION, id);
     
-    // Verificar que el documento pertenece al usuario
     const docSnap = await getDoc(docRef);
     if (!docSnap.exists() || docSnap.data().userId !== userId) {
       throw new Error('No tienes permisos para eliminar este reemplazo');
@@ -143,28 +143,47 @@ export const subscribeToReemplazos = (
   });
 };
 
-// ===== PROFESORES =====
+// ===== PROFESORES (SECCIÓN CORREGIDA) =====
 
-export const getProfesoresByUser = async (userId: string): Promise<User[]> => {
-  try {
-    // Por ahora retornamos array vacío ya que no sabemos cómo están estructurados los usuarios en tu DB
-    // Puedes ajustar esta query según tu estructura de datos
-    console.log('Obteniendo profesores para userId:', userId);
-    return [];
-  } catch (error) {
-    console.error('Error al obtener profesores:', error);
-    return [];
-  }
-};
-
+/**
+ * Se suscribe en tiempo real a la lista de usuarios que tienen el perfil de "Profesorado".
+ * Esta función NO depende del usuario actual, ya que debe obtener la lista completa para los menús desplegables.
+ *
+ * @param callback La función que se ejecutará cada vez que la lista de profesores cambie.
+ * @returns Una función para cancelar la suscripción y evitar fugas de memoria.
+ */
 export const subscribeToProfesores = (
-  userId: string, 
   callback: (profesores: User[]) => void
 ): (() => void) => {
-  // Por ahora retornamos una función vacía
-  // Puedes implementar esto cuando tengas la estructura de usuarios definida
-  callback([]);
-  return () => {};
+  
+  // La consulta correcta: trae todos los documentos de la colección 'usuarios'
+  // donde el campo 'profile' es exactamente 'Profesorado'.
+  // Usamos el enum 'Profile' importado para evitar errores de tipeo.
+  const q = query(
+    collection(db, USERS_COLLECTION), 
+    where('profile', '==', Profile.PROFESORADO)
+  );
+
+  const unsubscribe = onSnapshot(q, 
+    (querySnapshot) => {
+      // Mapeamos cada documento al tipo 'User' usando el helper
+      const profesores = querySnapshot.docs.map(convertFirestoreUser);
+      
+      // Entregamos la lista de profesores al componente que nos llamó
+      callback(profesores);
+    }, 
+    (error) => {
+      // Es crucial manejar los errores aquí. Si las reglas de seguridad fallan,
+      // el error se mostrará en la consola del navegador.
+      console.error("Error al obtener la lista de profesores:", error);
+      // En caso de error, devolvemos un array vacío para no romper la UI.
+      callback([]);
+    }
+  );
+
+  // Devolvemos la función de desuscripción que nos da onSnapshot.
+  // React la usará para limpiar el listener cuando el componente se desmonte.
+  return unsubscribe;
 };
 
 // ===== ESTADÍSTICAS Y REPORTES =====
@@ -179,7 +198,6 @@ export const getReemplazosStats = async (userId: string, month?: string, year?: 
     const querySnapshot = await getDocs(q);
     const reemplazos = querySnapshot.docs.map(convertFirestoreReemplazo);
 
-    // Calcular estadísticas
     const totalReemplazos = reemplazos.length;
     const horasRealizadas = reemplazos.filter(r => r.resultado === 'Hora realizada').length;
     const horasCubiertas = reemplazos.filter(r => r.resultado === 'Hora cubierta, no realizada').length;
@@ -213,7 +231,7 @@ export const searchReemplazos = async (
     const querySnapshot = await getDocs(q);
     const allReemplazos = querySnapshot.docs.map(convertFirestoreReemplazo);
 
-    // Filtrar en el cliente
+    // Filtrar en el cliente. Para datasets muy grandes, considera usar un servicio de búsqueda como Algolia.
     const searchTermLower = searchTerm.toLowerCase();
     
     return allReemplazos.filter(reemplazo => {

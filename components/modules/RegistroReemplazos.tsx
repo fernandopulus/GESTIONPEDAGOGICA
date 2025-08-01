@@ -80,20 +80,31 @@ const useReemplazos = (userId: string) => {
 };
 
 // Hook para manejar profesores con Firebase
+// El código nuevo y correcto
 const useProfesores = (userId: string) => {
   const [profesores, setProfesores] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!userId) return;
-
-    const unsubscribe = subscribeToProfesores(userId, (data) => {
+    // La llamada a la función ahora es correcta: solo se le pasa el callback.
+    // El userId ya no es necesario para esta operación.
+    const unsubscribe = subscribeToProfesores((data) => {
       setProfesores(data);
       setLoading(false);
     });
 
+    // Devolvemos la función de desuscripción para que React limpie el listener.
     return unsubscribe;
-  }, [userId]);
+
+  }, []); // El array de dependencias ahora está vacío porque la suscripción no depende de nada.
+
+  const profesorNames = useMemo(() => 
+    profesores.map(p => p.nombreCompleto).sort(), 
+    [profesores]
+  );
+
+  return { profesores, profesorNames, loading };
+};
 
   const profesorNames = useMemo(() => 
     profesores.map(p => p.nombreCompleto).sort(), 
