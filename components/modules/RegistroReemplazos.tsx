@@ -361,10 +361,14 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({ currentUser }) 
   const inputStyles = "w-full border-slate-300 rounded-md shadow-sm focus:ring-amber-400 focus:border-amber-400 dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400 disabled:opacity-50 disabled:cursor-not-allowed";
 
   // Verificar que el usuario tiene UID antes de renderizar
-  if (!currentUser.uid) {
+// Verificar que el usuario está autenticado
+  if (!currentUser || !currentUser.email) {
     return (
       <div className="flex justify-center items-center py-8">
-        <p className="text-slate-500 dark:text-slate-400">Error: Usuario no autenticado</p>
+        <div className="text-center">
+          <p className="text-slate-500 dark:text-slate-400 mb-2">Error: Usuario no autenticado</p>
+          <p className="text-sm text-slate-400">Datos recibidos: {JSON.stringify(currentUser)}</p>
+        </div>
       </div>
     );
   }

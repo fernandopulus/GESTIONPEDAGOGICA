@@ -404,7 +404,7 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
     
     try {
       logApiCall('Planificación - Actividad Calendario');
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
       const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
       
       const newActividad: Omit<ActividadPlanificada, 'id'> = {
@@ -735,7 +735,9 @@ interface PlanificacionDocenteProps {
 }
 
 const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser }) => {
-  const { planificaciones, save: savePlan, update: updatePlan, remove: deletePlan, loading: planificacionesLoading } = usePlanificaciones(currentUser.uid || '');
+  // Usa email como identificador principal en lugar de uid
+const userId = currentUser.email || currentUser.id || '';
+const { planificaciones, save: savePlan, update: updatePlan, remove: deletePlan, loading: planificacionesLoading } = usePlanificaciones(userId);
   
   const initialUnidadFormState = {
     asignatura: '',
@@ -826,7 +828,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
 
     try {
       logApiCall('Planificación - Unidad');
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
       const prompt = buildUnidadPrompt();
       
       const responseSchema = {
@@ -910,7 +912,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
 
     try {
       logApiCall('Planificación - Utilizar Clase');
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
       const schema = {
         type: Type.OBJECT,
         properties: {
@@ -1285,10 +1287,14 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   };
   
   // Verificar que el usuario tiene UID antes de renderizar
-  if (!currentUser.uid) {
+// Verificar que el usuario está autenticado
+  if (!currentUser || !currentUser.email) {
     return (
       <div className="flex justify-center items-center py-8">
-        <p className="text-slate-500 dark:text-slate-400">Error: Usuario no autenticado</p>
+        <div className="text-center">
+          <p className="text-slate-500 dark:text-slate-400 mb-2">Error: Usuario no autenticado</p>
+          <p className="text-sm text-slate-400">Datos recibidos: {JSON.stringify(currentUser)}</p>
+        </div>
       </div>
     );
   }
@@ -1333,7 +1339,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
 
       {activeTab === 'unidad' && renderUnidadTab()}
       {activeTab === 'clase' && renderClaseTab()}
-      {activeTab === 'calendario' && <ActividadesCalendarioSubmodule userId={currentUser.uid} />}
+      {activeTab === 'calendario' && <ActividadesCalendarioSubmodule userId={userId} />}
 
       {editingLesson && (
         <EditLessonModal

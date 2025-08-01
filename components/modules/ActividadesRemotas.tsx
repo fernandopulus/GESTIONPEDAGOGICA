@@ -199,7 +199,7 @@ const ActividadesRemotas: React.FC = () => {
       );
 
       logApiCall('Actividades Remotas');
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY as string });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
       const prompt = buildPrompt();
       const schema = getResponseSchema(formData.tipos);
 

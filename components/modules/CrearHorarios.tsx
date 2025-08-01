@@ -138,7 +138,7 @@ const CrearHorarios: React.FC = () => {
 
         try {
             logApiCall('Crear Horarios');
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
             
             const prompt = `
                 Eres un asistente experto en planificación de horarios escolares para un liceo técnico en Chile. 

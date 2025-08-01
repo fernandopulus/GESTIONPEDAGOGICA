@@ -101,7 +101,7 @@ const GeneradorActas: React.FC = () => {
 
         try {
             logApiCall('Generador de Actas');
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
             const prompt = `
                 Analiza el siguiente texto de un acta de reunión y extrae la información clave.
                 El texto es una transcripción de lo hablado.

@@ -140,7 +140,7 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
 
         try {
             logApiCall('Análisis Taxonómico');
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY as string });
+            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
 
             const filePart = {
                 inlineData: {

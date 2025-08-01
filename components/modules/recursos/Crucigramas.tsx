@@ -41,7 +41,7 @@ const Crucigramas: FC<{ onBack: () => void; }> = ({ onBack }) => {
         if (!aiTheme.trim()) return;
         setLoading(p => ({ ...p, ai: true }));
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
             const prompt = `Genera una lista de ${numWords} palabras y sus pistas correspondientes para un crucigrama, basado en el tema "${aiTheme}". Las palabras no deben contener espacios.`;
             const schema = {
                 type: Type.OBJECT,
