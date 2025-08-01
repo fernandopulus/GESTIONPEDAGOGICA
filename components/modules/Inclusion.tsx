@@ -1,14 +1,18 @@
 import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
 import { EstudianteInclusion, DificultadAprendizaje, Intervencion, MetaProgreso, AlertaInclusion, ArchivoAdjunto, User, Profile, ReunionApoderados } from '../../types';
-import { CURSOS, DIFICULTADES_APRENDIZAJE, PROFESORES } from '../../constants';
+import { CURSOS, DIFICULTADES_APRENDIZAJE } from '../../constants';
 import { utils, writeFile } from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { 
+    subscribeToEstudiantesInclusion, 
+    subscribeToAllUsers,
+    addEstudianteToInclusion,
+    updateEstudianteInclusion,
+    deleteEstudianteInclusion
+} from '../../src/firebaseHelpers/inclusionHelper'; // AJUSTA la ruta a tu nuevo helper
 
-
-const INCLUSION_KEY = 'estudiantesInclusion';
-const USERS_KEY = 'usuariosLiceo';
-
+// --- MODAL FICHA ESTUDIANTE ---
 const FichaEstudianteModal: React.FC<{
     student: EstudianteInclusion;
     onClose: () => void;
@@ -18,26 +22,24 @@ const FichaEstudianteModal: React.FC<{
     const [activeTab, setActiveTab] = useState<'intervenciones' | 'seguimiento' | 'alertas' | 'reuniones'>('intervenciones');
     const [localStudentData, setLocalStudentData] = useState<EstudianteInclusion>(student);
     
-    // State for Interventions tab
+    useEffect(() => {
+        setLocalStudentData(student);
+    }, [student]);
+
     const [editingIntervencion, setEditingIntervencion] = useState<Intervencion | null>(null);
     const initialIntervencionState: Omit<Intervencion, 'id' | 'fecha'> = { responsable: '', accion: '', observaciones: '' };
     const [newIntervencion, setNewIntervencion] = useState(initialIntervencionState);
-
-    // State for Seguimiento y Metas tab
     const [newMeta, setNewMeta] = useState({ trimestre: 'T1' as 'T1' | 'T2' | 'T3', meta: '' });
-    
-    // State for Alertas y Archivos tab
     const [newAlerta, setNewAlerta] = useState({ titulo: '', fecha: new Date().toISOString().split('T')[0] });
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [isUploading, setIsUploading] = useState(false);
-
-    // State for Reuniones tab
     const initialReunionState: Omit<ReunionApoderados, 'id' | 'fecha'> = { motivo: '', acuerdos: '', asistentes: '' };
     const [newReunion, setNewReunion] = useState(initialReunionState);
 
 
-    const handleSaveLocal = () => {
+    const handleSaveAndClose = () => {
         onSave(localStudentData);
+        onClose();
     };
 
     // --- Interventions Logic ---
@@ -150,7 +152,10 @@ const FichaEstudianteModal: React.FC<{
 
     const handleUploadFile = () => {
         if (!selectedFile) return;
-
+        // NOTA: Esta implementación usa Base64, lo cual NO es recomendado para producción
+        // con Firestore debido al límite de tamaño de 1MB por documento.
+        // La solución ideal es usar Firebase Storage para subir el archivo y guardar
+        // solo la URL de descarga en este documento.
         setIsUploading(true);
         const reader = new FileReader();
         reader.readAsDataURL(selectedFile);
@@ -158,7 +163,7 @@ const FichaEstudianteModal: React.FC<{
             const newFile: ArchivoAdjunto = {
                 id: crypto.randomUUID(),
                 nombre: selectedFile.name,
-                url: reader.result as string, // Store as Base64 Data URL
+                url: reader.result as string, // Guardado como Base64 Data URL
                 fechaSubida: new Date().toISOString(),
             };
             setLocalStudentData(prev => ({
@@ -250,7 +255,7 @@ const FichaEstudianteModal: React.FC<{
             autoTable(doc, {
                 startY: y,
                 head: [['Fecha', 'Responsable', 'Acción', 'Observaciones']],
-                body: localStudentData.intervenciones.map(i => [new Date(i.fecha).toLocaleDateString('es-CL'), i.responsable, i.accion, i.observaciones]),
+                body: localStudentData.intervenciones.map(i => [new Date(i.fecha).toLocaleDateString('es-CL'), i.responsable, i.accion, i.observaciones || '']),
                 theme: 'grid',
                 didDrawPage: data => addHeader(doc),
             });
@@ -294,6 +299,7 @@ const FichaEstudianteModal: React.FC<{
         doc.save(`Ficha_Inclusion_${localStudentData.nombre.replace(/\s/g, '_')}.pdf`);
     };
     
+    // --- Render Functions for Tabs ---
     const renderIntervenciones = () => (
         <div className="space-y-4">
             <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600 space-y-3">
@@ -309,7 +315,7 @@ const FichaEstudianteModal: React.FC<{
                     <button onClick={handleAddOrUpdateIntervencion} className="text-sm bg-amber-500 text-white font-semibold px-3 py-1 rounded-md">{editingIntervencion ? 'Actualizar' : 'Guardar'}</button>
                 </div>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-64 overflow-y-auto">
                  {(localStudentData.intervenciones || []).map(i => (
                     <div key={i.id} className="p-3 bg-white dark:bg-slate-800 rounded-md border dark:border-slate-600">
                         <div className="flex justify-between items-start">
@@ -354,7 +360,6 @@ const FichaEstudianteModal: React.FC<{
                         <div className={`${progresoMetas.color} h-4 rounded-full transition-all duration-500`} style={{ width: `${progresoMetas.percent}%` }}></div>
                     </div>
                 </div>
-                {/* Add Meta Form */}
                 <div className="flex gap-2 items-end pt-2">
                     <select value={newMeta.trimestre} onChange={e => setNewMeta(p => ({ ...p, trimestre: e.target.value as any }))} className="border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600">
                         <option value="T1">T1</option><option value="T2">T2</option><option value="T3">T3</option>
@@ -362,7 +367,6 @@ const FichaEstudianteModal: React.FC<{
                     <input value={newMeta.meta} onChange={e => setNewMeta(p => ({ ...p, meta: e.target.value }))} placeholder="Definir nueva meta trimestral..." className="flex-grow border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"/>
                     <button onClick={handleAddMeta} className="bg-slate-200 dark:bg-slate-600 px-3 py-2 rounded-md font-semibold text-sm">Agregar</button>
                 </div>
-                {/* Metas List */}
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                     {(localStudentData.metasProgreso || []).map(meta => (
                          <div key={meta.id} className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-700/50 rounded">
@@ -432,7 +436,7 @@ const FichaEstudianteModal: React.FC<{
                     <button onClick={handleAddReunion} className="text-sm bg-amber-500 text-white font-semibold px-3 py-1 rounded-md">Guardar Reunión</button>
                 </div>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-64 overflow-y-auto">
                 {(localStudentData.reuniones || []).map(r => (
                     <div key={r.id} className="p-3 bg-white dark:bg-slate-800 rounded-md border dark:border-slate-600">
                         <div className="flex justify-between items-start">
@@ -483,13 +487,14 @@ const FichaEstudianteModal: React.FC<{
                 </div>
                 <div className="bg-slate-100 dark:bg-slate-700/50 px-6 py-4 rounded-b-xl flex justify-end gap-3 mt-auto">
                     <button onClick={onClose} className="bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300">Cerrar</button>
-                    <button onClick={handleSaveLocal} className="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600">Guardar Cambios</button>
+                    <button onClick={handleSaveAndClose} className="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600">Guardar Cambios y Cerrar</button>
                 </div>
             </div>
         </div>
     );
 };
 
+// --- MODAL AGREGAR ESTUDIANTE ---
 const AddStudentInclusionModal: React.FC<{
     student: User;
     onClose: () => void;
@@ -526,7 +531,7 @@ const AddStudentInclusionModal: React.FC<{
     );
 };
 
-
+// --- COMPONENTE PRINCIPAL ---
 interface InclusionProps {
     currentUser: User;
 }
@@ -534,69 +539,95 @@ interface InclusionProps {
 const Inclusion: React.FC<InclusionProps> = ({ currentUser }) => {
     const [estudiantes, setEstudiantes] = useState<EstudianteInclusion[]>([]);
     const [allUsers, setAllUsers] = useState<User[]>([]);
+    const [loading, setLoading] = useState(true);
     const [selectedStudent, setSelectedStudent] = useState<EstudianteInclusion | null>(null);
     const [studentToAdd, setStudentToAdd] = useState<User | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCurso, setFilterCurso] = useState('');
     const [filterDificultad, setFilterDificultad] = useState('');
 
+    // Suscripción a los datos de Firestore
     useEffect(() => {
-        try {
-            const data = localStorage.getItem(INCLUSION_KEY);
-            if (data) setEstudiantes(JSON.parse(data));
+        setLoading(true);
+        const unsubscribeEstudiantes = subscribeToEstudiantesInclusion((data) => {
+            setEstudiantes(data);
+            setLoading(false);
+        });
+        
+        const unsubscribeUsers = subscribeToAllUsers((data) => {
+            setAllUsers(data);
+        });
 
-            const usersData = localStorage.getItem(USERS_KEY);
-            if (usersData) setAllUsers(JSON.parse(usersData));
-        } catch (e) {
-            console.error("Error al cargar datos de Inclusión desde localStorage", e);
-        }
+        // Limpiar suscripciones al desmontar el componente
+        return () => {
+            unsubscribeEstudiantes();
+            unsubscribeUsers();
+        };
     }, []);
 
-    const persistEstudiantes = useCallback((data: EstudianteInclusion[]) => {
-        setEstudiantes(data);
-        localStorage.setItem(INCLUSION_KEY, JSON.stringify(data));
-    }, []);
-
-    const handleAddStudentFromNomina = (user: User, dificultad: DificultadAprendizaje) => {
+    const handleAddStudentFromNomina = async (user: User, dificultad: DificultadAprendizaje) => {
         if (estudiantes.some(e => e.nombre === user.nombreCompleto)) {
             alert("Este estudiante ya está en el programa de inclusión.");
             return;
         }
 
-        const newStudent: EstudianteInclusion = {
-            id: crypto.randomUUID(),
+        const newStudent: Omit<EstudianteInclusion, 'id'> = {
             nombre: user.nombreCompleto,
             curso: user.curso || '',
             dificultad: dificultad,
             intervenciones: [],
+            metasProgreso: [],
+            alertas: [],
             archivos: [],
             reuniones: [],
+            adaptacionesCurriculares: '',
+            apoyosRecibidos: '',
+            fechaActualizacionApoyos: new Date().toISOString(),
         };
 
-        persistEstudiantes([newStudent, ...estudiantes]);
-        setSelectedStudent(newStudent);
+        try {
+            await addEstudianteToInclusion(newStudent);
+            // No es necesario llamar a setSelectedStudent aquí, la UI se actualizará por el listener
+        } catch (error) {
+            console.error("Error al agregar estudiante:", error);
+            alert("Hubo un error al agregar al estudiante al programa.");
+        }
     };
 
-    const handleUpdateStudent = (updatedStudent: EstudianteInclusion) => {
-        persistEstudiantes(estudiantes.map(s => s.id === updatedStudent.id ? updatedStudent : s));
-        setSelectedStudent(updatedStudent); // Keep the modal open with updated data
+    const handleUpdateStudent = async (updatedStudent: EstudianteInclusion) => {
+        try {
+            await updateEstudianteInclusion(updatedStudent.id, updatedStudent);
+        } catch (error) {
+            console.error("Error al actualizar la ficha:", error);
+            alert("Hubo un error al guardar los cambios en la ficha.");
+        }
     };
 
-    const handleDeleteStudent = (id: string) => {
-        if (window.confirm("¿Está seguro de que desea eliminar a este estudiante del programa de inclusión?")) {
-            persistEstudiantes(estudiantes.filter(s => s.id !== id));
-            if (selectedStudent?.id === id) {
-                setSelectedStudent(null);
+    const handleDeleteStudent = async (id: string) => {
+        if (window.confirm("¿Está seguro de que desea eliminar a este estudiante del programa de inclusión? Esta acción es irreversible.")) {
+            try {
+                await deleteEstudianteInclusion(id);
+                // Cierra el modal si el estudiante eliminado estaba seleccionado
+                if (selectedStudent?.id === id) {
+                    setSelectedStudent(null);
+                }
+            } catch (error) {
+                console.error("Error al eliminar estudiante:", error);
+                alert("Hubo un error al eliminar al estudiante.");
             }
         }
     };
     
     const handleExport = (format: 'xlsx' | 'pdf') => {
+        if (filteredEstudiantes.length === 0) {
+            alert("No hay datos para exportar.");
+            return;
+        }
         const dataToExport = filteredEstudiantes.map(s => ({
             "Nombre": s.nombre,
             "Curso": s.curso,
             "Dificultad": s.dificultad,
-            "N° Intervenciones": s.intervenciones.length,
+            "N° Intervenciones": s.intervenciones?.length || 0,
             "Alertas Pendientes": (s.alertas || []).filter(a => !a.resuelta).length,
         }));
 
@@ -639,53 +670,57 @@ const Inclusion: React.FC<InclusionProps> = ({ currentUser }) => {
         <div className="space-y-8 animate-fade-in">
             <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Programa de Inclusión Escolar (PIE)</h1>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Main List */}
-                <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
-                    <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
-                         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200">Estudiantes en PIE</h2>
-                         <div className="flex gap-2">
-                            <button onClick={() => handleExport('xlsx')} className="text-sm bg-green-100 text-green-700 font-semibold py-1 px-3 rounded-lg">Excel</button>
-                            <button onClick={() => handleExport('pdf')} className="text-sm bg-red-100 text-red-700 font-semibold py-1 px-3 rounded-lg">PDF</button>
+            {loading ? (
+                <div className="text-center py-10">Cargando datos del programa...</div>
+            ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Main List */}
+                    <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
+                        <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+                            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200">Estudiantes en PIE ({filteredEstudiantes.length})</h2>
+                            <div className="flex gap-2">
+                                <button onClick={() => handleExport('xlsx')} className="text-sm bg-green-100 text-green-700 font-semibold py-1 px-3 rounded-lg">Excel</button>
+                                <button onClick={() => handleExport('pdf')} className="text-sm bg-red-100 text-red-700 font-semibold py-1 px-3 rounded-lg">PDF</button>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <input type="text" placeholder="Buscar por nombre..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"/>
+                            <select value={filterCurso} onChange={e => setFilterCurso(e.target.value)} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"><option value="">Todos los Cursos</option>{CURSOS.map(c => <option key={c}>{c}</option>)}</select>
+                            <select value={filterDificultad} onChange={e => setFilterDificultad(e.target.value)} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"><option value="">Todas las Dificultades</option>{DIFICULTADES_APRENDIZAJE.map(d => <option key={d}>{d}</option>)}</select>
+                        </div>
+                        <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                            {filteredEstudiantes.map(s => (
+                                <div key={s.id} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-md border dark:border-slate-700 flex justify-between items-center">
+                                    <div>
+                                        <p className="font-bold text-slate-800 dark:text-slate-200">{s.nombre}</p>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">{s.curso} - {s.dificultad}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => setSelectedStudent(s)} className="text-blue-600 hover:text-blue-800 font-semibold text-sm">Ver Ficha</button>
+                                        <button onClick={() => handleDeleteStudent(s.id)} title="Eliminar" className="text-red-600 hover:text-red-800 p-1 rounded-full text-lg">🗑️</button>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                        <input type="text" placeholder="Buscar por nombre..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"/>
-                        <select value={filterCurso} onChange={e => setFilterCurso(e.target.value)} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"><option value="">Todos los Cursos</option>{CURSOS.map(c => <option key={c}>{c}</option>)}</select>
-                        <select value={filterDificultad} onChange={e => setFilterDificultad(e.target.value)} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"><option value="">Todas las Dificultades</option>{DIFICULTADES_APRENDIZAJE.map(d => <option key={d}>{d}</option>)}</select>
-                    </div>
-                    <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-                        {filteredEstudiantes.map(s => (
-                            <div key={s.id} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-md border dark:border-slate-700 flex justify-between items-center">
-                                <div>
-                                    <p className="font-bold text-slate-800 dark:text-slate-200">{s.nombre}</p>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">{s.curso} - {s.dificultad}</p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                     <button onClick={() => setSelectedStudent(s)} className="text-blue-600 hover:text-blue-800 font-semibold text-sm">Ver Ficha</button>
-                                     <button onClick={() => handleDeleteStudent(s.id)} title="Eliminar" className="text-red-600 hover:text-red-800 p-1 rounded-full text-lg">🗑️</button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
 
-                {/* Add from Nomina */}
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
-                    <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Agregar Estudiante desde Nómina</h2>
-                    <ul className="space-y-2 max-h-[60vh] overflow-y-auto">
-                        {estudiantesEnNomina.map(user => (
-                            <li key={user.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-700 p-2 rounded">
-                                <div>
-                                    <p className="font-medium text-sm text-slate-800 dark:text-slate-200">{user.nombreCompleto}</p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">{user.curso}</p>
-                                </div>
-                                <button onClick={() => setStudentToAdd(user)} className="text-2xl text-green-500 hover:text-green-700">+</button>
-                            </li>
-                        ))}
-                    </ul>
+                    {/* Add from Nomina */}
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
+                        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Agregar Estudiante desde Nómina</h2>
+                        <ul className="space-y-2 max-h-[60vh] overflow-y-auto">
+                            {estudiantesEnNomina.map(user => (
+                                <li key={user.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-700 p-2 rounded">
+                                    <div>
+                                        <p className="font-medium text-sm text-slate-800 dark:text-slate-200">{user.nombreCompleto}</p>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">{user.curso}</p>
+                                    </div>
+                                    <button onClick={() => setStudentToAdd(user)} className="text-2xl text-green-500 hover:text-green-700">+</button>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
                 </div>
-            </div>
+            )}
             
             {studentToAdd && (
                 <AddStudentInclusionModal 
