@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
 import { PlanificacionInterdisciplinaria, ActividadInterdisciplinaria, FechaClave, TareaInterdisciplinaria, EntregaTareaInterdisciplinaria, User, Profile } from '../../types';
 import { ASIGNATURAS, CURSOS } from '../../constants';
-import { GoogleGenAI } from "@google/genai";
+// import { GoogleGenAI } from "@google/genai"; // Se elimina para usar la versión global
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
-
-const PLANIFICACIONES_INTER_KEY = 'planificacionesInterdisciplinarias';
-const ENTREGAS_TAREAS_KEY = 'entregasTareasInterdisciplinarias';
-const USERS_KEY = 'usuariosLiceo';
-
+import {
+    subscribeToPlanificaciones,
+    createPlanificacion,
+    updatePlanificacion,
+    deletePlanificacion,
+    subscribeToEntregas,
+    saveFeedbackEntrega,
+    subscribeToAllUsers
+} from '../../src/firebaseHelpers/interdisciplinarioHelper'; // AJUSTA la ruta a tu nuevo helper
 
 const ProjectTimeline: React.FC<{
     planificaciones: PlanificacionInterdisciplinaria[],
@@ -20,8 +24,8 @@ const ProjectTimeline: React.FC<{
     const allItems = useMemo(() => {
         const items: any[] = [];
         planificaciones.forEach(p => {
-            p.actividades.forEach(a => items.push({ ...a, planId: p.id, type: 'activity' }));
-            p.fechasClave.forEach(f => items.push({
+            (p.actividades || []).forEach(a => items.push({ ...a, planId: p.id, type: 'activity' }));
+            (p.fechasClave || []).forEach(f => items.push({
                 id: f.id,
                 planId: p.id,
                 type: 'keyDate',
@@ -215,11 +219,11 @@ const FormCard: React.FC<{ icon: React.ReactNode, label: string, children: React
     </div>
 );
 
-
 const PlanificacionForm: React.FC<{
     initialPlan: PlanificacionInterdisciplinaria | null;
-    onSave: (plan: PlanificacionInterdisciplinaria) => void;
-}> = ({ initialPlan, onSave }) => {
+    onSave: (plan: Omit<PlanificacionInterdisciplinaria, 'id'> | PlanificacionInterdisciplinaria) => void;
+    onCancel: () => void;
+}> = ({ initialPlan, onSave, onCancel }) => {
     const [formData, setFormData] = useState<PlanificacionInterdisciplinaria>(
         initialPlan || {
             id: '', nombreProyecto: '', descripcionProyecto: '', asignaturas: [], cursos: [], docentesResponsables: '', objetivos: '',
@@ -259,9 +263,13 @@ const PlanificacionForm: React.FC<{
         }
 
         try {
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
-            const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
-            setFormData(prev => ({ ...prev, [targetField]: response.text.replace(/(\*\*|\*)/g, '') }));
+            const apiKey = "";
+            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-pro"});
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+            setFormData(prev => ({ ...prev, [targetField]: text.replace(/(\*\*|\*)/g, '') }));
         } catch (error) {
             console.error(`Error al generar ${targetField}`, error);
             alert(`Hubo un error al generar los ${targetField}. Inténtelo de nuevo.`);
@@ -277,7 +285,7 @@ const PlanificacionForm: React.FC<{
     
     const handleMultiSelectToggle = (field: 'asignaturas' | 'cursos', value: string) => {
         setFormData(prev => {
-            const currentValues = prev[field];
+            const currentValues = prev[field] as string[];
             const newValues = currentValues.includes(value)
                 ? currentValues.filter(item => item !== value)
                 : [...currentValues, value];
@@ -290,12 +298,12 @@ const PlanificacionForm: React.FC<{
             alert("Nombre y fechas son obligatorios para la actividad.");
             return;
         }
-        setFormData(prev => ({ ...prev, actividades: [...prev.actividades, { ...newActivity, id: crypto.randomUUID() }] }));
+        setFormData(prev => ({ ...prev, actividades: [...(prev.actividades || []), { ...newActivity, id: crypto.randomUUID() }] }));
         setNewActivity({ nombre: '', fechaInicio: '', fechaFin: '', responsables: '', asignaturaPrincipal: '' });
     };
     const handleAddFechaClave = () => {
         if (!newFechaClave.nombre || !newFechaClave.fecha) return;
-        setFormData(prev => ({ ...prev, fechasClave: [...prev.fechasClave, { ...newFechaClave, id: crypto.randomUUID() }] }));
+        setFormData(prev => ({ ...prev, fechasClave: [...(prev.fechasClave || []), { ...newFechaClave, id: crypto.randomUUID() }] }));
         setNewFechaClave({ nombre: '', fecha: '' });
     };
 
@@ -312,7 +320,7 @@ const PlanificacionForm: React.FC<{
     return (
         <div className="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8">
             <div className="text-center mb-12">
-                <h1 className="text-3xl sm:text-4xl font-bold text-slate-800 dark:text-slate-200">Proyecto Interdisciplinario en Liceo Industrial Recoleta</h1>
+                <h1 className="text-3xl sm:text-4xl font-bold text-slate-800 dark:text-slate-200">{initialPlan ? 'Editando Proyecto' : 'Nuevo Proyecto Interdisciplinario'}</h1>
             </div>
             <div className="space-y-6">
                 <FormCard icon={<PencilSquareIcon />} label="Nombre del Proyecto">
@@ -379,7 +387,10 @@ const PlanificacionForm: React.FC<{
                         </div>
                     </div>
                 </FormCard>
-                <div className="flex justify-end pt-6">
+                <div className="flex justify-end gap-4 pt-6">
+                    <button onClick={onCancel} className="px-8 py-3 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200">
+                       Cancelar
+                    </button>
                     <button onClick={() => onSave(formData)} className="px-8 py-3 bg-slate-800 text-white rounded-lg font-semibold hover:bg-slate-700 dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600">
                        {initialPlan ? 'Guardar Cambios' : 'Guardar Proyecto'}
                     </button>
@@ -391,47 +402,45 @@ const PlanificacionForm: React.FC<{
 
 const Interdisciplinario: React.FC = () => {
     const [planificaciones, setPlanificaciones] = useState<PlanificacionInterdisciplinaria[]>([]);
+    const [loading, setLoading] = useState(true);
     const [view, setView] = useState<'list' | 'form'>('list');
     const [editingPlan, setEditingPlan] = useState<PlanificacionInterdisciplinaria | null>(null);
     const [isExportingId, setIsExportingId] = useState<string | null>(null);
     const [viewingSubmissionsForPlan, setViewingSubmissionsForPlan] = useState<PlanificacionInterdisciplinaria | null>(null);
 
-
     useEffect(() => {
-        try {
-            const data = localStorage.getItem(PLANIFICACIONES_INTER_KEY);
-            if (data) setPlanificaciones(JSON.parse(data));
-        } catch (e) {
-            console.error("Error al cargar planificaciones interdisciplinarias", e);
-        }
+        setLoading(true);
+        const unsubscribe = subscribeToPlanificaciones((data) => {
+            setPlanificaciones(data);
+            setLoading(false);
+        });
+        return () => unsubscribe();
     }, []);
 
-    const persistPlanificaciones = (data: PlanificacionInterdisciplinaria[]) => {
-        setPlanificaciones(data);
-        localStorage.setItem(PLANIFICACIONES_INTER_KEY, JSON.stringify(data));
-    };
-    
-    const handleActivityUpdate = useCallback((planId: string, activity: ActividadInterdisciplinaria) => {
-        const updated = planificaciones.map(p => {
-            if (p.id === planId) {
-                return {
-                    ...p,
-                    actividades: p.actividades.map(a => a.id === activity.id ? activity : a)
-                }
-            }
-            return p;
-        });
-        persistPlanificaciones(updated);
+    const handleActivityUpdate = useCallback(async (planId: string, activity: ActividadInterdisciplinaria) => {
+        const planToUpdate = planificaciones.find(p => p.id === planId);
+        if (planToUpdate) {
+            const updatedPlan = {
+                ...planToUpdate,
+                actividades: (planToUpdate.actividades || []).map(a => a.id === activity.id ? activity : a)
+            };
+            await updatePlanificacion(planId, updatedPlan);
+        }
     }, [planificaciones]);
 
-    const handleSave = (plan: PlanificacionInterdisciplinaria) => {
-        if (editingPlan) {
-            persistPlanificaciones(planificaciones.map(p => p.id === editingPlan.id ? plan : p));
-        } else {
-            persistPlanificaciones([{ ...plan, id: crypto.randomUUID() }, ...planificaciones]);
+    const handleSave = async (plan: Omit<PlanificacionInterdisciplinaria, 'id'> | PlanificacionInterdisciplinaria) => {
+        try {
+            if ('id' in plan && plan.id) {
+                await updatePlanificacion(plan.id, plan as PlanificacionInterdisciplinaria);
+            } else {
+                await createPlanificacion(plan);
+            }
+            setView('list');
+            setEditingPlan(null);
+        } catch (error) {
+            console.error("Error al guardar la planificación:", error);
+            alert("No se pudo guardar la planificación.");
         }
-        setView('list');
-        setEditingPlan(null);
     };
 
     const handleEdit = (plan: PlanificacionInterdisciplinaria) => {
@@ -439,9 +448,14 @@ const Interdisciplinario: React.FC = () => {
         setView('form');
     };
 
-    const handleDelete = (id: string) => {
+    const handleDelete = async (id: string) => {
         if (window.confirm("¿Está seguro de eliminar esta planificación?")) {
-            persistPlanificaciones(planificaciones.filter(p => p.id !== id));
+            try {
+                await deletePlanificacion(id);
+            } catch (error) {
+                console.error("Error al eliminar la planificación:", error);
+                alert("No se pudo eliminar la planificación.");
+            }
         }
     };
     
@@ -606,14 +620,14 @@ const Interdisciplinario: React.FC = () => {
         const [selectedTask, setSelectedTask] = useState<TareaInterdisciplinaria | null>(plan.tareas?.[0] || null);
 
         useEffect(() => {
-            try {
-                const usersData = localStorage.getItem(USERS_KEY);
-                if (usersData) setAllUsers(JSON.parse(usersData));
+            const unsubUsers = subscribeToAllUsers(setAllUsers);
+            const unsubEntregas = subscribeToEntregas(plan.id, setEntregas);
 
-                const entregasData = localStorage.getItem(ENTREGAS_TAREAS_KEY);
-                if (entregasData) setEntregas(JSON.parse(entregasData));
-            } catch (e) { console.error(e) }
-        }, []);
+            return () => {
+                unsubUsers();
+                unsubEntregas();
+            }
+        }, [plan.id]);
 
         const studentsInProject = useMemo(() => {
             return allUsers
@@ -621,10 +635,13 @@ const Interdisciplinario: React.FC = () => {
                 .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
         }, [allUsers, plan.cursos]);
 
-        const handleSaveFeedback = (entregaId: string, feedback: string) => {
-            const updatedEntregas = entregas.map(e => e.id === entregaId ? { ...e, feedbackProfesor: feedback, fechaFeedback: new Date().toISOString() } : e);
-            setEntregas(updatedEntregas);
-            localStorage.setItem(ENTREGAS_TAREAS_KEY, JSON.stringify(updatedEntregas));
+        const handleSaveFeedback = async (entregaId: string, feedback: string) => {
+            try {
+                await saveFeedbackEntrega(entregaId, feedback);
+            } catch (error) {
+                console.error("Error saving feedback:", error);
+                alert("No se pudo guardar la retroalimentación.");
+            }
         };
 
         if (!selectedTask) return <div className="text-center p-8">Este proyecto no tiene tareas asignadas.</div>
@@ -632,19 +649,19 @@ const Interdisciplinario: React.FC = () => {
         return (
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
                 <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-2xl font-bold text-slate-800">Entregas de Tareas</h2>
-                    <button onClick={onBack} className="font-semibold">&larr; Volver</button>
+                    <h2 className="text-2xl font-bold text-slate-800">Entregas de Tareas: {plan.nombreProyecto}</h2>
+                    <button onClick={onBack} className="font-semibold">&larr; Volver a Proyectos</button>
                 </div>
-                <select value={selectedTask.id} onChange={e => setSelectedTask(plan.tareas?.find(t => t.id === e.target.value) || null)} className="mb-4 p-2 border rounded">
+                <select value={selectedTask.id} onChange={e => setSelectedTask(plan.tareas?.find(t => t.id === e.target.value) || null)} className="mb-4 p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600">
                     {plan.tareas?.map(t => <option key={t.id} value={t.id}>Tarea {t.numero}: {t.instrucciones}</option>)}
                 </select>
 
                 <div className="space-y-3 max-h-[60vh] overflow-y-auto">
                     {studentsInProject.map(student => {
-                        const entrega = entregas.find(e => e.planificacionId === plan.id && e.tareaId === selectedTask.id && e.estudianteId === student.id);
+                        const entrega = entregas.find(e => e.tareaId === selectedTask.id && e.estudianteId === student.id);
                         return (
-                            <div key={student.id} className="p-4 border rounded-lg bg-slate-50">
-                                <p className="font-bold">{student.nombreCompleto} - {entrega?.completada ? <span className="text-green-600">Entregado</span> : <span className="text-red-600">Pendiente</span>}</p>
+                            <div key={student.id} className="p-4 border rounded-lg bg-slate-50 dark:bg-slate-700/50">
+                                <p className="font-bold text-slate-800 dark:text-slate-200">{student.nombreCompleto} - {entrega?.completada ? <span className="text-green-600">Entregado</span> : <span className="text-red-600">Pendiente</span>}</p>
                                 {entrega && (
                                     <div className="text-sm mt-2 space-y-2">
                                         {entrega.observacionesEstudiante && <p><strong>Comentario:</strong> {entrega.observacionesEstudiante}</p>}
@@ -655,7 +672,7 @@ const Interdisciplinario: React.FC = () => {
                                             defaultValue={entrega.feedbackProfesor || ''}
                                             onBlur={(e) => handleSaveFeedback(entrega.id, e.target.value)}
                                             rows={2}
-                                            className="w-full mt-2 p-1 border rounded"
+                                            className="w-full mt-2 p-1 border rounded-md dark:bg-slate-700 dark:border-slate-600"
                                         />
                                     </div>
                                 )}
@@ -665,6 +682,10 @@ const Interdisciplinario: React.FC = () => {
                 </div>
             </div>
         )
+    }
+    
+    if (loading) {
+        return <div className="text-center py-10">Cargando proyectos...</div>;
     }
 
     if (viewingSubmissionsForPlan) {
@@ -685,7 +706,7 @@ const Interdisciplinario: React.FC = () => {
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">{plan.nombreProyecto}</h3>
-                                        <p className="text-sm text-slate-500 dark:text-slate-400">Cursos: {plan.cursos.join(', ')}</p>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">Cursos: {(plan.cursos || []).join(', ')}</p>
                                     </div>
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <button onClick={() => setViewingSubmissionsForPlan(plan)} className="text-green-600 hover:text-green-800 dark:text-green-400 font-semibold text-sm">Ver Entregas</button>
@@ -704,7 +725,7 @@ const Interdisciplinario: React.FC = () => {
                         ))}
                     </div>
                 </div>
-            ) : <PlanificacionForm initialPlan={editingPlan} onSave={handleSave} />}
+            ) : <PlanificacionForm initialPlan={editingPlan} onSave={handleSave} onCancel={() => { setView('list'); setEditingPlan(null); }} />}
             
             {planificaciones.length > 0 && <div id="gantt-container-vertical"><ProjectTimeline planificaciones={planificaciones} onActivityUpdate={handleActivityUpdate} /></div>}
         </div>

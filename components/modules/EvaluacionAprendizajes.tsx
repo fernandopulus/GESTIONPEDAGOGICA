@@ -1,15 +1,23 @@
 import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
 import { User, Profile, RubricaInteractiva, ResultadoInteractivo, Prueba, PruebaItemTipo, PruebaActividad, PruebaItem, SeleccionMultipleItem, TerminosPareadosItem, RubricaEstatica, DimensionRubrica, NivelDescriptor, VerdaderoFalsoItem, ComprensionLecturaItem, DesarrolloItem, DificultadAprendizaje } from '../../types';
 import { ASIGNATURAS, CURSOS, NIVELES, PDFIcon, DIFICULTADES_APRENDIZAJE } from '../../constants';
-import { GoogleGenAI, Type } from "@google/genai";
+// Se elimina la importación directa de GoogleGenAI
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logApiCall } from '../utils/apiLogger';
+import {
+    subscribeToPruebas,
+    savePrueba,
+    deletePrueba,
+    subscribeToRubricasEstaticas,
+    saveRubricaEstatica,
+    deleteRubricaEstatica,
+    subscribeToRubricasInteractivas,
+    saveRubricaInteractiva,
+    createRubricaInteractiva,
+    subscribeToAllUsers
+} from '../../src/firebaseHelpers/evaluacionHelper'; // AJUSTA la ruta a tu nuevo helper
 
-const USERS_KEY = 'usuariosLiceo';
-const RUBRICAS_INTERACTIVAS_KEY = 'rubricasInteractivas';
-const PRUEBAS_KEY = 'evaluacionesPruebas';
-const RUBRICAS_ESTATICAS_KEY = 'rubricasEstaticas';
 const TIPOS_ACTIVIDAD_PRUEBA: PruebaItemTipo[] = ['Selección múltiple', 'Verdadero o Falso', 'Desarrollo', 'Términos pareados', 'Comprensión de lectura'];
 
 const ITEM_QUANTITIES: Record<PruebaItemTipo, number[]> = {
@@ -20,65 +28,31 @@ const ITEM_QUANTITIES: Record<PruebaItemTipo, number[]> = {
     'Comprensión de lectura': [1, 2, 3],
 };
 
-/**
- * Normaliza el nombre de un curso a un formato estándar (ej: "1ºA").
- * Elimina espacios, estandariza ordinales y capitaliza la letra final.
- */
 const normalizeCurso = (curso: string): string => {
     if (!curso) return '';
     let normalized = curso.trim().toLowerCase();
-    
-    // Estandarizar el símbolo de grado (°) al ordinal masculino (º)
     normalized = normalized.replace(/°/g, 'º');
-
-    // Reemplazar " medio", etc.
     normalized = normalized.replace(/\s+(medio|básico|basico)/g, '');
-    // Reemplazar 1ro, 2do, 3ro, 4to con 1º, 2º, 3º, 4º
     normalized = normalized.replace(/(\d)(st|nd|rd|th|ro|do|to|er)/, '$1º');
-    // Asegura que haya un símbolo de grado si no lo hay
     normalized = normalized.replace(/^(\d)(?![º])/, '$1º');
-    // Elimina todos los espacios y pone en mayúscula la parte de la letra
     normalized = normalized.replace(/\s+/g, '').toUpperCase();
     return normalized;
 };
 
-
 const EyeIcon: React.FC<{ open?: boolean }> = ({ open }) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    className="h-5 w-5"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     {open ? (
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59"
-      />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59" />
     ) : (
       <>
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-        />
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-        />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
       </>
     )}
   </svg>
 );
 
-
-// --- Helper Component to fix Hook error ---
 const PruebaItemViewer: React.FC<{ item: PruebaItem, index: number, showAnswers: boolean }> = ({ item, index, showAnswers }) => {
-    // This hook is now at the top level of this component, which is valid.
     const shuffledDefinitions = useMemo(() =>
         item.tipo === 'Términos pareados'
             ? [...(item as TerminosPareadosItem).pares.map(p => p.definicion)].sort(() => Math.random() - 0.5)
@@ -196,16 +170,15 @@ const PruebaItemViewer: React.FC<{ item: PruebaItem, index: number, showAnswers:
                                     </div>
                                      <div className="mt-2 p-2 border rounded-md min-h-[96px] bg-slate-50 dark:bg-slate-700/50"></div>
                                 </div>
-                             )
-                         }
-                         return null;
+                            )
+                        }
+                        return null;
                     })}
                 </div>
             )}
         </div>
     );
 };
-
 
 // --- SUB-MÓDULO 1: PRUEBAS ---
 const PruebasSubmodule: React.FC = () => {
@@ -229,16 +202,9 @@ const PruebasSubmodule: React.FC = () => {
     const [formData, setFormData] = useState(initialFormState);
 
     useEffect(() => {
-        try {
-            const data = localStorage.getItem(PRUEBAS_KEY);
-            if (data) setPruebas(JSON.parse(data));
-        } catch(e) { console.error("Error loading tests from localStorage", e); }
+        const unsubscribe = subscribeToPruebas(setPruebas);
+        return () => unsubscribe();
     }, []);
-
-    const persistPruebas = (data: Prueba[]) => {
-        setPruebas(data);
-        localStorage.setItem(PRUEBAS_KEY, JSON.stringify(data));
-    };
 
     const handleFormChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -249,9 +215,9 @@ const PruebasSubmodule: React.FC = () => {
         setFormData(prev => {
             const newTipos = { ...prev.tiposActividad };
             if (newTipos[tipo]) {
-                delete newTipos[tipo]; // Uncheck
+                delete newTipos[tipo];
             } else {
-                newTipos[tipo] = ITEM_QUANTITIES[tipo][0]; // Check and set default quantity
+                newTipos[tipo] = ITEM_QUANTITIES[tipo][0];
             }
             return { ...prev, tiposActividad: newTipos };
         });
@@ -275,7 +241,6 @@ const PruebasSubmodule: React.FC = () => {
             return { ...prev, selectedNee: newSelection };
         });
     };
-
 
     const handleGeneratePrueba = async (e: FormEvent) => {
         e.preventDefault();
@@ -321,32 +286,34 @@ const PruebasSubmodule: React.FC = () => {
             1. 'objetivo': Un objetivo de aprendizaje claro para la evaluación.
             2. 'instruccionesGenerales': Instrucciones claras para el estudiante.
             3. 'actividades': Un array de objetos, donde cada objeto es una actividad por cada tipo de ítem solicitado. Cada actividad debe tener:
-                - 'id': Un UUID.
-                - 'titulo': Un título descriptivo (ej: "Actividad 1: Selección Múltiple").
-                - 'instrucciones': Instrucciones para esa actividad específica.
-                - 'items': Un array de preguntas con la cantidad exacta solicitada. Cada pregunta (item) debe tener:
-                    - 'id': Un UUID.
-                    - 'tipo': El tipo de ítem.
-                    - 'pregunta': El enunciado de la pregunta.
-                    - 'puntaje': Un puntaje numérico.
-                    - 'habilidadBloom': La habilidad principal de la Taxonomía de Bloom que se trabaja (ej: Analizar, Crear, Evaluar).
-                    - Campos adicionales según el tipo:
-                        - Para 'Selección múltiple': 'opciones' (array de EXACTAMENTE 4 strings sin la letra de la alternativa) y 'respuestaCorrecta' (índice numérico de la respuesta correcta, de 0 a 3).
-                        - Para 'Verdadero o Falso': 'respuestaCorrecta' (booleano).
-                        - Para 'Términos pareados': 'pares' (array de objetos con 'concepto' y 'definicion').
-                        - Para 'Comprensión de lectura': 'texto' (string con el texto) y 'preguntas' (un array de sub-preguntas que pueden ser 'Selección múltiple' o 'Desarrollo', y cada una debe tener también 'habilidadBloom').
-                        - Para 'Desarrollo': no necesita campos adicionales.
+               - 'id': Un UUID.
+               - 'titulo': Un título descriptivo (ej: "Actividad 1: Selección Múltiple").
+               - 'instrucciones': Instrucciones para esa actividad específica.
+               - 'items': Un array de preguntas con la cantidad exacta solicitada. Cada pregunta (item) debe tener:
+                   - 'id': Un UUID.
+                   - 'tipo': El tipo de ítem.
+                   - 'pregunta': El enunciado de la pregunta.
+                   - 'puntaje': Un puntaje numérico.
+                   - 'habilidadBloom': La habilidad principal de la Taxonomía de Bloom que se trabaja (ej: Analizar, Crear, Evaluar).
+                   - Campos adicionales según el tipo:
+                       - Para 'Selección múltiple': 'opciones' (array de EXACTAMENTE 4 strings sin la letra de la alternativa) y 'respuestaCorrecta' (índice numérico de la respuesta correcta, de 0 a 3).
+                       - Para 'Verdadero o Falso': 'respuestaCorrecta' (booleano).
+                       - Para 'Términos pareados': 'pares' (array de objetos con 'concepto' y 'definicion').
+                       - Para 'Comprensión de lectura': 'texto' (string con el texto) y 'preguntas' (un array de sub-preguntas que pueden ser 'Selección múltiple' o 'Desarrollo', y cada una debe tener también 'habilidadBloom').
+                       - Para 'Desarrollo': no necesita campos adicionales.
         `;
 
         try {
             logApiCall('Evaluación - Pruebas');
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: { responseMimeType: 'application/json' }
-            });
-            const generatedData = JSON.parse(response.text);
+            const apiKey = "";
+            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+            
+            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+            const generatedData = JSON.parse(cleanedText);
 
             let puntajeIdeal = 0;
             generatedData.actividades.forEach((act: PruebaActividad) => {
@@ -379,7 +346,6 @@ const PruebasSubmodule: React.FC = () => {
             setCurrentPrueba(newPrueba);
             setShowAnswers(false);
 
-
         } catch(err) {
             console.error(err);
             setError("Error al generar la prueba con IA. Inténtelo de nuevo.");
@@ -388,17 +354,27 @@ const PruebasSubmodule: React.FC = () => {
         }
     };
     
-    const handleSavePrueba = () => {
+    const handleSavePrueba = async () => {
         if (!currentPrueba) return;
-        persistPruebas([currentPrueba, ...pruebas.filter(p => p.id !== currentPrueba.id)]);
-        alert('Prueba guardada con éxito.');
+        try {
+            await savePrueba(currentPrueba);
+            alert('Prueba guardada con éxito.');
+        } catch (error) {
+            console.error(error);
+            alert("No se pudo guardar la prueba.");
+        }
     };
 
-    const handleDeletePrueba = (id: string) => {
+    const handleDeletePrueba = async (id: string) => {
         if (window.confirm('¿Eliminar esta prueba?')) {
-            persistPruebas(pruebas.filter(p => p.id !== id));
-            if (currentPrueba?.id === id) {
-                setCurrentPrueba(null);
+            try {
+                await deletePrueba(id);
+                if (currentPrueba?.id === id) {
+                    setCurrentPrueba(null);
+                }
+            } catch (error) {
+                console.error(error);
+                alert("No se pudo eliminar la prueba.");
             }
         }
     };
@@ -413,7 +389,7 @@ const PruebasSubmodule: React.FC = () => {
         let y = margin;
 
         const addHeader = (docInstance: jsPDF) => {
-            docInstance.setFillColor(230, 230, 230); // Light gray
+            docInstance.setFillColor(230, 230, 230);
             docInstance.rect(0, 0, pageWidth, 25, 'F');
             docInstance.setFontSize(9);
             docInstance.setTextColor(0, 0, 0);
@@ -512,9 +488,9 @@ const PruebasSubmodule: React.FC = () => {
                            itemHeight += estimateHeight(subPreguntaText, {fontSize: 10, width: contentWidth - 5, isBold: true});
                            if (subItem.tipo === 'Selección múltiple') {
                               (subItem as SeleccionMultipleItem).opciones.forEach(op => {
-                                 itemHeight += estimateHeight(op, { fontSize: 10, width: contentWidth - 10 }) + 3;
-                              });
-                              itemHeight += 7;
+                                   itemHeight += estimateHeight(op, { fontSize: 10, width: contentWidth - 10 }) + 3;
+                               });
+                               itemHeight += 7;
                            } else if (subItem.tipo === 'Desarrollo') {
                                itemHeight += 30;
                            }
@@ -540,7 +516,7 @@ const PruebasSubmodule: React.FC = () => {
                         y += 7;
                     });
                 } else if (item.tipo === 'Verdadero o Falso') {
-                    doc.text('V ______   F ______', margin + 5, y);
+                    doc.text('V ______    F ______', margin + 5, y);
                     y += 10;
                 } else if (item.tipo === 'Desarrollo') {
                     doc.setDrawColor(200, 200, 200);
@@ -771,8 +747,10 @@ const PruebasSubmodule: React.FC = () => {
 // --- SUB-MÓDULO 2: RÚBRICAS (ESTÁTICAS) ---
 const RubricasSubmodule: React.FC<{
     rubricas: RubricaEstatica[];
-    onUpdate: (updatedRubricas: RubricaEstatica[]) => void;
-}> = ({ rubricas, onUpdate }) => {
+    onSave: (rubrica: RubricaEstatica) => void;
+    onDelete: (id: string) => void;
+    onCreate: (rubrica: RubricaEstatica) => void;
+}> = ({ rubricas, onSave, onDelete, onCreate }) => {
     const [currentRubrica, setCurrentRubrica] = useState<RubricaEstatica | null>(null);
     const [view, setView] = useState<'list' | 'form'>('list');
     const [isLoading, setIsLoading] = useState(false);
@@ -786,15 +764,15 @@ const RubricasSubmodule: React.FC<{
         setIsLoading(true);
         const prompt = `Crea una rúbrica de evaluación detallada sobre "${title}" con el propósito de "${description}". Genera entre 3 y 5 dimensiones de evaluación. Para cada dimensión, crea un descriptor para 4 niveles: Insuficiente, Suficiente, Competente, y Avanzado.`;
         const schema = {
-            type: Type.ARRAY,
+            type: "ARRAY",
             items: {
-                type: Type.OBJECT,
+                type: "OBJECT",
                 properties: {
-                    dimension: { type: Type.STRING },
-                    insuficiente: { type: Type.STRING },
-                    suficiente: { type: Type.STRING },
-                    competente: { type: Type.STRING },
-                    avanzado: { type: Type.STRING }
+                    dimension: { type: "STRING" },
+                    insuficiente: { type: "STRING" },
+                    suficiente: { type: "STRING" },
+                    competente: { type: "STRING" },
+                    avanzado: { type: "STRING" }
                 },
                 required: ["dimension", "insuficiente", "suficiente", "competente", "avanzado"]
             }
@@ -802,13 +780,19 @@ const RubricasSubmodule: React.FC<{
 
         try {
             logApiCall('Evaluación - Rúbricas');
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: { responseMimeType: 'application/json', responseSchema: schema }
+            const apiKey = "";
+            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            const result = await model.generateContent({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { responseMimeType: 'application/json', responseSchema: schema }
             });
-            const generatedDimensions = JSON.parse(response.text);
+            const response = await result.response;
+            const text = response.text();
+            
+            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+            const generatedDimensions = JSON.parse(cleanedText);
+            
             const newRubrica: RubricaEstatica = {
                 id: crypto.randomUUID(),
                 titulo: title,
@@ -845,25 +829,30 @@ const RubricasSubmodule: React.FC<{
 
         const prompt = `Para una rúbrica sobre "${currentRubrica.titulo}", genera los descriptores para los 4 niveles de logro (Insuficiente, Suficiente, Competente, Avanzado) para la nueva dimensión: "${newDimensionName}". Considera las dimensiones existentes como contexto: ${currentRubrica.dimensiones.map(d => d.nombre).join(', ')}.`;
         const schema = {
-            type: Type.OBJECT,
+            type: "OBJECT",
             properties: {
-                insuficiente: { type: Type.STRING },
-                suficiente: { type: Type.STRING },
-                competente: { type: Type.STRING },
-                avanzado: { type: Type.STRING }
+                insuficiente: { type: "STRING" },
+                suficiente: { type: "STRING" },
+                competente: { type: "STRING" },
+                avanzado: { type: "STRING" }
             },
             required: ["insuficiente", "suficiente", "competente", "avanzado"]
         };
 
         try {
             logApiCall('Evaluación - Rúbricas (Añadir Dimensión)');
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: { responseMimeType: 'application/json', responseSchema: schema }
+            const apiKey = "";
+            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            const result = await model.generateContent({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { responseMimeType: 'application/json', responseSchema: schema }
             });
-            const generatedLevels = JSON.parse(response.text);
+            const response = await result.response;
+            const text = response.text();
+            
+            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+            const generatedLevels = JSON.parse(cleanedText);
 
             setCurrentRubrica(prev => prev ? {
                 ...prev,
@@ -873,19 +862,18 @@ const RubricasSubmodule: React.FC<{
         } catch (error) {
             console.error("Error generating dimension descriptors:", error);
             alert("No se pudieron generar los descriptores.");
-            // Remove the loading dimension on error
             setCurrentRubrica(prev => prev ? { ...prev, dimensiones: prev.dimensiones.filter(d => d.id !== newDimId) } : null);
         }
     };
 
-
     const handleSave = () => {
         if (!currentRubrica) return;
         const exists = rubricas.some(r => r.id === currentRubrica.id);
-        const updated = exists
-            ? rubricas.map(r => r.id === currentRubrica.id ? currentRubrica : r)
-            : [currentRubrica, ...rubricas];
-        onUpdate(updated);
+        if (exists) {
+            onSave(currentRubrica);
+        } else {
+            onCreate(currentRubrica);
+        }
         setView('list');
         setCurrentRubrica(null);
     };
@@ -895,12 +883,6 @@ const RubricasSubmodule: React.FC<{
         setView('form');
     };
 
-    const handleDelete = (id: string) => {
-        if (window.confirm("¿Eliminar esta rúbrica?")) {
-            onUpdate(rubricas.filter(r => r.id !== id));
-        }
-    };
-    
     const handleCreateNew = () => {
         setCurrentRubrica({ id: crypto.randomUUID(), titulo: '', descripcion: '', fechaCreacion: new Date().toISOString(), dimensiones: [] });
         setView('form');
@@ -930,7 +912,6 @@ const RubricasSubmodule: React.FC<{
         setCurrentRubrica(prev => prev ? { ...prev, dimensiones: prev.dimensiones.filter(d => d.id !== dimId) } : null);
     };
 
-
     const renderFormView = () => {
         if (!currentRubrica) return null;
         
@@ -954,15 +935,15 @@ const RubricasSubmodule: React.FC<{
                     </div>
                  </div>
                  {currentRubrica.dimensiones.length === 0 && (
-                     <div className="text-center py-4">
+                    <div className="text-center py-4">
                         <button onClick={() => handleGenerateRubrica(currentRubrica.titulo, currentRubrica.descripcion)} disabled={isLoading || !currentRubrica.titulo || !currentRubrica.descripcion} className="bg-sky-500 text-white font-semibold py-2 px-5 rounded-lg disabled:bg-slate-400 flex items-center gap-2 mx-auto">
-                           {isLoading ? 'Generando...' : '✨ Generar Rúbrica con IA'}
+                            {isLoading ? 'Generando...' : '✨ Generar Rúbrica con IA'}
                         </button>
                     </div>
                  )}
-                 
-                 {currentRubrica.dimensiones.length > 0 && (
-                     <div className="space-y-4">
+                
+                {currentRubrica.dimensiones.length > 0 && (
+                    <div className="space-y-4">
                         <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">Dimensiones a Evaluar</h3>
                         <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-lg">
                             <table className="min-w-full text-sm">
@@ -1001,11 +982,11 @@ const RubricasSubmodule: React.FC<{
                              </div>
                              <button onClick={handleAddDimensionWithAI} disabled={!newDimensionName.trim()} className="bg-slate-200 dark:bg-slate-600 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 h-10 disabled:opacity-50">Generar con IA</button>
                         </div>
-                     </div>
-                 )}
+                    </div>
+                )}
 
                  <div className="flex justify-end pt-6 border-t dark:border-slate-700">
-                     <button onClick={handleSave} className="bg-amber-500 text-white font-bold py-2.5 px-6 rounded-lg hover:bg-amber-600">Guardar Rúbrica</button>
+                    <button onClick={handleSave} className="bg-amber-500 text-white font-bold py-2.5 px-6 rounded-lg hover:bg-amber-600">Guardar Rúbrica</button>
                  </div>
             </div>
         );
@@ -1026,7 +1007,7 @@ const RubricasSubmodule: React.FC<{
                         </div>
                         <div className="flex gap-2 flex-shrink-0">
                             <button onClick={() => handleEdit(r)} className="text-sm font-semibold text-blue-600 hover:underline">Editar</button>
-                            <button onClick={() => handleDelete(r.id)} className="text-sm font-semibold text-red-600 hover:underline">Eliminar</button>
+                            <button onClick={() => onDelete(r.id)} className="text-sm font-semibold text-red-600 hover:underline">Eliminar</button>
                         </div>
                     </div>
                 )) : <p className="text-slate-500 dark:text-slate-400 text-center py-4">No hay rúbricas guardadas.</p>}
@@ -1036,7 +1017,6 @@ const RubricasSubmodule: React.FC<{
     
     return renderFormView();
 };
-
 
 // --- SUB-MÓDULO 3: RÚBRICAS INTERACTIVAS ---
 const RubricasInteractivas: React.FC<{
@@ -1051,18 +1031,11 @@ const RubricasInteractivas: React.FC<{
     const [feedbackLoadingStudent, setFeedbackLoadingStudent] = useState<string | null>(null);
 
     useEffect(() => {
-        try {
-            const data = localStorage.getItem(RUBRICAS_INTERACTIVAS_KEY);
-            if (data) setRubricasInteractivas(JSON.parse(data));
-        } catch(e) { console.error("Error loading interactive rubrics", e); }
+        const unsubscribe = subscribeToRubricasInteractivas(setRubricasInteractivas);
+        return () => unsubscribe();
     }, []);
 
-    const persistRubricas = (data: RubricaInteractiva[]) => {
-        setRubricasInteractivas(data);
-        localStorage.setItem(RUBRICAS_INTERACTIVAS_KEY, JSON.stringify(data));
-    };
-    
-    const handleCreate = (e: FormEvent) => {
+    const handleCreate = async (e: FormEvent) => {
         e.preventDefault();
         const selectedStatic = rubricasEstaticas.find(r => r.id === formState.rubricaEstaticaId);
         if (!selectedStatic || !formState.curso) {
@@ -1070,16 +1043,21 @@ const RubricasInteractivas: React.FC<{
             return;
         }
 
-        const newInteractiveRubric: RubricaInteractiva = {
-            id: crypto.randomUUID(),
+        const newInteractiveRubric: Omit<RubricaInteractiva, 'id'> = {
             nombre: selectedStatic.titulo,
             curso: formState.curso,
             asignatura: 'N/A', // Could be added to RubricaEstatica later
             rubricaEstaticaId: selectedStatic.id,
             resultados: {}
         };
-        persistRubricas([newInteractiveRubric, ...rubricasInteractivas]);
-        setFormState({ rubricaEstaticaId: '', curso: '' });
+        
+        try {
+            await createRubricaInteractiva(newInteractiveRubric);
+            setFormState({ rubricaEstaticaId: '', curso: '' });
+        } catch (error) {
+            console.error(error);
+            alert("No se pudo crear la evaluación con rúbrica.");
+        }
     };
     
     const handleSelectRubrica = (rubrica: RubricaInteractiva) => {
@@ -1100,11 +1078,16 @@ const RubricasInteractivas: React.FC<{
         });
     };
     
-    const handleSaveChanges = () => {
+    const handleSaveChanges = async () => {
         if (!modifiedRubrica) return;
-        persistRubricas(rubricasInteractivas.map(r => r.id === modifiedRubrica.id ? modifiedRubrica : r));
-        setSelectedRubrica(modifiedRubrica);
-        alert("Cambios guardados.");
+        try {
+            await saveRubricaInteractiva(modifiedRubrica);
+            setSelectedRubrica(modifiedRubrica);
+            alert("Cambios guardados.");
+        } catch (error) {
+            console.error(error);
+            alert("No se pudieron guardar los cambios.");
+        }
     };
 
     const calculateScoreAndGrade = useCallback((studentName: string) => {
@@ -1136,12 +1119,17 @@ const RubricasInteractivas: React.FC<{
         
         try {
             logApiCall('Evaluación - Rúbricas Interactivas (Feedback)');
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
-            const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
+            const apiKey = "";
+            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+            
             setModifiedRubrica(prev => {
                 if (!prev) return null;
                 const updated = JSON.parse(JSON.stringify(prev));
-                updated.resultados[studentName].feedback = response.text.replace(/(\*\*|\*)/g, '');
+                updated.resultados[studentName].feedback = text.replace(/(\*\*|\*)/g, '');
                 return updated;
             });
         } catch(e) {
@@ -1212,7 +1200,7 @@ const RubricasInteractivas: React.FC<{
                 </div>
                  <div className="mt-6 flex justify-end">
                     <button onClick={handleSaveChanges} className="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600">Guardar Cambios</button>
-                </div>
+                 </div>
             </div>
         );
     }
@@ -1252,12 +1240,10 @@ const RubricasInteractivas: React.FC<{
 const GestionNominas: React.FC<{ allUsers: User[] }> = ({ allUsers }) => {
     const [selectedCourse, setSelectedCourse] = useState('');
 
-    // Genera la lista de cursos disponibles a partir de los datos de los estudiantes.
     const availableCourses = useMemo(() => {
         return Array.from(new Set(allUsers.filter(u => u.profile === Profile.ESTUDIANTE && u.curso).map(u => normalizeCurso(u.curso!)))).sort();
     }, [allUsers]);
 
-    // Filtra la lista de estudiantes según el curso seleccionado.
     const filteredStudents = useMemo(() => {
         const baseStudentList = allUsers.filter(u => u.profile === Profile.ESTUDIANTE);
         if (!selectedCourse) {
@@ -1323,26 +1309,38 @@ const EvaluacionAprendizajes: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'pruebas' | 'rubricas' | 'rubricasInteractivas' | 'nominas'>('pruebas');
     const [allUsers, setAllUsers] = useState<User[]>([]);
     const [rubricasEstaticas, setRubricasEstaticas] = useState<RubricaEstatica[]>([]);
+    const [loading, setLoading] = useState(true);
     
     useEffect(() => {
-        const loadData = () => {
-            try {
-                const storedUsers = localStorage.getItem(USERS_KEY);
-                if (storedUsers) setAllUsers(JSON.parse(storedUsers));
-                
-                const storedRubricas = localStorage.getItem(RUBRICAS_ESTATICAS_KEY);
-                if (storedRubricas) setRubricasEstaticas(JSON.parse(storedRubricas));
-            } catch(e) { console.error("Error loading data for evaluation module", e); }
+        setLoading(true);
+        const unsubUsers = subscribeToAllUsers(setAllUsers);
+        const unsubRubricas = subscribeToRubricasEstaticas((data) => {
+            setRubricasEstaticas(data);
+            setLoading(false); // Consideramos cargado cuando las rúbricas están listas
+        });
+
+        return () => {
+            unsubUsers();
+            unsubRubricas();
         };
-        loadData();
-        window.addEventListener('storage', loadData); // Listen for changes from other tabs/modules
-        return () => window.removeEventListener('storage', loadData);
     }, []);
 
-    const handleUpdateRubricas = (updatedRubricas: RubricaEstatica[]) => {
-        setRubricasEstaticas(updatedRubricas);
-        localStorage.setItem(RUBRICAS_ESTATICAS_KEY, JSON.stringify(updatedRubricas));
-        window.dispatchEvent(new Event('storage')); // Notify other components
+    const handleSaveRubrica = async (rubrica: RubricaEstatica) => {
+        try {
+            await saveRubricaEstatica(rubrica);
+        } catch (error) {
+            console.error(error);
+            alert("No se pudo guardar la rúbrica.");
+        }
+    };
+
+    const handleDeleteRubrica = async (id: string) => {
+        try {
+            await deleteRubricaEstatica(id);
+        } catch (error) {
+            console.error(error);
+            alert("No se pudo eliminar la rúbrica.");
+        }
     };
 
     const TabButton: React.FC<{ tabName: typeof activeTab, label: string }> = ({ tabName, label }) => (
@@ -1358,6 +1356,10 @@ const EvaluacionAprendizajes: React.FC = () => {
         </button>
     );
 
+    if (loading) {
+        return <div className="text-center py-10">Cargando módulo de evaluaciones...</div>;
+    }
+
     return (
         <div className="space-y-8 animate-fade-in">
              <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Evaluación de Aprendizajes</h1>
@@ -1372,7 +1374,7 @@ const EvaluacionAprendizajes: React.FC = () => {
             
             <div className="mt-6">
                 {activeTab === 'pruebas' && <PruebasSubmodule />}
-                {activeTab === 'rubricas' && <RubricasSubmodule rubricas={rubricasEstaticas} onUpdate={handleUpdateRubricas} />}
+                {activeTab === 'rubricas' && <RubricasSubmodule rubricas={rubricasEstaticas} onSave={handleSaveRubrica} onDelete={handleDeleteRubrica} onCreate={handleSaveRubrica} />}
                 {activeTab === 'rubricasInteractivas' && <RubricasInteractivas allUsers={allUsers} rubricasEstaticas={rubricasEstaticas} />}
                 {activeTab === 'nominas' && <GestionNominas allUsers={allUsers} />}
             </div>
