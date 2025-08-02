@@ -69,6 +69,88 @@ export const debugUsersCollection = async () => {
 };
 
 /**
+ * Función de prueba simple para verificar acceso directo a asistencia_dual
+ */
+export const testDirectAccess = async () => {
+    try {
+        console.log('🧪 PRUEBA DIRECTA DE ACCESO A asistencia_dual');
+        
+        const asistenciaRef = collection(db, 'asistencia_dual');
+        
+        // Prueba 1: Acceso básico sin filtros
+        console.log('📋 Prueba 1: Acceso básico...');
+        const basicQuery = query(asistenciaRef, limit(5));
+        const basicSnapshot = await getDocs(basicQuery);
+        
+        console.log(`✅ Documentos encontrados: ${basicSnapshot.size}`);
+        
+        if (basicSnapshot.size > 0) {
+            basicSnapshot.docs.forEach((doc, index) => {
+                console.log(`   ${index + 1}. ID: ${doc.id}`);
+                console.log(`       Datos:`, doc.data());
+            });
+            
+            // Prueba 2: Verificar estructura de fecha
+            const firstDoc = basicSnapshot.docs[0].data();
+            console.log('🔍 Análisis del primer documento:');
+            console.log(`   fechaHora tipo: ${typeof firstDoc.fechaHora}`);
+            console.log(`   fechaHora valor:`, firstDoc.fechaHora);
+            
+            if (firstDoc.fechaHora?.toDate) {
+                console.log(`   fechaHora como Date:`, firstDoc.fechaHora.toDate());
+            } else if (typeof firstDoc.fechaHora === 'string') {
+                console.log(`   fechaHora parseada:`, new Date(firstDoc.fechaHora));
+            }
+            
+            // Prueba 3: Consulta simple con filtro de email
+            console.log('📋 Prueba 3: Filtro por email...');
+            const emailQuery = query(
+                asistenciaRef, 
+                where('emailEstudiante', '==', firstDoc.emailEstudiante)
+            );
+            const emailSnapshot = await getDocs(emailQuery);
+            console.log(`✅ Registros para ${firstDoc.emailEstudiante}: ${emailSnapshot.size}`);
+            
+            // Prueba 4: Intentar consulta con ordenamiento (donde puede fallar)
+            try {
+                console.log('📋 Prueba 4: Consulta con orderBy...');
+                const orderQuery = query(asistenciaRef, orderBy('fechaHora', 'desc'), limit(3));
+                const orderSnapshot = await getDocs(orderQuery);
+                console.log(`✅ Con orderBy: ${orderSnapshot.size} documentos`);
+            } catch (orderError) {
+                console.error('❌ Error con orderBy:', orderError);
+                console.log('💡 Esto indica que falta un índice en Firestore');
+            }
+            
+        } else {
+            console.log('❌ No se encontraron documentos en asistencia_dual');
+            
+            // Verificar permisos
+            console.log('🔒 Verificando permisos...');
+            try {
+                await addDoc(asistenciaRef, { test: true });
+                console.log('✅ Permisos de escritura: OK');
+            } catch (permError) {
+                console.error('❌ Error de permisos:', permError);
+            }
+        }
+        
+    } catch (error) {
+        console.error('❌ Error en prueba directa:', error);
+        
+        if (error.code === 'permission-denied') {
+            console.log('🔒 PROBLEMA: Las reglas de Firestore están bloqueando el acceso');
+            console.log('💡 Solución: Revisar las reglas de seguridad en Firebase Console');
+        } else if (error.code === 'failed-precondition') {
+            console.log('📊 PROBLEMA: Faltan índices en Firestore');
+            console.log('💡 Solución: Crear índices para las consultas en Firebase Console');
+        } else {
+            console.log('🔧 PROBLEMA: Error de configuración o conexión');
+        }
+    }
+};
+
+/**
  * Función de debug para verificar qué colecciones de asistencia existen y su estructura
  * @param year - Año a verificar
  * @param month - Mes a verificar (0-based)
@@ -153,13 +235,104 @@ export const debugAsistenciaCollections = async (year: number, month: number) =>
 };
 
 /**
+ * Función de búsqueda exhaustiva de registros de asistencia
+ * Busca en TODAS las colecciones posibles, sin filtros de fecha inicialmente
+ */
+export const findAllAttendanceRecords = async () => {
+    console.log('🔍 BÚSQUEDA EXHAUSTIVA DE REGISTROS DE ASISTENCIA');
+    
+    // Lista más amplia de posibles colecciones
+    const allPossibleCollections = [
+        'asistencia', 'asistenciaDual', 'asistenciaEmpresa', 'attendance', 'checkins',
+        'registros', 'registro_asistencia', 'dual_attendance', 'student_attendance',
+        'empresa_attendance', 'practicas', 'practicas_profesionales', 'dual_checkins'
+    ];
+    
+    const results: any = {};
+    
+    for (const collectionName of allPossibleCollections) {
+        try {
+            console.log(`\n🔍 Analizando: ${collectionName}`);
+            const collectionRef = collection(db, collectionName);
+            
+            // Obtener algunos documentos sin filtro
+            const simpleQuery = query(collectionRef, limit(20));
+            const snapshot = await getDocs(simpleQuery);
+            
+            if (snapshot.size > 0) {
+                console.log(`✅ ${collectionName}: ${snapshot.size} documentos encontrados`);
+                
+                const docs = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    data: doc.data()
+                }));
+                
+                // Analizar estructura
+                const firstDoc = docs[0].data;
+                console.log(`📄 Estructura del primer documento:`, firstDoc);
+                
+                // Buscar campos relacionados con estudiantes
+                const possibleEmailFields = ['email', 'emailEstudiante', 'userEmail', 'student_email', 'correo'];
+                const possibleDateFields = ['fechaHora', 'fecha', 'timestamp', 'createdAt', 'date', 'time'];
+                const possibleTypeFields = ['tipo', 'type', 'action', 'tipoRegistro', 'event_type'];
+                
+                const emailField = possibleEmailFields.find(field => firstDoc.hasOwnProperty(field));
+                const dateField = possibleDateFields.find(field => firstDoc.hasOwnProperty(field));
+                const typeField = possibleTypeFields.find(field => firstDoc.hasOwnProperty(field));
+                
+                console.log(`📧 Campo de email: ${emailField} = ${firstDoc[emailField || '']}`);
+                console.log(`📅 Campo de fecha: ${dateField} = ${firstDoc[dateField || '']}`);
+                console.log(`📝 Campo de tipo: ${typeField} = ${firstDoc[typeField || '']}`);
+                
+                // Buscar patrones de estudiantes
+                const studentEmails = docs
+                    .map(doc => emailField ? doc.data[emailField] : null)
+                    .filter(Boolean)
+                    .filter(email => typeof email === 'string' && email.includes('@'));
+                
+                console.log(`👥 Emails de estudiantes encontrados:`, [...new Set(studentEmails)]);
+                
+                results[collectionName] = {
+                    exists: true,
+                    count: snapshot.size,
+                    emailField,
+                    dateField,
+                    typeField,
+                    sampleDoc: firstDoc,
+                    studentEmails: [...new Set(studentEmails)],
+                    allDocs: docs
+                };
+            } else {
+                console.log(`⚪ ${collectionName}: vacía`);
+                results[collectionName] = { exists: true, count: 0 };
+            }
+        } catch (error) {
+            console.log(`❌ ${collectionName}: no existe o error`);
+            results[collectionName] = { exists: false, error: error instanceof Error ? error.message : 'Error' };
+        }
+    }
+    
+    console.log('\n📊 RESUMEN COMPLETO:', results);
+    
+    // Identificar la colección más probable
+    const validCollections = Object.entries(results)
+        .filter(([_, info]: [string, any]) => info.exists && info.count > 0 && info.studentEmails?.length > 0)
+        .sort(([_, a], [__, b]) => (b as any).count - (a as any).count);
+    
+    if (validCollections.length > 0) {
+        const [bestCollection, bestInfo] = validCollections[0];
+        console.log(`\n🎯 MEJOR CANDIDATO: ${bestCollection} con ${(bestInfo as any).count} registros`);
+        console.log(`📧 Campo email: ${(bestInfo as any).emailField}`);
+        console.log(`📅 Campo fecha: ${(bestInfo as any).dateField}`);
+        console.log(`📝 Campo tipo: ${(bestInfo as any).typeField}`);
+    }
+    
+    return results;
+};
+
+/**
  * Suscribe a los registros de asistencia dual para un mes específico
- * Busca en múltiples colecciones posibles: 'asistenciaDual', 'asistenciaEmpresa', 'asistencia'
- * @param year - Año
- * @param month - Mes (0-based, enero = 0)
- * @param onData - Callback que recibe los datos
- * @param onError - Callback que recibe errores
- * @returns Función para cancelar la suscripción
+ * Versión mejorada que usa los resultados de la búsqueda exhaustiva
  */
 export const subscribeToAsistenciaByMonth = (
     year: number,
@@ -168,29 +341,64 @@ export const subscribeToAsistenciaByMonth = (
     onError?: (error: Error) => void
 ): Unsubscribe => {
     try {
-        // Crear fechas de inicio y fin del mes
+        // Crear fechas con margen más amplio para capturar registros
         const startOfMonth = new Date(year, month, 1);
-        const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
+        startOfMonth.setHours(0, 0, 0, 0);
+        
+        const endOfMonth = new Date(year, month + 1, 0);
+        endOfMonth.setHours(23, 59, 59, 999);
+
+        console.log(`🔍 Buscando registros entre: ${startOfMonth.toISOString()} y ${endOfMonth.toISOString()}`);
+        console.log(`📅 Mes actual: ${year}-${(month + 1).toString().padStart(2, '0')}`);
 
         // Convertir a Timestamp de Firestore
         const startTimestamp = Timestamp.fromDate(startOfMonth);
         const endTimestamp = Timestamp.fromDate(endOfMonth);
 
-        // Colecciones posibles donde pueden estar los registros
-        const collections = ['asistenciaDual', 'asistenciaEmpresa', 'asistencia'];
         const unsubscribers: Unsubscribe[] = [];
         const allRegistros = new Map<string, AsistenciaDual>();
 
         const updateData = () => {
             const registrosArray = Array.from(allRegistros.values());
-            console.log(`Total registros encontrados: ${registrosArray.length}`);
+            console.log(`📊 Total registros encontrados: ${registrosArray.length}`);
+            
+            if (registrosArray.length > 0) {
+                console.log(`📅 Registros por día:`, registrosArray.reduce((acc, r) => {
+                    let fecha: Date;
+                    if (r.fechaHora instanceof Date) {
+                        fecha = r.fechaHora;
+                    } else if (typeof r.fechaHora === 'string') {
+                        fecha = new Date(r.fechaHora);
+                    } else {
+                        // Si llegamos aquí, probablemente es un timestamp sin convertir
+                        fecha = new Date();
+                    }
+                    
+                    const day = fecha.getDate();
+                    acc[day] = (acc[day] || 0) + 1;
+                    return acc;
+                }, {} as Record<number, number>));
+            }
+            
             onData(registrosArray);
         };
 
+        // Lista de colecciones a revisar - INCLUYENDO las que usa asistenciaEmpresaHelper
+        const collections = [
+            'asistencia_dual',      // con guión bajo
+            'asistenciaEmpresa',    // ← PROBABLEMENTE ESTA ES LA CORRECTA
+            'asistencia_empresa',   // con guión bajo también
+            'asistenciaDual',       // camelCase
+            'asistencia'            // básica
+        ];
+
         collections.forEach((collectionName) => {
             try {
+                console.log(`🔍 Configurando suscripción para: ${collectionName}`);
                 const asistenciaRef = collection(db, collectionName);
-                const q = query(
+                
+                // Estrategia 1: Con filtro de fecha
+                const qWithFilter = query(
                     asistenciaRef,
                     where('fechaHora', '>=', startTimestamp),
                     where('fechaHora', '<=', endTimestamp),
@@ -198,9 +406,28 @@ export const subscribeToAsistenciaByMonth = (
                 );
 
                 const unsubscribe = onSnapshot(
-                    q,
+                    qWithFilter,
                     (querySnapshot) => {
-                        console.log(`Loading from collection: ${collectionName}, docs: ${querySnapshot.size}`);
+                        console.log(`📋 ${collectionName}: ${querySnapshot.size} documentos encontrados con filtro`);
+                        
+                        if (querySnapshot.size > 0) {
+                            console.log(`✅ Registros encontrados en ${collectionName}:`);
+                            querySnapshot.docs.forEach((doc, index) => {
+                                if (index < 5) {
+                                    const data = doc.data();
+                                    let fecha;
+                                    if (data.fechaHora?.toDate) {
+                                        fecha = data.fechaHora.toDate();
+                                    } else if (typeof data.fechaHora === 'string') {
+                                        fecha = new Date(data.fechaHora);
+                                    } else {
+                                        fecha = new Date();
+                                    }
+                                    console.log(`   ${index + 1}. ${data.emailEstudiante} - ${fecha.toLocaleString()} - ${data.tipo}`);
+                                    console.log(`      📅 Fecha original: ${data.fechaHora} (tipo: ${typeof data.fechaHora})`);
+                                }
+                            });
+                        }
                         
                         // Limpiar registros anteriores de esta colección
                         const keysToDelete = Array.from(allRegistros.keys()).filter(key => key.startsWith(`${collectionName}_`));
@@ -209,44 +436,36 @@ export const subscribeToAsistenciaByMonth = (
                         querySnapshot.forEach((doc) => {
                             const data = doc.data();
                             
-                            // Manejo flexible de campos de fecha
+                            // Procesar fecha con manejo flexible para diferentes formatos
                             let fechaHora: Date;
-                            if (data.fechaHora) {
-                                fechaHora = data.fechaHora?.toDate?.() || new Date(data.fechaHora);
-                            } else if (data.fecha) {
-                                fechaHora = data.fecha?.toDate?.() || new Date(data.fecha);
-                            } else if (data.timestamp) {
-                                fechaHora = data.timestamp?.toDate?.() || new Date(data.timestamp);
+                            if (data.fechaHora?.toDate) {
+                                // Firestore Timestamp
+                                fechaHora = data.fechaHora.toDate();
+                            } else if (typeof data.fechaHora === 'string') {
+                                // ISO string (como viene del asistenciaEmpresaHelper)
+                                fechaHora = new Date(data.fechaHora);
+                            } else if (data.fechaHora instanceof Date) {
+                                // Ya es un Date object
+                                fechaHora = data.fechaHora;
+                            } else if (data.fechaHora) {
+                                // Cualquier otro formato
+                                fechaHora = new Date(data.fechaHora);
                             } else {
                                 fechaHora = new Date();
                             }
 
-                            // Manejo flexible de campos de email/estudiante
-                            const emailEstudiante = data.emailEstudiante || data.email || data.userEmail || '';
-                            const nombreEstudiante = data.nombreEstudiante || data.nombre || data.displayName || data.nombreCompleto || '';
-                            
-                            // Manejo flexible del tipo de registro
-                            let tipo = data.tipo || data.type || 'Entrada';
-                            if (data.action) {
-                                tipo = data.action === 'checkin' ? 'Entrada' : 'Salida';
-                            } else if (data.tipoRegistro) {
-                                tipo = data.tipoRegistro;
-                            }
-
                             const registro: AsistenciaDual = {
                                 id: doc.id,
-                                emailEstudiante,
-                                nombreEstudiante,
-                                curso: data.curso || data.course || '',
+                                emailEstudiante: data.emailEstudiante || data.email || '',
+                                nombreEstudiante: data.nombreEstudiante || data.nombre || '',
+                                curso: data.curso || '',
                                 fechaHora,
-                                tipo: tipo as 'Entrada' | 'Salida',
-                                ubicacion: data.ubicacion || data.location || data.coordinates || null,
-                                observaciones: data.observaciones || data.notes || data.comentarios || '',
-                                // Incluir todos los campos adicionales
+                                tipo: data.tipo as 'Entrada' | 'Salida',
+                                ubicacion: data.ubicacion || null,
+                                observaciones: data.observaciones || '',
                                 ...data
                             };
                             
-                            // Usar un ID único que incluya la colección
                             const uniqueKey = `${collectionName}_${doc.id}`;
                             allRegistros.set(uniqueKey, registro);
                         });
@@ -254,14 +473,100 @@ export const subscribeToAsistenciaByMonth = (
                         updateData();
                     },
                     (error) => {
-                        console.warn(`Error in collection ${collectionName}:`, error);
-                        // No llamar onError aquí, ya que otras colecciones pueden funcionar
+                        console.warn(`⚠️ Error con filtro en ${collectionName}:`, error);
+                        
+                        // Estrategia 2: Sin filtro, obtener documentos recientes y filtrar manualmente
+                        console.log(`🔄 Intentando estrategia alternativa en ${collectionName}...`);
+                        
+                        const qNoFilter = query(asistenciaRef, limit(200)); // Más documentos
+                        
+                        const unsubNoFilter = onSnapshot(qNoFilter, (snapshot) => {
+                            console.log(`📋 ${collectionName} (sin filtro): ${snapshot.size} documentos`);
+                            
+                            if (snapshot.size > 0) {
+                                // Mostrar estructura del primer documento
+                                const firstDoc = snapshot.docs[0].data();
+                                console.log(`📄 Estructura en ${collectionName}:`, Object.keys(firstDoc));
+                                console.log(`📄 Primer documento:`, firstDoc);
+                            }
+                            
+                            const filteredDocs = snapshot.docs.filter(doc => {
+                                const data = doc.data();
+                                if (!data.fechaHora) return false;
+                                
+                                let fecha: Date;
+                                if (data.fechaHora?.toDate) {
+                                    // Firestore Timestamp
+                                    fecha = data.fechaHora.toDate();
+                                } else if (typeof data.fechaHora === 'string') {
+                                    // ISO string
+                                    fecha = new Date(data.fechaHora);
+                                } else if (data.fechaHora instanceof Date) {
+                                    // Ya es Date
+                                    fecha = data.fechaHora;
+                                } else {
+                                    fecha = new Date(data.fechaHora);
+                                }
+                                
+                                return fecha >= startOfMonth && fecha <= endOfMonth;
+                            });
+                            
+                            console.log(`📅 ${collectionName}: ${filteredDocs.length} registros después de filtro manual`);
+                            
+                            if (filteredDocs.length > 0) {
+                                // Limpiar y agregar registros filtrados
+                                const keysToDelete = Array.from(allRegistros.keys()).filter(key => key.startsWith(`${collectionName}_`));
+                                keysToDelete.forEach(key => allRegistros.delete(key));
+                                
+                                filteredDocs.forEach(doc => {
+                                    const data = doc.data();
+                                    let fechaHora: Date;
+                                    if (data.fechaHora?.toDate) {
+                                        // Firestore Timestamp
+                                        fechaHora = data.fechaHora.toDate();
+                                    } else if (typeof data.fechaHora === 'string') {
+                                        // ISO string
+                                        fechaHora = new Date(data.fechaHora);
+                                    } else if (data.fechaHora instanceof Date) {
+                                        // Ya es Date
+                                        fechaHora = data.fechaHora;
+                                    } else {
+                                        fechaHora = new Date(data.fechaHora);
+                                    }
+                                    
+                                    const registro: AsistenciaDual = {
+                                        id: doc.id,
+                                        emailEstudiante: data.emailEstudiante || data.email || '',
+                                        nombreEstudiante: data.nombreEstudiante || data.nombre || '',
+                                        curso: data.curso || '',
+                                        fechaHora,
+                                        tipo: data.tipo as 'Entrada' | 'Salida',
+                                        ubicacion: data.ubicacion || null,
+                                        observaciones: data.observaciones || '',
+                                        ...data
+                                    };
+                                    
+                                    const uniqueKey = `${collectionName}_${doc.id}`;
+                                    allRegistros.set(uniqueKey, registro);
+                                });
+                                
+                                updateData();
+                            }
+                        });
+                        
+                        // Reemplazar el unsubscribe original
+                        const originalIndex = unsubscribers.findIndex(u => u === unsubscribe);
+                        if (originalIndex >= 0) {
+                            unsubscribers[originalIndex] = unsubNoFilter;
+                        } else {
+                            unsubscribers.push(unsubNoFilter);
+                        }
                     }
                 );
 
                 unsubscribers.push(unsubscribe);
             } catch (collectionError) {
-                console.warn(`Error setting up subscription for ${collectionName}:`, collectionError);
+                console.warn(`❌ Error configurando ${collectionName}:`, collectionError);
             }
         });
 
@@ -282,7 +587,6 @@ export const subscribeToAsistenciaByMonth = (
             onError(new Error(`Error al configurar suscripción: ${error instanceof Error ? error.message : 'Error desconocido'}`));
         }
         
-        // Retornar una función vacía como fallback
         return () => {};
     }
 };
@@ -300,14 +604,28 @@ export const subscribeToAllUsersMultiCollection = (
     try {
         console.log('🔍 Buscando usuarios en múltiples colecciones...');
         
-        // Colecciones posibles donde pueden estar los usuarios
-        const possibleCollections = ['users', 'usuarios', 'estudiantes', 'profiles', 'accounts', 'members'];
+        // Solo buscar en 'usuarios' ya que sabemos que está ahí
+        const possibleCollections = ['usuarios', 'users'];
         const unsubscribers: Unsubscribe[] = [];
         const allUsers = new Map<string, User>();
 
         const updateData = () => {
             const usersArray = Array.from(allUsers.values());
             console.log(`📊 Total usuarios encontrados: ${usersArray.length}`);
+            
+            // Mostrar estadísticas por perfil
+            const byProfile = usersArray.reduce((acc, user) => {
+                acc[user.profile] = (acc[user.profile] || 0) + 1;
+                return acc;
+            }, {} as Record<string, number>);
+            console.log('👥 Usuarios por perfil:', byProfile);
+            
+            const estudiantes = usersArray.filter(u => u.profile === Profile.ESTUDIANTE);
+            console.log(`🎓 Estudiantes encontrados: ${estudiantes.length}`);
+            estudiantes.forEach(est => {
+                console.log(`   - ${est.nombreCompleto} (${est.curso}) - ${est.email}`);
+            });
+            
             onData(usersArray);
         };
 
@@ -316,7 +634,7 @@ export const subscribeToAllUsersMultiCollection = (
         possibleCollections.forEach((collectionName) => {
             try {
                 const usersRef = collection(db, collectionName);
-                const q = query(usersRef);
+                const q = query(usersRef, limit(100)); // Aumentar límite
 
                 const unsubscribe = onSnapshot(
                     q,
@@ -332,7 +650,6 @@ export const subscribeToAllUsersMultiCollection = (
                             querySnapshot.forEach((doc) => {
                                 try {
                                     const data = doc.data();
-                                    console.log(`Procesando usuario de ${collectionName}:`, doc.id, data);
                                     
                                     // Manejo flexible de campos
                                     const email = data.email || data.userEmail || data.mail || data.correo || '';
@@ -351,6 +668,8 @@ export const subscribeToAllUsersMultiCollection = (
                                             profile = Profile.COORDINADOR_TP;
                                         } else if (profileLower.includes('profesor') || profileLower.includes('teacher') || profileLower.includes('docente')) {
                                             profile = Profile.PROFESOR;
+                                        } else if (profileLower.includes('subdireccion') || profileLower.includes('subdir')) {
+                                            profile = Profile.COORDINADOR_TP;
                                         }
                                     }
 
@@ -399,7 +718,7 @@ export const subscribeToAllUsersMultiCollection = (
                     onError(new Error('No se encontraron colecciones de usuarios con datos'));
                 }
             }
-        }, 2000);
+        }, 3000);
 
         // Retornar función que cancela todas las suscripciones
         return () => {
@@ -467,6 +786,8 @@ export const subscribeToAllUsers = (
                                 profile = Profile.COORDINADOR_TP;
                             } else if (profileLower.includes('profesor') || profileLower.includes('teacher') || profileLower.includes('docente')) {
                                 profile = Profile.PROFESOR;
+                            } else if (profileLower.includes('subdireccion') || profileLower.includes('subdir')) {
+                                profile = Profile.COORDINADOR_TP; // Tratar subdirección como coordinador para esta vista
                             }
                         }
 

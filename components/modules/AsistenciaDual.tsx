@@ -9,6 +9,8 @@ import {
     subscribeToAllUsersMultiCollection,
     debugAsistenciaCollections,
     debugUsersCollection,
+    findAllAttendanceRecords,
+    testDirectAccess,
 } from '../../src/firebaseHelpers/asistenciaDual';
 
 const normalizeCurso = (curso: string): string => {
@@ -68,6 +70,62 @@ const AsistenciaDual: React.FC = () => {
                 setLoading(false);
             }
         };
+
+        // PRUEBA DIRECTA SIMPLE
+        const runDirectTest = async () => {
+            console.log('🧪 INICIANDO PRUEBA DIRECTA SIMPLE...');
+            
+            try {
+                const testRef = collection(db, 'asistencia_dual');
+                const testQuery = query(testRef, limit(5));
+                const testSnapshot = await getDocs(testQuery);
+                
+                console.log(`✅ asistencia_dual - Documentos encontrados: ${testSnapshot.size}`);
+                
+                if (testSnapshot.size > 0) {
+                    testSnapshot.docs.forEach((doc, index) => {
+                        const data = doc.data();
+                        console.log(`   ${index + 1}. ${doc.id.slice(0, 8)} - ${data.emailEstudiante} - ${data.tipo}`);
+                        console.log(`      Fecha original:`, data.fechaHora);
+                        console.log(`      Todos los campos:`, Object.keys(data));
+                    });
+                } else {
+                    console.log('❌ No se encontraron documentos en asistencia_dual');
+                    
+                    // Intentar con otras colecciones conocidas
+                    const otherCollections = ['asistenciaEmpresa', 'asistencia_empresa'];
+                    for (const collName of otherCollections) {
+                        try {
+                            const otherRef = collection(db, collName);
+                            const otherQuery = query(otherRef, limit(3));
+                            const otherSnapshot = await getDocs(otherQuery);
+                            console.log(`📋 ${collName}: ${otherSnapshot.size} documentos`);
+                            
+                            if (otherSnapshot.size > 0) {
+                                const sampleData = otherSnapshot.docs[0].data();
+                                console.log(`   Estructura:`, Object.keys(sampleData));
+                                console.log(`   Email:`, sampleData.emailEstudiante || sampleData.email);
+                                console.log(`   Fecha:`, sampleData.fechaHora || sampleData.fecha);
+                            }
+                        } catch (err) {
+                            console.log(`❌ ${collName}: ${err instanceof Error ? err.message : 'Error'}`);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('❌ Error en prueba directa:', error);
+                
+                if ((error as any).code === 'permission-denied') {
+                    console.log('🔒 PROBLEMA: Permisos de Firestore denegados');
+                    console.log('💡 Ve a Firebase Console → Firestore → Rules y verifica los permisos');
+                } else if ((error as any).code === 'failed-precondition') {
+                    console.log('📊 PROBLEMA: Faltan índices en Firestore');
+                    console.log('💡 Ve a Firebase Console → Firestore → Indexes');
+                }
+            }
+        };
+        
+        runDirectTest();
 
         // Debug: verificar qué colecciones existen
         debugAsistenciaCollections(year, month).then(debugInfo => {
@@ -277,6 +335,11 @@ const AsistenciaDual: React.FC = () => {
                 u.nombreCompleto.toLowerCase().includes(studentFilter.toLowerCase())
             );
         }
+        
+        console.log(`👥 Estudiantes filtrados para mostrar: ${filteredStudents.length}`);
+        filteredStudents.forEach(student => {
+            console.log(`   - ${student.nombreCompleto} (${student.curso}) - ${student.email}`);
+        });
         
         return filteredStudents.sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
     }, [allStudents, selectedCurso, studentFilter]);
