@@ -336,22 +336,92 @@ const AsistenciaDual: React.FC = () => {
             );
         }
         
+        // Agregar estudiantes que tienen registros pero no están en la lista
+        if (allRegistros.length > 0) {
+            const emailsEnRegistros = [...new Set(allRegistros.map(r => r.emailEstudiante).filter(Boolean))];
+            const emailsDeEstudiantes = filteredStudents.map(s => s.email);
+            const emailsFaltantes = emailsEnRegistros.filter(email => !emailsDeEstudiantes.includes(email));
+            
+            if (emailsFaltantes.length > 0) {
+                console.log('📝 Agregando estudiantes faltantes con registros:', emailsFaltantes);
+                
+                const estudiantesFaltantes = emailsFaltantes.map(email => {
+                    const registro = allRegistros.find(r => r.emailEstudiante === email);
+                    return {
+                        id: email,
+                        email: email,
+                        nombreCompleto: registro?.nombreEstudiante || email.split('@')[0],
+                        curso: registro?.curso || '3ºC',
+                        profile: Profile.ESTUDIANTE,
+                        activo: true,
+                        fechaCreacion: new Date(),
+                        ultimaActividad: new Date()
+                    };
+                });
+                
+                // Solo agregar si pasan los filtros
+                const estudiantesFiltrados = estudiantesFaltantes.filter(est => {
+                    const pasaCurso = selectedCurso === 'todos' || normalizeCurso(est.curso) === selectedCurso;
+                    const pasaBusqueda = !studentFilter || est.nombreCompleto.toLowerCase().includes(studentFilter.toLowerCase());
+                    return pasaCurso && pasaBusqueda && CURSOS_DUAL.includes(normalizeCurso(est.curso));
+                });
+                
+                filteredStudents = [...filteredStudents, ...estudiantesFiltrados];
+            }
+        }
+        
         console.log(`👥 Estudiantes filtrados para mostrar: ${filteredStudents.length}`);
         filteredStudents.forEach(student => {
             console.log(`   - ${student.nombreCompleto} (${student.curso}) - ${student.email}`);
         });
         
         return filteredStudents.sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
-    }, [allStudents, selectedCurso, studentFilter]);
+    }, [allStudents, selectedCurso, studentFilter, allRegistros]);
 
     const attendanceData = useMemo(() => {
+        console.log('🔄 Procesando datos de asistencia para la tabla...');
+        console.log(`📊 Total registros a procesar: ${allRegistros.length}`);
+        console.log(`👥 Estudiantes disponibles: ${studentsForCourse.length}`);
+        
         const data = new Map<string, Map<number, AttendanceRecord>>();
         
-        allRegistros.forEach(registro => {
+        if (allRegistros.length === 0) {
+            console.log('⚠️ No hay registros para procesar aún');
+            return data;
+        }
+        
+        allRegistros.forEach((registro, index) => {
             const studentKey = registro.emailEstudiante;
             if (!studentKey) return;
 
-            const day = new Date(registro.fechaHora).getDate();
+            // Procesar fecha con más detalle
+            let fechaRegistro: Date;
+            if (registro.fechaHora instanceof Date) {
+                fechaRegistro = registro.fechaHora;
+            } else if (registro.fechaHora && typeof registro.fechaHora === 'object' && 'toDate' in registro.fechaHora) {
+                fechaRegistro = (registro.fechaHora as any).toDate();
+            } else if (typeof registro.fechaHora === 'string') {
+                fechaRegistro = new Date(registro.fechaHora);
+            } else {
+                console.warn('Fecha no válida en registro:', registro);
+                return;
+            }
+
+            const day = fechaRegistro.getDate();
+            const month = fechaRegistro.getMonth();
+            const year = fechaRegistro.getFullYear();
+            
+            if (index < 3) { // Log detallado para los primeros registros
+                console.log(`📅 Registro ${index + 1}:`, {
+                    email: studentKey,
+                    tipo: registro.tipo,
+                    fechaOriginal: registro.fechaHora,
+                    fechaProcesada: fechaRegistro.toLocaleString(),
+                    año: year,
+                    mes: month,
+                    día: day
+                });
+            }
             
             if (!data.has(studentKey)) {
                 data.set(studentKey, new Map());
@@ -365,18 +435,29 @@ const AsistenciaDual: React.FC = () => {
             const dayEntry = studentDayData.get(day)!;
 
             if (registro.tipo === 'Entrada') {
-                if (!dayEntry.entrada || new Date(registro.fechaHora) < new Date(dayEntry.entrada.fechaHora)) {
+                if (!dayEntry.entrada || fechaRegistro < new Date(dayEntry.entrada.fechaHora)) {
                     dayEntry.entrada = registro;
                 }
             } else if (registro.tipo === 'Salida') {
-                if (!dayEntry.salida || new Date(registro.fechaHora) > new Date(dayEntry.salida.fechaHora)) {
+                if (!dayEntry.salida || fechaRegistro > new Date(dayEntry.salida.fechaHora)) {
                     dayEntry.salida = registro;
                 }
             }
         });
 
+        console.log('📋 Datos de asistencia procesados:', {
+            estudiantesConRegistros: data.size,
+            estudiantes: Array.from(data.keys()),
+            registrosPorEstudiante: Array.from(data.entries()).map(([email, days]) => ({
+                email,
+                dias: Array.from(days.keys()),
+                totalRegistros: Array.from(days.values()).reduce((acc, day) => 
+                    acc + (day.entrada ? 1 : 0) + (day.salida ? 1 : 0), 0)
+            }))
+        });
+
         return data;
-    }, [allRegistros]);
+    }, [allRegistros]); // ← QUITAR studentsForCourse de las dependencias
 
     const changeMonth = (delta: number) => {
         setCurrentDate(prev => {
@@ -498,6 +579,18 @@ const AsistenciaDual: React.FC = () => {
                                             const studentDayRecords = attendanceData.get(student.email)?.get(day);
                                             const dayDate = new Date(year, currentDate.getMonth(), i + 1);
                                             const isWeekend = dayDate.getDay() === 0 || dayDate.getDay() === 6;
+
+                                            // Log para Alexis Robles en el día 2
+                                            if (student.email === 'alexis.robles@industrialderecoleta.cl' && day === 2) {
+                                                console.log(`🔍 Verificando día 2 para Alexis:`, {
+                                                    email: student.email,
+                                                    day: day,
+                                                    hasDataForStudent: attendanceData.has(student.email),
+                                                    studentDayRecords: studentDayRecords,
+                                                    allAttendanceKeys: Array.from(attendanceData.keys()),
+                                                    daysForStudent: attendanceData.get(student.email) ? Array.from(attendanceData.get(student.email)!.keys()) : []
+                                                });
+                                            }
 
                                             return (
                                                 <td 

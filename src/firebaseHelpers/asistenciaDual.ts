@@ -6,6 +6,7 @@ import {
     orderBy, 
     Timestamp,
     getDocs,
+    limit,
     Unsubscribe 
 } from 'firebase/firestore';
 import { db } from '../firebase'; // Ajusta la ruta según tu estructura
@@ -412,6 +413,11 @@ export const subscribeToAsistenciaByMonth = (
                         
                         if (querySnapshot.size > 0) {
                             console.log(`✅ Registros encontrados en ${collectionName}:`);
+                            
+                            // Limpiar registros anteriores SOLO de esta colección
+                            const keysToDelete = Array.from(allRegistros.keys()).filter(key => key.startsWith(`${collectionName}_`));
+                            keysToDelete.forEach(key => allRegistros.delete(key));
+
                             querySnapshot.docs.forEach((doc, index) => {
                                 if (index < 5) {
                                     const data = doc.data();
@@ -427,50 +433,49 @@ export const subscribeToAsistenciaByMonth = (
                                     console.log(`      📅 Fecha original: ${data.fechaHora} (tipo: ${typeof data.fechaHora})`);
                                 }
                             });
+
+                            querySnapshot.forEach((doc) => {
+                                const data = doc.data();
+                                
+                                // Procesar fecha con manejo flexible para diferentes formatos
+                                let fechaHora: Date;
+                                if (data.fechaHora?.toDate) {
+                                    // Firestore Timestamp
+                                    fechaHora = data.fechaHora.toDate();
+                                } else if (typeof data.fechaHora === 'string') {
+                                    // ISO string (como viene del asistenciaEmpresaHelper)
+                                    fechaHora = new Date(data.fechaHora);
+                                } else if (data.fechaHora instanceof Date) {
+                                    // Ya es un Date object
+                                    fechaHora = data.fechaHora;
+                                } else if (data.fechaHora) {
+                                    // Cualquier otro formato
+                                    fechaHora = new Date(data.fechaHora);
+                                } else {
+                                    fechaHora = new Date();
+                                }
+
+                                const registro: AsistenciaDual = {
+                                    id: doc.id,
+                                    emailEstudiante: data.emailEstudiante || data.email || '',
+                                    nombreEstudiante: data.nombreEstudiante || data.nombre || '',
+                                    curso: data.curso || '',
+                                    fechaHora,
+                                    tipo: data.tipo as 'Entrada' | 'Salida',
+                                    ubicacion: data.ubicacion || null,
+                                    observaciones: data.observaciones || '',
+                                    ...data
+                                };
+                                
+                                const uniqueKey = `${collectionName}_${doc.id}`;
+                                allRegistros.set(uniqueKey, registro);
+                            });
+
+                            updateData();
+                        } else {
+                            // NO borrar datos si esta colección está vacía
+                            console.log(`⚪ ${collectionName}: vacía, manteniendo datos existentes`);
                         }
-                        
-                        // Limpiar registros anteriores de esta colección
-                        const keysToDelete = Array.from(allRegistros.keys()).filter(key => key.startsWith(`${collectionName}_`));
-                        keysToDelete.forEach(key => allRegistros.delete(key));
-
-                        querySnapshot.forEach((doc) => {
-                            const data = doc.data();
-                            
-                            // Procesar fecha con manejo flexible para diferentes formatos
-                            let fechaHora: Date;
-                            if (data.fechaHora?.toDate) {
-                                // Firestore Timestamp
-                                fechaHora = data.fechaHora.toDate();
-                            } else if (typeof data.fechaHora === 'string') {
-                                // ISO string (como viene del asistenciaEmpresaHelper)
-                                fechaHora = new Date(data.fechaHora);
-                            } else if (data.fechaHora instanceof Date) {
-                                // Ya es un Date object
-                                fechaHora = data.fechaHora;
-                            } else if (data.fechaHora) {
-                                // Cualquier otro formato
-                                fechaHora = new Date(data.fechaHora);
-                            } else {
-                                fechaHora = new Date();
-                            }
-
-                            const registro: AsistenciaDual = {
-                                id: doc.id,
-                                emailEstudiante: data.emailEstudiante || data.email || '',
-                                nombreEstudiante: data.nombreEstudiante || data.nombre || '',
-                                curso: data.curso || '',
-                                fechaHora,
-                                tipo: data.tipo as 'Entrada' | 'Salida',
-                                ubicacion: data.ubicacion || null,
-                                observaciones: data.observaciones || '',
-                                ...data
-                            };
-                            
-                            const uniqueKey = `${collectionName}_${doc.id}`;
-                            allRegistros.set(uniqueKey, registro);
-                        });
-
-                        updateData();
                     },
                     (error) => {
                         console.warn(`⚠️ Error con filtro en ${collectionName}:`, error);
@@ -634,7 +639,7 @@ export const subscribeToAllUsersMultiCollection = (
         possibleCollections.forEach((collectionName) => {
             try {
                 const usersRef = collection(db, collectionName);
-                const q = query(usersRef, limit(100)); // Aumentar límite
+                const q = query(usersRef); // SIN LÍMITE para cargar todos los usuarios
 
                 const unsubscribe = onSnapshot(
                     q,
