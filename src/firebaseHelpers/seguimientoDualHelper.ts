@@ -9,6 +9,9 @@ import {
   query,
   orderBy,
   Timestamp,
+  writeBatch,
+  getDocs,
+  where,
 } from 'firebase/firestore';
 import { db } from './config'; // Asegúrate de que la ruta a tu config sea correcta
 import { SeguimientoDualRecord } from '../../types';
@@ -41,9 +44,6 @@ const convertFirestoreDoc = <T>(docSnapshot: any): T => {
 
 // --- GESTIÓN DE REGISTROS DE SEGUIMIENTO ---
 
-/**
- * Se suscribe en tiempo real a todos los registros de seguimiento.
- */
 export const subscribeToSeguimientoDual = (callback: (data: SeguimientoDualRecord[]) => void) => {
   const q = query(collection(db, SEGUIMIENTO_DUAL_COLLECTION), orderBy('nombreEstudiante', 'asc'));
   
@@ -58,7 +58,6 @@ export const subscribeToSeguimientoDual = (callback: (data: SeguimientoDualRecor
   return unsubscribe;
 };
 
-// Función auxiliar para convertir fechas string a Timestamps
 const convertDatesToTimestamps = (data: any) => {
     const newData = { ...data };
     const dateFields = [
@@ -73,9 +72,6 @@ const convertDatesToTimestamps = (data: any) => {
     return newData;
 };
 
-/**
- * Crea un nuevo registro de seguimiento.
- */
 export const createSeguimientoRecord = async (recordData: Omit<SeguimientoDualRecord, 'id'>): Promise<string> => {
   try {
     const dataToSend = convertDatesToTimestamps(recordData);
@@ -87,9 +83,6 @@ export const createSeguimientoRecord = async (recordData: Omit<SeguimientoDualRe
   }
 };
 
-/**
- * Actualiza un registro de seguimiento existente.
- */
 export const updateSeguimientoRecord = async (recordId: string, data: Partial<SeguimientoDualRecord>): Promise<void> => {
     try {
         const docRef = doc(db, SEGUIMIENTO_DUAL_COLLECTION, recordId);
@@ -101,9 +94,6 @@ export const updateSeguimientoRecord = async (recordId: string, data: Partial<Se
     }
 };
 
-/**
- * Elimina un registro de seguimiento.
- */
 export const deleteSeguimientoRecord = async (id: string): Promise<void> => {
     try {
         const docRef = doc(db, SEGUIMIENTO_DUAL_COLLECTION, id);
@@ -112,4 +102,37 @@ export const deleteSeguimientoRecord = async (id: string): Promise<void> => {
         console.error("Error al eliminar el registro:", error);
         throw new Error("No se pudo eliminar el registro.");
     }
+};
+
+/**
+ * Procesa una carga masiva de registros, actualizando existentes y creando nuevos.
+ */
+export const batchUpdateSeguimiento = async (newRecords: Omit<SeguimientoDualRecord, 'id'>[]): Promise<{ updated: number, created: number }> => {
+    const batch = writeBatch(db);
+    const collectionRef = collection(db, SEGUIMIENTO_DUAL_COLLECTION);
+    
+    let updated = 0;
+    let created = 0;
+
+    for (const record of newRecords) {
+        // Busca si ya existe un registro con el mismo RUT de estudiante
+        const q = query(collectionRef, where('rutEstudiante', '==', record.rutEstudiante));
+        const existingDocs = await getDocs(q);
+
+        if (!existingDocs.empty) {
+            // Si existe, actualiza el primer documento encontrado
+            const docId = existingDocs.docs[0].id;
+            const docRef = doc(db, SEGUIMIENTO_DUAL_COLLECTION, docId);
+            batch.set(docRef, convertDatesToTimestamps(record), { merge: true });
+            updated++;
+        } else {
+            // Si no existe, crea un nuevo documento
+            const newDocRef = doc(collectionRef);
+            batch.set(newDocRef, convertDatesToTimestamps(record));
+            created++;
+        }
+    }
+
+    await batch.commit();
+    return { updated, created };
 };

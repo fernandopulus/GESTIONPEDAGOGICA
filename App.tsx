@@ -16,7 +16,6 @@ const App: React.FC = () => {
   const [isAdminSelectingProfile, setIsAdminSelectingProfile] = useState(false);
   const [adminProfile, setAdminProfile] = useState<Profile | null>(null);
 
-  // EFECTO PRINCIPAL: Mantiene sesión con Firebase
   useEffect(() => {
     console.log('🔄 Iniciando listener de Auth...');
     
@@ -53,7 +52,6 @@ const App: React.FC = () => {
               setFirestoreUser(userData);
               setLoginError(null);
               
-              // Si es SUBDIRECCION, habilita selección de perfil
               if (userData.profile === Profile.SUBDIRECCION) {
                 console.log('👑 Usuario SUBDIRECCION detectado, habilitando selector de perfil');
                 setIsAdminSelectingProfile(true);
@@ -62,8 +60,6 @@ const App: React.FC = () => {
               console.log('❌ Usuario no encontrado en Firestore para:', user.email);
               setFirestoreUser(null);
               setLoginError("Usuario no encontrado en la base de datos. Contacte al administrador.");
-              
-              // Cerrar sesión automáticamente si el usuario no existe en Firestore
               await signOut(auth);
             }
           } catch (firestoreError) {
@@ -78,7 +74,6 @@ const App: React.FC = () => {
         setCurrentUser(null);
         setLoginError("Error de autenticación. Intente nuevamente.");
       } finally {
-        // Solo marcar como listo después de procesar todo
         setAuthLoading(false);
         console.log('✅ Auth inicialización completada');
       }
@@ -90,36 +85,24 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // LÓGICA DE LOGIN MEJORADA
   const handleLoginAttempt = async (email: string, password: string) => {
     setLoginError(null);
-    
-    // Validaciones básicas
     if (!email.trim() || !password.trim()) {
       setLoginError('Por favor ingrese email y contraseña');
       return;
     }
-
     try {
       console.log('🔄 Intentando login para:', email);
-      
-      // Verificar primero si el usuario existe en Firestore
       const userRef = doc(db, "usuarios", email.trim().toLowerCase());
       const userSnap = await getDoc(userRef);
-      
       if (!userSnap.exists()) {
         setLoginError('Usuario no registrado en el sistema');
         return;
       }
-
-      // Si existe en Firestore, proceder con autenticación
       await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
       console.log('✅ Login exitoso');
-      
     } catch (error: any) {
       console.error('❌ Error de login:', error);
-      
-      // Mensajes de error más específicos
       switch (error.code) {
         case 'auth/user-not-found':
           setLoginError('No existe una cuenta con este correo electrónico');
@@ -145,7 +128,6 @@ const App: React.FC = () => {
     }
   };
 
-  // FUNCIÓN DE RECUPERACIÓN DE CONTRASEÑA
   const handleForgotPassword = async (email: string) => {
     try {
       console.log('🔄 Enviando email de recuperación a:', email);
@@ -154,7 +136,6 @@ const App: React.FC = () => {
       return { success: true, message: 'Email de recuperación enviado correctamente' };
     } catch (error: any) {
       console.error('❌ Error al enviar email de recuperación:', error);
-      
       switch (error.code) {
         case 'auth/user-not-found':
           return { success: false, message: 'No existe una cuenta con este correo' };
@@ -166,40 +147,38 @@ const App: React.FC = () => {
     }
   };
 
-  // Cambia perfil para admin
   const handleProfileSelectForAdmin = (profile: Profile) => {
     console.log('👑 Admin seleccionó perfil:', profile);
     setAdminProfile(profile);
     setIsAdminSelectingProfile(false);
   };
 
-  // Cierra sesión
+  const handleChangeProfile = () => {
+    console.log('🔄 Admin solicita cambiar de perfil, volviendo al selector.');
+    setIsAdminSelectingProfile(true);
+    setAdminProfile(null);
+  };
+
   const handleLogout = async () => {
     try {
       console.log('🚪 Cerrando sesión...');
       await signOut(auth);
-      
-      // Limpiar todos los estados
       setCurrentUser(null);
       setFirestoreUser(null);
       setAdminProfile(null);
       setIsAdminSelectingProfile(false);
       setLoginError(null);
-      
       console.log('✅ Sesión cerrada exitosamente');
     } catch (error) {
       console.error('❌ Error al cerrar sesión:', error);
     }
   };
 
-  // PANTALLA DE CARGA
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-100 dark:bg-slate-900">
         <div className="text-center">
-          <div className="mb-4 flex justify-center items-center">
-            <MainLogo />
-          </div>
+          <div className="mb-4 flex justify-center items-center"><MainLogo /></div>
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500 mx-auto mb-4"></div>
           <p className="text-slate-600 dark:text-slate-400 text-lg font-medium">Inicializando aplicación...</p>
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-500">Verificando autenticación y permisos</p>
@@ -208,51 +187,25 @@ const App: React.FC = () => {
     );
   }
 
-  // RENDERIZADO DE CONTENIDO
   const renderContent = () => {
-    // Si hay un error de login, mostrar login con error
     if (loginError && !currentUser) {
-      return (
-        <Login 
-          onLoginAttempt={handleLoginAttempt} 
-          onForgotPasswordRequest={handleForgotPassword}
-          error={loginError} 
-        />
-      );
+      return <Login onLoginAttempt={handleLoginAttempt} onForgotPasswordRequest={handleForgotPassword} error={loginError} />;
     }
-
-    // Admin seleccionando perfil
     if (currentUser && isAdminSelectingProfile && firestoreUser?.profile === Profile.SUBDIRECCION) {
-      return (
-        <ProfileSelector
-          onSelectProfile={handleProfileSelectForAdmin}
-          isAdminView={true}
-        />
-      );
+      return <ProfileSelector onSelectProfile={handleProfileSelectForAdmin} isAdminView={true} />;
     }
-
-    // Usuario autenticado con datos de Firestore
     if (currentUser && firestoreUser) {
       const effectiveProfile = adminProfile || firestoreUser.profile;
-      
-      console.log('🎯 Renderizando Dashboard para:', {
-        user: firestoreUser.nombreCompleto,
-        originalProfile: firestoreUser.profile,
-        effectiveProfile: effectiveProfile
-      });
-
+      console.log('🎯 Renderizando Dashboard para:', { user: firestoreUser.nombreCompleto, originalProfile: firestoreUser.profile, effectiveProfile: effectiveProfile });
       return (
         <Dashboard
-          currentUser={{
-            ...firestoreUser,
-            profile: effectiveProfile,
-          }}
+          currentUser={{ ...firestoreUser, profile: effectiveProfile }}
           onLogout={handleLogout}
+          onChangeProfile={firestoreUser.profile === Profile.SUBDIRECCION ? handleChangeProfile : undefined}
+          canChangeProfile={firestoreUser.profile === Profile.SUBDIRECCION}
         />
       );
     }
-
-    // Usuario autenticado pero sin datos de Firestore (caso de error)
     if (currentUser && !firestoreUser) {
       return (
         <div className="flex items-center justify-center min-h-screen bg-slate-100 dark:bg-slate-900">
@@ -264,25 +217,12 @@ const App: React.FC = () => {
             </div>
             <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">Error de datos de usuario</h2>
             <p className="text-slate-600 dark:text-slate-400 mb-4">No se pudieron cargar los datos del usuario desde la base de datos.</p>
-            <button 
-              onClick={handleLogout}
-              className="bg-amber-500 text-white px-4 py-2 rounded-lg hover:bg-amber-600 transition-colors"
-            >
-              Volver al Login
-            </button>
+            <button onClick={handleLogout} className="bg-amber-500 text-white px-4 py-2 rounded-lg hover:bg-amber-600 transition-colors">Volver al Login</button>
           </div>
         </div>
       );
     }
-
-    // No autenticado - mostrar login
-    return (
-      <Login 
-        onLoginAttempt={handleLoginAttempt} 
-        onForgotPasswordRequest={handleForgotPassword}
-        error={loginError} 
-      />
-    );
+    return <Login onLoginAttempt={handleLoginAttempt} onForgotPasswordRequest={handleForgotPassword} error={loginError} />;
   };
 
   return (

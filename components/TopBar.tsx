@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { User, Anuncio, MensajeInterno, ReadStatus } from '../../types';
+import { User, Anuncio, MensajeInterno, ReadStatus, Profile } from '../../types'; // Import 'Profile'
 import { HomeIcon, BellIcon, MessageSquareIcon, MenuIcon } from '../constants';
 import Dropdown from './common/Dropdown';
 import ProfileModal from './modals/ProfileModal';
@@ -9,12 +9,14 @@ const ANUNCIOS_KEY = 'anunciosMuro';
 const MENSAJES_KEY = 'mensajesInternos';
 const READ_STATUS_KEY = 'lir-read-status';
 
+// --- CAMBIO 1: AÑADIR canChangeProfile A LAS PROPS ---
 interface TopBarProps {
     currentUser: User;
     onLogout: () => void;
     onNavigate: (moduleName: string) => void;
     onUserUpdate: (updatedUser: User) => void;
-    onChangeProfile: () => void;
+    onChangeProfile?: () => void; // Hecho opcional para seguridad
+    canChangeProfile: boolean;   // La nueva prop que indica el permiso
     toggleSidebar: () => void;
     unreadMessagesCount: number;
     refreshUnreadCount: () => void;
@@ -33,7 +35,18 @@ const UserAvatar: React.FC<{ user: User }> = ({ user }) => {
     );
 };
 
-const TopBar: React.FC<TopBarProps> = ({ currentUser, onLogout, onNavigate, onUserUpdate, onChangeProfile, toggleSidebar, unreadMessagesCount, refreshUnreadCount }) => {
+// --- CAMBIO 2: RECIBIR canChangeProfile EN LA FIRMA DEL COMPONENTE ---
+const TopBar: React.FC<TopBarProps> = ({ 
+    currentUser, 
+    onLogout, 
+    onNavigate, 
+    onUserUpdate, 
+    onChangeProfile, 
+    canChangeProfile, // Recibimos la nueva prop
+    toggleSidebar, 
+    unreadMessagesCount, 
+    refreshUnreadCount 
+}) => {
     const [unreadAnnouncements, setUnreadAnnouncements] = useState<Anuncio[]>([]);
     const [recentMessages, setRecentMessages] = useState<MensajeInterno[]>([]);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -178,9 +191,12 @@ const TopBar: React.FC<TopBarProps> = ({ currentUser, onLogout, onNavigate, onUs
                                 <ul className="mt-2 text-slate-700 dark:text-slate-300">
                                     <li><button onClick={() => setIsProfileModalOpen(true)} className="w-full text-left p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-600">Editar Perfil</button></li>
                                     <li><button onClick={() => setIsSettingsModalOpen(true)} className="w-full text-left p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-600">Configuración</button></li>
-                                    {currentUser.email === 'subdi@lir.cl' && (
-                                        <li><button onClick={onChangeProfile} className="w-full text-left p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-600">Cambiar Perfil</button></li>
+                                    
+                                    {/* --- CAMBIO 3: USAR canChangeProfile PARA MOSTRAR EL BOTÓN --- */}
+                                    {canChangeProfile && (
+                                        <li><button onClick={onChangeProfile} className="w-full text-left p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-600">👑 Cambiar Vista</button></li>
                                     )}
+                                    
                                     <li><button onClick={onLogout} className="w-full text-left p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-600">Cerrar Sesión</button></li>
                                 </ul>
                             </div>

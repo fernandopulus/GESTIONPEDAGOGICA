@@ -1,9 +1,19 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Profile, Module, User } from './types';
-import { MODULES_BY_PROFILE, LirLogoIcon, LogoutIcon, MenuIcon } from './constants';
+import { MODULES_BY_PROFILE, LirLogoIcon, LogoutIcon, MenuIcon } from '../constants';
+  const profesorNames = useMemo(() => 
+    profesores.map(p => p.nombreCompleto).sort(), 
+    [profesores]
+  );
+
+  return { profesores, profesorNames, loading };
+};
+
+
 
 // Component imports
-import TopBar from './components/TopBar';
+// LÍNEA CORRECTA
+import TopBar from './TopBar';
 import RegistroReemplazos from './components/modules/RegistroReemplazos';
 import DashboardSubdireccion from './components/modules/DashboardSubdireccion';
 import CrearHorarios from './components/modules/CrearHorarios';
