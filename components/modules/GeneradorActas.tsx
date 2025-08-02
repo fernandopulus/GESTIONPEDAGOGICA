@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useCallback, FormEvent, ChangeEvent, useRef } from 'react';
-import { Acta, TipoReunion } from '../../types';
+import { Acta, TipoReunion, User } from '../../types';
 import { TIPOS_REUNION } from '../../constants';
-import { GoogleGenAI, Type } from "@google/genai";
+// Se elimina la importación directa de GoogleGenAI
 import { logApiCall } from '../utils/apiLogger';
+import {
+    subscribeToActas,
+    createActa,
+    deleteActa
+} from '../../src/firebaseHelpers/actasHelper'; // AJUSTA la ruta a tu nuevo helper
 
-const ACTAS_KEY = 'actasDeReunion';
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 const isSpeechSupported = !!SpeechRecognition;
 
@@ -17,7 +21,11 @@ const MicIcon: React.FC<{isListening: boolean}> = ({ isListening }) => (
     </svg>
 );
 
-const GeneradorActas: React.FC = () => {
+interface GeneradorActasProps {
+    currentUser: User;
+}
+
+const GeneradorActas: React.FC<GeneradorActasProps> = ({ currentUser }) => {
     const [actas, setActas] = useState<Acta[]>([]);
     const [selectedActa, setSelectedActa] = useState<Acta | null>(null);
     const [formData, setFormData] = useState<Omit<Acta, 'id' | 'fechaCreacion' | 'temas' | 'acuerdos' | 'plazos' | 'responsables'>>({
@@ -27,23 +35,21 @@ const GeneradorActas: React.FC = () => {
     });
     const [isListening, setIsListening] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [dataLoading, setDataLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const recognitionRef = useRef<any | null>(null);
 
     useEffect(() => {
-        try {
-            const data = localStorage.getItem(ACTAS_KEY);
-            if (data) {
-                const parsedActas: Acta[] = JSON.parse(data);
-                setActas(parsedActas);
-                if (parsedActas.length > 0 && !selectedActa) {
-                    setSelectedActa(parsedActas[0]);
-                }
+        setDataLoading(true);
+        const unsubscribe = subscribeToActas((data) => {
+            setActas(data);
+            if (!selectedActa && data.length > 0) {
+                setSelectedActa(data[0]);
             }
-        } catch (e) {
-            console.error("Error al leer actas de localStorage", e);
-        }
+            setDataLoading(false);
+        });
+        return () => unsubscribe();
     }, [selectedActa]);
 
     const handleFieldChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -101,7 +107,10 @@ const GeneradorActas: React.FC = () => {
 
         try {
             logApiCall('Generador de Actas');
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
+            const apiKey = "";
+            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            
             const prompt = `
                 Analiza el siguiente texto de un acta de reunión y extrae la información clave.
                 El texto es una transcripción de lo hablado.
@@ -116,61 +125,27 @@ const GeneradorActas: React.FC = () => {
                 Asistentes a la reunión para referencia de nombres: ${asistentes}
             `;
 
-            const responseSchema = {
-                type: Type.OBJECT,
-                properties: {
-                    temas: {
-                        type: Type.ARRAY,
-                        description: "Lista de los principales temas tratados en la reunión.",
-                        items: { type: Type.STRING }
-                    },
-                    acuerdos: {
-                        type: Type.ARRAY,
-                        description: "Lista de los acuerdos o decisiones tomadas.",
-                        items: { type: Type.STRING }
-                    },
-                    plazos: {
-                        type: Type.ARRAY,
-                        description: "Lista de fechas límite o plazos mencionados en el texto.",
-                        items: { type: Type.STRING }
-                    },
-                    responsables: {
-                        type: Type.ARRAY,
-                        description: "Lista de las personas asignadas como responsables de tareas.",
-                        items: { type: Type.STRING }
-                    }
-                },
-                required: ["temas", "acuerdos", "plazos", "responsables"]
-            };
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
 
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: responseSchema,
-                },
-            });
+            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+            const structuredData = JSON.parse(cleanedText);
 
-            const structuredData = JSON.parse(response.text);
-
-            const newActa: Acta = {
-                id: crypto.randomUUID(),
+            const newActaData: Omit<Acta, 'id'> = {
                 fechaCreacion: new Date().toISOString(),
                 ...formData,
                 ...structuredData,
             };
 
-            const updatedActas = [newActa, ...actas];
-            setActas(updatedActas);
-            localStorage.setItem(ACTAS_KEY, JSON.stringify(updatedActas));
+            const newId = await createActa(newActaData, currentUser);
             
             setFormData({
                 tipoReunion: TIPOS_REUNION[0],
                 asistentes: '',
                 textoReunion: ''
             });
-            setSelectedActa(newActa);
+            // La UI se actualizará a través del listener, no es necesario seleccionar el acta aquí.
         } catch (e) {
             console.error("Error al analizar acta con IA:", e);
             setError("Ocurrió un error al procesar el acta con la IA. Por favor, revise el texto e inténtelo de nuevo.");
@@ -179,13 +154,16 @@ const GeneradorActas: React.FC = () => {
         }
     };
 
-    const handleDelete = (id: string) => {
+    const handleDelete = async (id: string) => {
         if (window.confirm('¿Está seguro de que desea eliminar esta acta?')) {
-            const updatedActas = actas.filter(a => a.id !== id);
-            setActas(updatedActas);
-            localStorage.setItem(ACTAS_KEY, JSON.stringify(updatedActas));
-            if (selectedActa?.id === id) {
-                setSelectedActa(updatedActas.length > 0 ? updatedActas[0] : null);
+            try {
+                await deleteActa(id);
+                if (selectedActa?.id === id) {
+                    setSelectedActa(actas.length > 1 ? actas[1] : null); // Selecciona el siguiente o ninguno
+                }
+            } catch (error) {
+                console.error("Error deleting acta:", error);
+                alert("No se pudo eliminar el acta.");
             }
         }
     };
@@ -196,7 +174,6 @@ const GeneradorActas: React.FC = () => {
 
     const renderAnalysisSection = (acta: Acta) => {
         const hasAnalysis = acta.temas || acta.acuerdos || acta.plazos || acta.responsables;
-
         if (!hasAnalysis) return null;
 
         return (
@@ -244,10 +221,12 @@ const GeneradorActas: React.FC = () => {
     
     const inputStyles = "w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400";
 
+    if (dataLoading) {
+        return <div className="text-center py-10">Cargando actas...</div>;
+    }
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 animate-fade-in">
-            {/* Columna de Formulario e Historial */}
             <div className="md:col-span-1 space-y-8">
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
                     <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">Generador de Actas</h1>
@@ -303,7 +282,7 @@ const GeneradorActas: React.FC = () => {
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
                     <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Historial de Actas</h2>
                     <div className="max-h-80 overflow-y-auto space-y-2 pr-2">
-                        {actas.length > 0 ? actas.sort((a,b) => new Date(b.fechaCreacion).getTime() - new Date(a.fechaCreacion).getTime()).map(acta => (
+                        {actas.length > 0 ? actas.map(acta => (
                             <button key={acta.id} onClick={() => handleSelectActa(acta)} className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedActa?.id === acta.id ? 'bg-amber-100 border-amber-300 dark:bg-amber-900/20 dark:border-amber-500/50' : 'bg-slate-50 hover:bg-slate-100 border-transparent dark:bg-slate-700/50 dark:hover:bg-slate-700'}`}>
                                 <p className="font-semibold text-slate-800 dark:text-slate-200">{acta.tipoReunion}</p>
                                 <p className="text-sm text-slate-500 dark:text-slate-400">{new Date(acta.fechaCreacion).toLocaleDateString('es-CL')}</p>
@@ -313,7 +292,6 @@ const GeneradorActas: React.FC = () => {
                 </div>
             </div>
 
-            {/* Columna de Visualización */}
             <div className="md:col-span-2 bg-white dark:bg-slate-800 p-8 rounded-xl shadow-md">
                 {selectedActa ? (
                     <div className="prose dark:prose-invert max-w-none prose-slate">

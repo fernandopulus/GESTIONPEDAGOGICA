@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { User, PlanificacionInterdisciplinaria, EntregaTareaInterdisciplinaria, TareaInterdisciplinaria } from '../../types';
-
-const PLANIFICACIONES_INTER_KEY = 'planificacionesInterdisciplinarias';
-const ENTREGAS_TAREAS_KEY = 'entregasTareasInterdisciplinarias';
+import {
+    subscribeToMisProyectos,
+    subscribeToMisEntregas,
+    updateEntrega
+} from '../../src/firebaseHelpers/tareasInterdisciplinariasHelper'; // AJUSTA la ruta a tu nuevo helper
 
 interface TareasInterdisciplinariasEstudianteProps {
     currentUser: User;
@@ -12,62 +14,51 @@ const TareasInterdisciplinariasEstudiante: React.FC<TareasInterdisciplinariasEst
     const [planificaciones, setPlanificaciones] = useState<PlanificacionInterdisciplinaria[]>([]);
     const [entregas, setEntregas] = useState<EntregaTareaInterdisciplinaria[]>([]);
     const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const loadData = () => {
-            try {
-                const storedPlanificaciones = localStorage.getItem(PLANIFICACIONES_INTER_KEY);
-                if (storedPlanificaciones) setPlanificaciones(JSON.parse(storedPlanificaciones));
+        if (!currentUser.curso || !currentUser.id) {
+            setLoading(false);
+            return;
+        }
+        setLoading(true);
 
-                const storedEntregas = localStorage.getItem(ENTREGAS_TAREAS_KEY);
-                if (storedEntregas) setEntregas(JSON.parse(storedEntregas));
-            } catch (e) {
-                console.error("Error al cargar datos desde localStorage", e);
-            }
+        const unsubProyectos = subscribeToMisProyectos(currentUser.curso, setPlanificaciones);
+        const unsubEntregas = subscribeToMisEntregas(currentUser.id, (data) => {
+            setEntregas(data);
+            setLoading(false);
+        });
+
+        return () => {
+            unsubProyectos();
+            unsubEntregas();
         };
-        loadData();
-        window.addEventListener('storage', loadData);
-        return () => window.removeEventListener('storage', loadData);
-    }, []);
+    }, [currentUser.curso, currentUser.id]);
 
-    const misProyectos = useMemo(() => {
-        return planificaciones.filter(p => p.cursos.includes(currentUser.curso || ''));
-    }, [planificaciones, currentUser.curso]);
-
-    const persistEntregas = (updatedEntregas: EntregaTareaInterdisciplinaria[]) => {
-        setEntregas(updatedEntregas);
-        localStorage.setItem(ENTREGAS_TAREAS_KEY, JSON.stringify(updatedEntregas));
-        window.dispatchEvent(new Event('storage'));
+    const handleUpdateEntrega = async (updatedEntrega: EntregaTareaInterdisciplinaria) => {
+        try {
+            await updateEntrega(updatedEntrega);
+        } catch (error) {
+            console.error("Failed to update submission:", error);
+            alert("Hubo un error al guardar tu entrega.");
+        }
     };
-
-    const getOrCreateEntrega = (planificacionId: string, tareaId: string) => {
-        let entrega = entregas.find(e => e.planificacionId === planificacionId && e.tareaId === tareaId && e.estudianteId === currentUser.id);
-        if (!entrega) {
-            entrega = {
-                id: crypto.randomUUID(),
-                planificacionId,
-                tareaId,
+    
+    const TareaItem: React.FC<{ plan: PlanificacionInterdisciplinaria, tarea: TareaInterdisciplinaria }> = ({ plan, tarea }) => {
+        const entrega = useMemo(() => {
+            const existingEntrega = entregas.find(e => e.planificacionId === plan.id && e.tareaId === tarea.id);
+            if (existingEntrega) return existingEntrega;
+            
+            return {
+                id: `${plan.id}_${tarea.id}_${currentUser.id}`, // ID predecible
+                planificacionId: plan.id,
+                tareaId: tarea.id,
                 estudianteId: currentUser.id,
                 estudianteNombre: currentUser.nombreCompleto,
                 completada: false,
             };
-        }
-        return entrega;
-    };
+        }, [plan.id, tarea.id, entregas]);
 
-    const handleUpdateEntrega = (updatedEntrega: EntregaTareaInterdisciplinaria) => {
-        const existingIndex = entregas.findIndex(e => e.id === updatedEntrega.id);
-        let newEntregas;
-        if (existingIndex > -1) {
-            newEntregas = entregas.map(e => e.id === updatedEntrega.id ? updatedEntrega : e);
-        } else {
-            newEntregas = [...entregas, updatedEntrega];
-        }
-        persistEntregas(newEntregas);
-    };
-    
-    const TareaItem: React.FC<{ plan: PlanificacionInterdisciplinaria, tarea: TareaInterdisciplinaria }> = ({ plan, tarea }) => {
-        const entrega = useMemo(() => getOrCreateEntrega(plan.id, tarea.id), [plan.id, tarea.id, entregas]);
         const [showEntrega, setShowEntrega] = useState(false);
         const [formData, setFormData] = useState({
             observaciones: entrega.observacionesEstudiante || '',
@@ -77,18 +68,17 @@ const TareasInterdisciplinariasEstudiante: React.FC<TareasInterdisciplinariasEst
         const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
             const file = e.target.files?.[0];
             if (file) {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    handleUpdateEntrega({
-                        ...entrega,
-                        archivoAdjunto: {
-                            nombre: file.name,
-                            url: reader.result as string,
-                        },
-                        fechaCompletado: new Date().toISOString(),
-                    });
-                };
-                reader.readAsDataURL(file);
+                // ADVERTENCIA: La subida de archivos a Firebase Storage es más compleja
+                // y requiere configuración adicional. Esto es una simulación.
+                alert(`Simulación: Archivo "${file.name}" listo para subir.`);
+                handleUpdateEntrega({
+                    ...entrega,
+                    archivoAdjunto: {
+                        nombre: file.name,
+                        url: `simulated/path/${file.name}`,
+                    },
+                    fechaCompletado: new Date().toISOString(),
+                });
             }
         };
 
@@ -138,16 +128,20 @@ const TareasInterdisciplinariasEstudiante: React.FC<TareasInterdisciplinariasEst
         )
     };
     
+    if (loading) {
+        return <div className="text-center py-10">Cargando tus proyectos...</div>;
+    }
+
     return (
         <div className="space-y-6">
             <div className="bg-white p-6 md:p-8 rounded-xl shadow-md">
                 <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Mis Tareas Interdisciplinarias</h1>
                 <p className="text-slate-500 dark:text-slate-400 mt-2">Revisa y completa las tareas de tus proyectos.</p>
             </div>
-            {misProyectos.length > 0 ? (
-                misProyectos.map(plan => {
+            {planificaciones.length > 0 ? (
+                planificaciones.map(plan => {
                     const tareas = plan.tareas || [];
-                    const entregasDelProyecto = entregas.filter(e => e.planificacionId === plan.id && e.estudianteId === currentUser.id);
+                    const entregasDelProyecto = entregas.filter(e => e.planificacionId === plan.id);
                     const completadas = entregasDelProyecto.filter(e => e.completada).length;
                     const progreso = tareas.length > 0 ? (completadas / tareas.length) * 100 : 0;
 
