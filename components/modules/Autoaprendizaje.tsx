@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ActividadRemota, RespuestaEstudianteActividad, User, TipoActividadRemota, QuizQuestion, PareadoItem, ComprensionLecturaContent, DesarrolloContent, DetailedFeedback, PuntajesPorSeccion } from '../../types';
-import { GoogleGenAI, Type } from "@google/genai";
+// Se elimina la importación directa de GoogleGenAI
 import { logApiCall } from '../utils/apiLogger';
-
-const ACTIVIDADES_KEY = 'actividadesRemotas';
-const RESPUESTAS_KEY = 'respuestasActividades';
+import {
+    subscribeToActividadesDisponibles,
+    subscribeToRespuestasEstudiante,
+    saveRespuestaActividad
+} from '../../src/firebaseHelpers/autoaprendizajeHelper'; // AJUSTA la ruta a tu nuevo helper
 
 const shuffleArray = (array: any[]) => {
     return [...array].sort(() => Math.random() - 0.5);
@@ -52,7 +54,6 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
     const progressKey = `progress-${currentUser.id}-${actividad.id}`;
 
     useEffect(() => {
-        // Shuffle data for matching games
         const newShuffledData: Record<string, any> = {};
         actividad.tipos.forEach(tipo => {
             if (tipo === 'Términos Pareados') {
@@ -64,7 +65,6 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
         });
         setShuffledData(newShuffledData);
 
-        // Load saved progress
         try {
             const savedProgress = localStorage.getItem(progressKey);
             if (savedProgress) {
@@ -84,12 +84,11 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
         setIsSaving(true);
         setSaveSuccess(false);
 
-        // Simulate a save operation
         setTimeout(() => {
             try {
                 localStorage.setItem(progressKey, JSON.stringify(userAnswers));
                 setSaveSuccess(true);
-                setTimeout(() => setSaveSuccess(false), 2000); // Reset success message after 2s
+                setTimeout(() => setSaveSuccess(false), 2000);
             } catch (e) {
                 console.error("Could not save progress", e);
                 alert('Error al guardar el progreso.');
@@ -150,14 +149,20 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
                     puntajeMaxParcial += 3;
                     try {
                         logApiCall('Autoaprendizaje - Evaluar Desarrollo');
-                        const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
+                        const apiKey = "";
+                        const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+                        const model = ai.getGenerativeModel({ model: "gemini-pro" });
                         const prompt = `Evalúa la siguiente respuesta de un estudiante a la pregunta de desarrollo, basándote en la rúbrica proporcionada. Asigna un puntaje de 0 a 3. Pregunta: "${devContent.pregunta}". Rúbrica: "${devContent.rubrica}". Respuesta: "${devAnswer[i] || ''}". Proporciona también una frase corta de feedback.`;
-                        const schema = { type: Type.OBJECT, properties: { puntaje: { type: Type.INTEGER, description: "Un puntaje de 0 a 3." }, feedback: { type: Type.STRING } }, required: ["puntaje", "feedback"] };
-                        const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: "application/json", responseSchema: schema }});
-                        const result = JSON.parse(response.text);
-                        const score = Math.max(0, Math.min(3, result.puntaje || 0));
+                        
+                        const result = await model.generateContent(prompt);
+                        const response = await result.response;
+                        const text = response.text();
+
+                        const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+                        const resultJson = JSON.parse(cleanedText);
+                        const score = Math.max(0, Math.min(3, resultJson.puntaje || 0));
                         puntajeParcial += score;
-                        feedbackResults.push(`${tipo} #${i+1}: Puntaje ${score}/3. (${result.feedback})`);
+                        feedbackResults.push(`${tipo} #${i+1}: Puntaje ${score}/3. (${resultJson.feedback})`);
                     } catch(e) {
                         console.error(e);
                         feedbackResults.push(`${tipo} #${i+1}: No se pudo evaluar automáticamente.`);
@@ -360,44 +365,20 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
     const [view, setView] = useState<'list' | 'activity' | 'result'>('list');
     const [lastResult, setLastResult] = useState<RespuestaEstudianteActividad | null>(null);
     const [confirmingActivity, setConfirmingActivity] = useState<ActividadRemota | null>(null);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        try {
-            const storedActividades = localStorage.getItem(ACTIVIDADES_KEY);
-            if (storedActividades) {
-                const allActivities: ActividadRemota[] = JSON.parse(storedActividades);
-                const studentCourse = currentUser.curso || '';
-                const studentName = currentUser.nombreCompleto;
-                
-                const filtered = allActivities.filter(act => {
-                    const isGlobal = !act.cursosDestino?.length && !act.estudiantesDestino?.length;
-                    const isForMyCourse = act.cursosDestino?.includes(studentCourse) ?? false;
-                    const isForMe = act.estudiantesDestino?.includes(studentName) ?? false;
-                    
-                    if (isForMyCourse || isForMe) {
-                        return true;
-                    }
-                    
-                    if (isGlobal && studentCourse) {
-                        const actLevelNum = act.nivel.charAt(0);
-                        const studentLevelNum = studentCourse.charAt(0);
-                        return actLevelNum === studentLevelNum;
-                    }
+        setLoading(true);
+        const unsubActividades = subscribeToActividadesDisponibles(currentUser, setActividadesDisponibles);
+        const unsubRespuestas = subscribeToRespuestasEstudiante(currentUser.nombreCompleto, (data) => {
+            setRespuestas(data);
+            setLoading(false);
+        });
 
-                    return false;
-                });
-
-                setActividadesDisponibles(filtered);
-            }
-
-            const storedRespuestas = localStorage.getItem(RESPUESTAS_KEY);
-            if (storedRespuestas) {
-                const myRespuestas = (JSON.parse(storedRespuestas) as RespuestaEstudianteActividad[]).filter(r => r.estudianteId === currentUser.nombreCompleto);
-                setRespuestas(myRespuestas);
-            }
-        } catch (e) {
-            console.error("Error loading data", e);
-        }
+        return () => {
+            unsubActividades();
+            unsubRespuestas();
+        };
     }, [currentUser]);
 
     const handleStartActivity = (actividad: ActividadRemota) => {
@@ -415,7 +396,6 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
     const handleCompleteActivity = useCallback(async (submission: Omit<RespuestaEstudianteActividad, 'id' | 'actividadId' | 'estudianteId' | 'fechaCompletado'>) => {
         if (!selectedActividad) return;
         
-        // --- Generate Deep Feedback ---
         let detailedFeedback: DetailedFeedback | undefined = undefined;
         const feedbackPrompt = `
             Un estudiante ha completado una actividad sobre "${selectedActividad.contenido}".
@@ -433,33 +413,40 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
         
         try {
             logApiCall('Autoaprendizaje - Retroalimentación Detallada');
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
-            const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: feedbackPrompt, config: { responseMimeType: "application/json" }});
-            detailedFeedback = JSON.parse(response.text.trim().replace(/(\*\*|\*)/g, ''));
+            const apiKey = "";
+            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            const result = await model.generateContent(feedbackPrompt);
+            const response = await result.response;
+            const text = response.text();
+            
+            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+            detailedFeedback = JSON.parse(cleanedText);
         } catch (e) {
             console.error("Error generating detailed feedback:", e);
-            // Fallback to simple feedback if AI fails
         }
         
-        // --- Save Result ---
-        const newRespuesta: RespuestaEstudianteActividad = {
-            id: crypto.randomUUID(),
+        const newRespuesta: Omit<RespuestaEstudianteActividad, 'id'> = {
             actividadId: selectedActividad.id,
             estudianteId: currentUser.nombreCompleto,
-            fechaCompletado: new Date().toISOString(),
             ...submission,
             retroalimentacionDetallada: detailedFeedback,
         };
         
-        const allRespuestas = JSON.parse(localStorage.getItem(RESPUESTAS_KEY) || '[]');
-        const updatedAllRespuestas = [newRespuesta, ...allRespuestas.filter((r: RespuestaEstudianteActividad) => !(r.actividadId === newRespuesta.actividadId && r.estudianteId === newRespuesta.estudianteId))];
-        localStorage.setItem(RESPUESTAS_KEY, JSON.stringify(updatedAllRespuestas));
-        
-        setRespuestas(prev => [newRespuesta, ...prev.filter(r => r.actividadId !== newRespuesta.actividadId)]);
-        setLastResult(newRespuesta);
-        setView('result');
+        try {
+            const newId = await saveRespuestaActividad(newRespuesta);
+            setLastResult({ ...newRespuesta, id: newId, fechaCompletado: new Date().toISOString() });
+            setView('result');
+        } catch (error) {
+            console.error("Error saving submission:", error);
+            alert("No se pudo guardar tu respuesta.");
+        }
 
     }, [selectedActividad, currentUser.nombreCompleto]);
+    
+    if (loading) {
+        return <div className="text-center py-10">Cargando actividades...</div>;
+    }
 
     if (view === 'activity' && selectedActividad) {
         return (
@@ -487,7 +474,6 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
                  <h1 className="text-3xl font-bold text-slate-800">Retroalimentación de la Actividad</h1>
                  {feedback ? (
                     <>
-                        {/* Overall Feedback */}
                         <div className="p-6 bg-white rounded-lg shadow-md border">
                              <h2 className="text-2xl font-bold mb-4">Retroalimentación General</h2>
                              <p className="text-slate-600 mb-6">{feedback.resumenGeneral}</p>
@@ -513,7 +499,6 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
                              </div>
                         </div>
                         
-                        {/* Section Breakdown */}
                         <div className="grid md:grid-cols-2 gap-6">
                             {Object.entries(puntajes).map(([seccion, { puntaje, puntajeMaximo }]) => (
                                  <div key={seccion} className="p-6 bg-white rounded-lg shadow-md border">
@@ -526,7 +511,6 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
                             ))}
                         </div>
 
-                         {/* Improvement Plan */}
                         <div className="p-6 bg-white rounded-lg shadow-md border">
                              <h2 className="text-2xl font-bold mb-4">Plan de Mejora Sugerido</h2>
                              <div className="space-y-4">
@@ -544,7 +528,6 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
 
                     </>
                  ) : (
-                    // Simple Fallback View
                     <div className="bg-white p-6 md:p-8 rounded-xl shadow-md text-center">
                         <h2 className="text-3xl font-bold text-green-600 mb-4">¡Actividad Completada!</h2>
                         <div className="grid grid-cols-2 gap-4 max-w-sm mx-auto my-8">
