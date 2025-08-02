@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef, FC } from 'react';
-import { Timeline, TimelineEvent } from '../../../types';
-import { GoogleGenAI, Type } from "@google/genai";
+import { Timeline, TimelineEvent, User } from '../../../types';
+// Se elimina la importación directa de GoogleGenAI
 import { toPng } from 'html-to-image';
-
-const TIMELINES_KEY = 'recursosAprendizaje_timelines';
+import {
+    subscribeToTimelines,
+    createTimeline,
+    saveTimeline,
+    deleteTimeline
+} from '../../../src/firebaseHelpers/recursosHelper'; // AJUSTA la ruta a tu helper
 
 const Spinner = () => (<svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>);
 
@@ -65,15 +69,12 @@ const TimelineEditor: FC<{
                 {/* Visualizer */}
                 <div className="lg:col-span-2 bg-slate-100 dark:bg-slate-900 rounded-lg">
                     <div ref={timelineRef} className="relative p-10">
-                        {/* The vertical line */}
                         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1 h-full bg-slate-300 dark:bg-slate-600 rounded"></div>
-
                         <div className="relative">
                             {editedTimeline.events.sort((a, b) => parseInt(a.date) - parseInt(b.date)).map((event, index) => {
                                 const isLeft = index % 2 === 0;
                                 return (
                                     <div key={event.id} className="mb-8 flex justify-between items-center w-full">
-                                        {/* Left Side Content */}
                                         <div className="w-1/2">
                                             {isLeft && (
                                                 <div className="text-right pr-8">
@@ -85,13 +86,9 @@ const TimelineEditor: FC<{
                                                 </div>
                                             )}
                                         </div>
-
-                                        {/* Dot in the middle */}
                                         <div className="z-10 flex-shrink-0">
                                             <div className="w-5 h-5 bg-white dark:bg-slate-500 border-4 border-slate-400 dark:border-slate-300 rounded-full"></div>
                                         </div>
-
-                                        {/* Right Side Content */}
                                         <div className="w-1/2">
                                             {!isLeft && (
                                                 <div className="text-left pl-8">
@@ -109,7 +106,6 @@ const TimelineEditor: FC<{
                         </div>
                     </div>
                 </div>
-
 
                 {/* Editor Panel */}
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border dark:border-slate-700 h-[70vh] flex flex-col">
@@ -148,27 +144,25 @@ const TimelineEditor: FC<{
     );
 };
 
-const LineasDeTiempo: FC<{ onBack: () => void; }> = ({ onBack }) => {
+const LineasDeTiempo: FC<{ onBack: () => void; currentUser: User }> = ({ onBack, currentUser }) => {
     const [view, setView] = useState<'list' | 'editor'>('list');
     const [timelines, setTimelines] = useState<Timeline[]>([]);
     const [currentTimeline, setCurrentTimeline] = useState<Timeline | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [dataLoading, setDataLoading] = useState(true);
     
     const [tema, setTema] = useState('');
     const [fechaInicio, setFechaInicio] = useState('');
     const [fechaFin, setFechaFin] = useState('');
 
     useEffect(() => {
-        try {
-            const data = localStorage.getItem(TIMELINES_KEY);
-            if (data) setTimelines(JSON.parse(data));
-        } catch (e) { console.error("Error al cargar líneas de tiempo", e); }
+        setDataLoading(true);
+        const unsubscribe = subscribeToTimelines((data) => {
+            setTimelines(data);
+            setDataLoading(false);
+        });
+        return () => unsubscribe();
     }, []);
-
-    const persistTimelines = (data: Timeline[]) => {
-        setTimelines(data);
-        localStorage.setItem(TIMELINES_KEY, JSON.stringify(data));
-    };
 
     const handleGenerateTimeline = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -178,42 +172,26 @@ const LineasDeTiempo: FC<{ onBack: () => void; }> = ({ onBack }) => {
         const dateInfo = fechaInicio && fechaFin ? `entre ${fechaInicio} y ${fechaFin}` : (fechaInicio ? `a partir de ${fechaInicio}` : (fechaFin ? `hasta ${fechaFin}`: ''));
         const prompt = `Genera una línea de tiempo sobre el tema "${tema}" ${dateInfo}. Crea entre 5 y 10 hitos clave ordenados cronológicamente. Para cada hito, proporciona una fecha o año, una descripción breve y un emoji representativo.`;
         
-        const schema = {
-            type: Type.OBJECT,
-            properties: {
-                events: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            date: { type: Type.STRING },
-                            description: { type: Type.STRING },
-                            icon: { type: Type.STRING }
-                        },
-                        required: ["date", "description"]
-                    }
-                }
-            },
-            required: ["events"]
-        };
-
         try {
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: { responseMimeType: 'application/json', responseSchema: schema }
-            });
-            const result = JSON.parse(response.text);
-            const newTimeline: Timeline = {
-                id: crypto.randomUUID(),
+            const apiKey = "";
+            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+            
+            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+            const resultJson = JSON.parse(cleanedText);
+
+            const newTimelineData: Omit<Timeline, 'id' | 'createdAt'> = {
                 tema,
                 fechaInicio,
                 fechaFin,
-                createdAt: new Date().toISOString(),
-                events: result.events.map((e: any) => ({ ...e, id: crypto.randomUUID() }))
+                events: resultJson.events.map((e: any) => ({ ...e, id: crypto.randomUUID() }))
             };
-            setCurrentTimeline(newTimeline);
+            
+            const newId = await createTimeline(newTimelineData, currentUser);
+            setCurrentTimeline({ ...newTimelineData, id: newId, createdAt: new Date().toISOString() });
             setView('editor');
             
         } catch (error) {
@@ -224,25 +202,34 @@ const LineasDeTiempo: FC<{ onBack: () => void; }> = ({ onBack }) => {
         }
     };
 
-    const handleSaveTimeline = (timelineToSave: Timeline) => {
-        const existingIndex = timelines.findIndex(t => t.id === timelineToSave.id);
-        if (existingIndex > -1) {
-            persistTimelines(timelines.map(t => t.id === timelineToSave.id ? timelineToSave : t));
-        } else {
-            persistTimelines([timelineToSave, ...timelines]);
+    const handleSaveTimeline = async (timelineToSave: Timeline) => {
+        try {
+            await saveTimeline(timelineToSave, currentUser);
+            setView('list');
+            setCurrentTimeline(null);
+        } catch (error) {
+            console.error("Error saving timeline:", error);
+            alert("No se pudo guardar la línea de tiempo.");
         }
-        setView('list');
-        setCurrentTimeline(null);
     };
 
-    const handleDeleteTimeline = (id: string) => {
+    const handleDeleteTimeline = async (id: string) => {
         if (window.confirm("¿Eliminar esta línea de tiempo?")) {
-            persistTimelines(timelines.filter(t => t.id !== id));
+            try {
+                await deleteTimeline(id);
+            } catch (error) {
+                console.error("Error deleting timeline:", error);
+                alert("No se pudo eliminar la línea de tiempo.");
+            }
         }
     };
 
     if (view === 'editor' && currentTimeline) {
         return <TimelineEditor timeline={currentTimeline} onSave={handleSaveTimeline} onBack={() => setView('list')} />;
+    }
+
+    if (dataLoading) {
+        return <div className="text-center py-10">Cargando líneas de tiempo...</div>;
     }
 
     return (

@@ -3,7 +3,6 @@ import ReactFlow, {
   ReactFlowProvider,
   useNodesState,
   useEdgesState,
-  addEdge,
   Controls,
   Background,
   Node,
@@ -11,30 +10,26 @@ import ReactFlow, {
   Position,
   useReactFlow,
 } from 'reactflow';
-import { MindMap, MindMapNode, MindMapEdge, MindMapTreeNode } from '../../../types';
-import { CURSOS } from '../../../constants';
-import { GoogleGenAI, Type } from "@google/genai";
-import jsPDF from 'jspdf';
+import { MindMap, MindMapNode, MindMapEdge, MindMapTreeNode, User } from '../../../types';
 import { toPng } from 'html-to-image';
+import {
+    subscribeToMindMaps,
+    createMindMap,
+    saveMindMap,
+    deleteMindMap
+} from '../../../src/firebaseHelpers/recursosHelper'; // AJUSTA la ruta a tu helper
 
-const MIND_MAPS_KEY = 'recursosAprendizaje_mindMaps_v2';
-
-// --- Helper functions & Icons ---
+// --- Icons & Helper Components ---
+const Spinner = () => (<svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>);
 const FullscreenIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1v4m0 0h-4m4-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 0h-4m4 4l-5-5" /></svg>);
 const TreeIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657l-4.243 4.243a1 1 0 01-1.414 0l-4.243-4.243a1 1 0 010-1.414l4.243-4.243a1 1 0 011.414 0l4.243 4.243a1 1 0 010 1.414z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6" /></svg>);
 const CenterIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5l7 7-7 7" /></svg>);
-const Spinner = () => (<svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>);
 
-// Recursive function to calculate the vertical space needed for each subtree
 const calculateSubtreeHeight = (node: MindMapTreeNode, levelHeight: number): number => {
-    if (node.children.length === 0) {
-        return levelHeight;
-    }
+    if (!node.children || node.children.length === 0) return levelHeight;
     return node.children.reduce((acc, child) => acc + calculateSubtreeHeight(child, levelHeight), 0);
 };
 
-
-// Function to convert hierarchical data to React Flow nodes and edges
 const treeToFlow = (treeData: MindMapTreeNode, layout: 'tree' | 'central' = 'tree'): { nodes: MindMapNode[]; edges: MindMapEdge[] } => {
     const nodes: MindMapNode[] = [];
     const edges: MindMapEdge[] = [];
@@ -42,11 +37,10 @@ const treeToFlow = (treeData: MindMapTreeNode, layout: 'tree' | 'central' = 'tre
     const levelHeight = 80;
 
     if (layout === 'tree') {
-        const traverse = (node: MindMapTreeNode, level: number, yPos: number, parentY: number) => {
-            const x = level * levelWidth;
+        const traverse = (node: MindMapTreeNode, level: number, yPos: number) => {
             nodes.push({
                 id: node.id,
-                position: { x, y: yPos },
+                position: { x: level * levelWidth, y: yPos },
                 data: { label: node.label },
                 type: level === 0 ? 'input' : 'default',
                 sourcePosition: Position.Right,
@@ -56,41 +50,30 @@ const treeToFlow = (treeData: MindMapTreeNode, layout: 'tree' | 'central' = 'tre
             const subtreeHeight = calculateSubtreeHeight(node, levelHeight);
             let childYOffset = yPos - subtreeHeight / 2;
 
-            node.children.forEach(child => {
+            (node.children || []).forEach(child => {
                 const childSubtreeHeight = calculateSubtreeHeight(child, levelHeight);
                 const childY = childYOffset + childSubtreeHeight / 2;
                 
                 edges.push({ id: `e-${node.id}-${child.id}`, source: node.id, target: child.id, type: 'smoothstep', animated: true });
-                traverse(child, level + 1, childY, yPos);
+                traverse(child, level + 1, childY);
                 
                 childYOffset += childSubtreeHeight;
             });
         };
-        traverse(treeData, 0, 0, 0);
-
-    } else { // 'central' layout
-         nodes.push({
-            id: treeData.id,
-            position: { x: 0, y: 0 },
-            data: { label: treeData.label },
-            type: 'input',
-        });
-
+        traverse(treeData, 0, 0);
+    } else {
+         nodes.push({ id: treeData.id, position: { x: 0, y: 0 }, data: { label: treeData.label }, type: 'input' });
         const radius1 = 250;
         const radius2 = 450;
         
-        treeData.children.forEach((child, l1Index) => {
+        (treeData.children || []).forEach((child, l1Index) => {
             const angle1 = (l1Index / treeData.children.length) * 2 * Math.PI;
-            const x1 = radius1 * Math.cos(angle1);
-            const y1 = radius1 * Math.sin(angle1);
-            nodes.push({ id: child.id, position: { x: x1, y: y1 }, data: { label: child.label } });
+            nodes.push({ id: child.id, position: { x: radius1 * Math.cos(angle1), y: radius1 * Math.sin(angle1) }, data: { label: child.label } });
             edges.push({ id: `e-${treeData.id}-${child.id}`, source: treeData.id, target: child.id, type: 'smoothstep' });
             
-            child.children.forEach((grandchild, l2Index) => {
+            (child.children || []).forEach((grandchild, l2Index) => {
                 const angle2 = angle1 + (l2Index - (child.children.length - 1) / 2) * 0.2;
-                const x2 = x1 + radius2 * 0.5 * Math.cos(angle2);
-                const y2 = y1 + radius2 * 0.5 * Math.sin(angle2);
-                nodes.push({ id: grandchild.id, position: { x: x2, y: y2 }, data: { label: grandchild.label } });
+                nodes.push({ id: grandchild.id, position: { x: radius1 * Math.cos(angle1) + radius2 * 0.5 * Math.cos(angle2), y: radius1 * Math.sin(angle1) + radius2 * 0.5 * Math.sin(angle2) }, data: { label: grandchild.label } });
                 edges.push({ id: `e-${child.id}-${grandchild.id}`, source: child.id, target: grandchild.id, type: 'smoothstep' });
             });
         });
@@ -99,7 +82,6 @@ const treeToFlow = (treeData: MindMapTreeNode, layout: 'tree' | 'central' = 'tre
     return { nodes, edges };
 };
 
-// --- Editable Hierarchical Tree Component ---
 interface EditableNodeProps {
     node: MindMapTreeNode;
     onUpdate: (id: string, label: string) => void;
@@ -125,15 +107,13 @@ const EditableNode: FC<EditableNodeProps> = ({ node, onUpdate, onAddChild, onDel
                     {level > 0 && <button onClick={() => onDelete(node.id)} className="p-1.5 rounded-full hover:bg-slate-300/50 dark:hover:bg-slate-600/50 transition-colors">🗑️</button>}
                 </div>
             </div>
-            {node.children.map(child => (
+            {(node.children || []).map(child => (
                 <EditableNode key={child.id} node={child} onUpdate={onUpdate} onAddChild={onAddChild} onDelete={onDelete} level={level + 1}/>
             ))}
         </div>
     );
 };
 
-
-// --- Editor Component ---
 const EditorView: FC<{
     mapData: MindMap;
     onBack: () => void;
@@ -151,18 +131,17 @@ const EditorView: FC<{
         const { nodes: newNodes, edges: newEdges } = treeToFlow(treeData, layout);
         setNodes(newNodes);
         setEdges(newEdges);
-        // Defer fitView to allow nodes to render first
         setTimeout(() => fitView({ duration: 300 }), 50);
     }, [treeData, layout, setNodes, setEdges, fitView]);
     
     const updateNodeLabel = (id: string, label: string) => {
         const newTreeData = JSON.parse(JSON.stringify(treeData));
-        const findAndUpdate = (node: MindMapTreeNode) => {
+        const findAndUpdate = (node: MindMapTreeNode): boolean => {
             if (node.id === id) {
                 node.label = label;
                 return true;
             }
-            return node.children.some(findAndUpdate);
+            return (node.children || []).some(findAndUpdate);
         };
         findAndUpdate(newTreeData);
         setTreeData(newTreeData);
@@ -170,12 +149,13 @@ const EditorView: FC<{
 
     const addChildNode = (parentId: string) => {
         const newTreeData = JSON.parse(JSON.stringify(treeData));
-        const findAndAdd = (node: MindMapTreeNode) => {
+        const findAndAdd = (node: MindMapTreeNode): boolean => {
             if (node.id === parentId) {
+                if (!node.children) node.children = [];
                 node.children.push({ id: crypto.randomUUID(), label: 'Nuevo Nodo', children: [] });
                 return true;
             }
-            return node.children.some(findAndAdd);
+            return (node.children || []).some(findAndAdd);
         };
         findAndAdd(newTreeData);
         setTreeData(newTreeData);
@@ -183,13 +163,13 @@ const EditorView: FC<{
 
     const deleteNode = (id: string) => {
         const newTreeData = JSON.parse(JSON.stringify(treeData));
-        const findAndDelete = (node: MindMapTreeNode) => {
-            const index = node.children.findIndex(child => child.id === id);
+        const findAndDelete = (node: MindMapTreeNode): boolean => {
+            const index = (node.children || []).findIndex(child => child.id === id);
             if (index !== -1) {
                 node.children.splice(index, 1);
                 return true;
             }
-            return node.children.some(findAndDelete);
+            return (node.children || []).some(findAndDelete);
         };
         findAndDelete(newTreeData);
         setTreeData(newTreeData);
@@ -226,7 +206,6 @@ const EditorView: FC<{
             .catch(err => console.error('oops, something went wrong!', err));
     };
 
-
     return (
         <div className="space-y-4">
             <div className="flex justify-between items-center">
@@ -235,15 +214,8 @@ const EditorView: FC<{
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Visualizer Panel */}
                 <div className="lg:col-span-2 w-full h-[70vh] rounded-lg border dark:border-slate-700 relative">
-                    <ReactFlow
-                        nodes={nodes}
-                        edges={edges}
-                        onNodesChange={onNodesChange}
-                        onEdgesChange={onEdgesChange}
-                        fitView
-                    >
+                    <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} fitView>
                         <Controls />
                         <Background />
                     </ReactFlow>
@@ -254,7 +226,6 @@ const EditorView: FC<{
                     </div>
                 </div>
 
-                {/* Editor Panel */}
                 <div className="w-full h-[70vh] flex flex-col bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border dark:border-slate-700">
                      <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">Editar</h3>
                      <div className="flex items-center gap-2 mb-4 border-b dark:border-slate-700 pb-2">
@@ -276,56 +247,50 @@ const EditorView: FC<{
     );
 }
 
-// --- Main Component ---
-interface MapasMentalesProps { onBack: () => void; }
-const MapasMentales: FC<MapasMentalesProps> = ({ onBack }) => {
+interface MapasMentalesProps { onBack: () => void; currentUser: User }
+const MapasMentales: FC<MapasMentalesProps> = ({ onBack, currentUser }) => {
     const [view, setView] = useState<'list' | 'config' | 'editor'>('list');
     const [savedMaps, setSavedMaps] = useState<MindMap[]>([]);
     const [currentMap, setCurrentMap] = useState<MindMap | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [dataLoading, setDataLoading] = useState(true);
 
-    // Form state
     const [tema, setTema] = useState('');
     const [nivel, setNivel] = useState('');
     const [contenido, setContenido] = useState('');
 
     useEffect(() => {
-        try {
-            const data = localStorage.getItem(MIND_MAPS_KEY);
-            if (data) setSavedMaps(JSON.parse(data));
-        } catch (e) { console.error("Error loading mind maps", e); }
+        setDataLoading(true);
+        const unsubscribe = subscribeToMindMaps((data) => {
+            setSavedMaps(data);
+            setDataLoading(false);
+        });
+        return () => unsubscribe();
     }, []);
-
-    const persistMaps = (maps: MindMap[]) => {
-        setSavedMaps(maps);
-        localStorage.setItem(MIND_MAPS_KEY, JSON.stringify(maps));
-    };
 
     const handleGenerateMap = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!tema.trim()) { alert("El tema es obligatorio."); return; }
         setIsLoading(true);
 
-        const prompt = `Basado en el tema central "${tema}", y considerando el contenido adicional "${contenido}", genera una estructura jerárquica detallada para un mapa mental con al menos 3 niveles de profundidad. La estructura debe ser un desglose lógico del tema en subtemas.
-
-La respuesta DEBE ser un único objeto JSON válido. Cada nodo en el JSON debe tener las propiedades "id" (un string único generado con crypto.randomUUID()), "label" (el texto del nodo), y "children" (un array de nodos hijos con la misma estructura).`;
+        const prompt = `Basado en el tema central "${tema}", y considerando el contenido adicional "${contenido}", genera una estructura jerárquica detallada para un mapa mental con al menos 3 niveles de profundidad. La estructura debe ser un desglose lógico del tema en subtemas. La respuesta DEBE ser un único objeto JSON válido. Cada nodo en el JSON debe tener las propiedades "id" (un string único generado con crypto.randomUUID()), "label" (el texto del nodo), y "children" (un array de nodos hijos con la misma estructura).`;
         
         try {
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: { responseMimeType: 'application/json' }
-            });
-
-            const treeData = JSON.parse(response.text.trim());
+            const apiKey = "";
+            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+            
+            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+            const treeData = JSON.parse(cleanedText);
             const { nodes, edges } = treeToFlow(treeData);
 
-            const newMap: MindMap = {
-                id: crypto.randomUUID(), tema, nivel, treeData, nodes, edges,
-                createdAt: new Date().toISOString(),
-            };
-            setCurrentMap(newMap);
+            const newMapData: Omit<MindMap, 'id' | 'createdAt'> = { tema, nivel, treeData, nodes, edges };
+            
+            const newId = await createMindMap(newMapData, currentUser);
+            setCurrentMap({ ...newMapData, id: newId, createdAt: new Date().toISOString() });
             setView('editor');
         } catch (error) {
             console.error("AI Generation Error:", error);
@@ -335,16 +300,26 @@ La respuesta DEBE ser un único objeto JSON válido. Cada nodo en el JSON debe t
         }
     };
 
-    const handleSaveMap = (mapToSave: MindMap) => {
-        const existingIndex = savedMaps.findIndex(m => m.id === mapToSave.id);
-        const updatedMaps = (existingIndex > -1)
-            ? savedMaps.map(m => m.id === mapToSave.id ? mapToSave : m)
-            : [mapToSave, ...savedMaps];
-        persistMaps(updatedMaps);
+    const handleSaveMap = async (mapToSave: MindMap) => {
+        try {
+            await saveMindMap(mapToSave, currentUser);
+        } catch (error) {
+            console.error("Error saving mind map:", error);
+            alert("No se pudo guardar el mapa mental.");
+        }
     };
     
     const handleEditMap = (map: MindMap) => { setCurrentMap(map); setView('editor'); };
-    const handleDeleteMap = (mapId: string) => { if (window.confirm("¿Eliminar este mapa mental?")) persistMaps(savedMaps.filter(m => m.id !== mapId)); };
+    const handleDeleteMap = async (mapId: string) => { 
+        if (window.confirm("¿Eliminar este mapa mental?")) {
+            try {
+                await deleteMindMap(mapId);
+            } catch (error) {
+                console.error("Error deleting mind map:", error);
+                alert("No se pudo eliminar el mapa mental.");
+            }
+        }
+    };
 
     const renderContent = () => {
         switch (view) {
@@ -404,6 +379,10 @@ La respuesta DEBE ser un único objeto JSON válido. Cada nodo en el JSON debe t
                 );
         }
     };
+    
+    if (dataLoading) {
+        return <div className="text-center py-10">Cargando mapas mentales...</div>;
+    }
 
     return (
         <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">

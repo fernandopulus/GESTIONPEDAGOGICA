@@ -177,7 +177,7 @@ const ActividadesRemotas: React.FC = () => {
             );
 
             const apiKey = "";
-            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
             const model = ai.getGenerativeModel({ model: "gemini-pro" });
             
             const prompt = buildPrompt();

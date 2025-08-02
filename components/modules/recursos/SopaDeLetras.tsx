@@ -1,20 +1,40 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { GoogleGenAI, Type } from "@google/genai";
+import React, { useState, useEffect, useCallback, useRef, FC } from 'react';
+// Se elimina la importación directa de GoogleGenAI
 import { toPng } from 'html-to-image';
-import type { WordSearchPuzzle } from '../../../types';
+import type { WordSearchPuzzle, User } from '../../../types';
+import {
+    subscribeToSopasDeLetras,
+    saveSopaDeLetras,
+    deleteSopaDeLetras
+} from '../../../src/firebaseHelpers/recursosHelper'; // AJUSTA la ruta a tu helper
 
 const Spinner = () => (<svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>);
 const SparklesIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>);
 
-const SopaDeLetras: React.FC<{ onBack: () => void; }> = ({ onBack }) => {
+interface SopaDeLetrasProps {
+    onBack: () => void;
+    currentUser: User;
+}
+
+const SopaDeLetras: React.FC<SopaDeLetrasProps> = ({ onBack, currentUser }) => {
+    const [savedPuzzles, setSavedPuzzles] = useState<WordSearchPuzzle[]>([]);
     const [difficulty, setDifficulty] = useState<'Fácil' | 'Media' | 'Difícil'>('Media');
     const [numWords, setNumWords] = useState<number>(10);
     const [isCustomNumWords, setIsCustomNumWords] = useState(false);
     const [words, setWords] = useState<string[]>(Array(10).fill(''));
     const [aiTheme, setAiTheme] = useState('');
     const [puzzle, setPuzzle] = useState<WordSearchPuzzle | null>(null);
-    const [loading, setLoading] = useState({ ai: false, puzzle: false });
+    const [loading, setLoading] = useState({ ai: false, puzzle: false, data: true });
     const puzzleRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        setLoading(p => ({ ...p, data: true }));
+        const unsubscribe = subscribeToSopasDeLetras((data) => {
+            setSavedPuzzles(data);
+            setLoading(p => ({ ...p, data: false }));
+        });
+        return () => unsubscribe();
+    }, []);
 
     useEffect(() => {
         setWords(prev => {
@@ -36,17 +56,18 @@ const SopaDeLetras: React.FC<{ onBack: () => void; }> = ({ onBack }) => {
         if (!aiTheme.trim()) return;
         setLoading(p => ({ ...p, ai: true }));
         try {
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
+            const apiKey = "";
+            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-pro" });
             const prompt = `Genera una lista de ${numWords} palabras clave, en español, relacionadas con el tema "${aiTheme}". Las palabras no deben contener espacios ni caracteres especiales.`;
-            const schema = { type: Type.OBJECT, properties: { palabras: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ["palabras"] };
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: { responseMimeType: "application/json", responseSchema: schema }
-            });
-
-            const result = JSON.parse(response.text);
-            const aiWords = result.palabras
+            
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+            
+            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+            const resultJson = JSON.parse(cleanedText);
+            const aiWords = resultJson.palabras
                 .map((w: string) => w.toUpperCase().replace(/\s/g, ''))
                 .slice(0, numWords);
             
@@ -80,49 +101,62 @@ const SopaDeLetras: React.FC<{ onBack: () => void; }> = ({ onBack }) => {
         }
     };
 
-    const handleGeneratePuzzle = () => {
+    const handleGeneratePuzzle = async () => {
         setLoading(p => ({ ...p, puzzle: true }));
         setPuzzle(null);
 
-        setTimeout(() => {
-            const cleanWords = words.map(w => w.toUpperCase().replace(/[^A-ZÑ]/g, '')).filter(Boolean);
-            if (cleanWords.length === 0) {
-                alert("Por favor, ingrese al menos una palabra válida.");
-                setLoading(p => ({ ...p, puzzle: false }));
-                return;
-            }
+        await new Promise(resolve => setTimeout(resolve, 100));
 
-            const longestWord = Math.max(...cleanWords.map(w => w.length));
-            let size = Math.max(longestWord, cleanWords.length) + 2;
-            if (difficulty === 'Media') size += 3;
-            if (difficulty === 'Difícil') size += 5;
-            size = Math.min(Math.max(size, 10), 25);
-
-            const grid: (string | null)[][] = Array(size).fill(null).map(() => Array(size).fill(null));
-            const directions = [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }];
-            if (difficulty !== 'Fácil') directions.push({ x: 1, y: -1 });
-            if (difficulty === 'Difícil') directions.push({ x: -1, y: 0 }, { x: 0, y: -1 }, { x: -1, y: -1 }, { x: -1, y: 1 });
-
-            for (const word of cleanWords.sort((a, b) => b.length - a.length)) {
-                let placed = false;
-                for (let i = 0; i < 100; i++) {
-                    const dir = directions[Math.floor(Math.random() * directions.length)];
-                    const row = Math.floor(Math.random() * size);
-                    const col = Math.floor(Math.random() * size);
-                    if (canPlaceWord(word, grid, row, col, dir, size)) {
-                        placeWord(word, grid, row, col, dir);
-                        placed = true;
-                        break;
-                    }
-                }
-                if (!placed) console.warn(`No se pudo colocar la palabra: ${word}`);
-            }
-
-            const finalGrid = grid.map(row => row.map(cell => cell || 'ABCDEFGHIJKLMNOPQRSTUVWXYZÑ'[Math.floor(Math.random() * 27)]));
-            
-            setPuzzle({ grid: finalGrid, words: cleanWords.sort() });
+        const cleanWords = words.map(w => w.toUpperCase().replace(/[^A-ZÑ]/g, '')).filter(Boolean);
+        if (cleanWords.length === 0) {
+            alert("Por favor, ingrese al menos una palabra válida.");
             setLoading(p => ({ ...p, puzzle: false }));
-        }, 100);
+            return;
+        }
+
+        const longestWord = Math.max(...cleanWords.map(w => w.length));
+        let size = Math.max(longestWord, cleanWords.length) + 2;
+        if (difficulty === 'Media') size += 3;
+        if (difficulty === 'Difícil') size += 5;
+        size = Math.min(Math.max(size, 10), 25);
+
+        const grid: (string | null)[][] = Array(size).fill(null).map(() => Array(size).fill(null));
+        const directions = [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }];
+        if (difficulty !== 'Fácil') directions.push({ x: 1, y: -1 });
+        if (difficulty === 'Difícil') directions.push({ x: -1, y: 0 }, { x: 0, y: -1 }, { x: -1, y: -1 }, { x: -1, y: 1 });
+
+        for (const word of cleanWords.sort((a, b) => b.length - a.length)) {
+            let placed = false;
+            for (let i = 0; i < 100; i++) {
+                const dir = directions[Math.floor(Math.random() * directions.length)];
+                const row = Math.floor(Math.random() * size);
+                const col = Math.floor(Math.random() * size);
+                if (canPlaceWord(word, grid, row, col, dir, size)) {
+                    placeWord(word, grid, row, col, dir);
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) console.warn(`No se pudo colocar la palabra: ${word}`);
+        }
+
+        const finalGrid = grid.map(row => row.map(cell => cell || 'ABCDEFGHIJKLMNOPQRSTUVWXYZÑ'[Math.floor(Math.random() * 27)]));
+        
+        const newPuzzleData: Omit<WordSearchPuzzle, 'id' | 'createdAt'> = {
+            tema: aiTheme,
+            grid: finalGrid,
+            words: cleanWords.sort()
+        };
+
+        try {
+            const newId = await saveSopaDeLetras(newPuzzleData, currentUser);
+            setPuzzle({ ...newPuzzleData, id: newId, createdAt: new Date().toISOString() });
+        } catch (error) {
+            console.error("Error saving puzzle:", error);
+            alert("No se pudo guardar la sopa de letras.");
+        } finally {
+            setLoading(p => ({ ...p, puzzle: false }));
+        }
     };
 
     const handleDownloadPNG = () => {
@@ -140,6 +174,41 @@ const SopaDeLetras: React.FC<{ onBack: () => void; }> = ({ onBack }) => {
             });
     };
 
+    const renderPuzzle = () => {
+        if (!puzzle) return null;
+        return (
+            <div className="space-y-6">
+                <div ref={puzzleRef} className="p-6 bg-white">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <div className="md:col-span-2">
+                            <div className="grid border-2 border-slate-700" style={{ gridTemplateColumns: `repeat(${puzzle.grid.length}, minmax(0, 1fr))` }}>
+                                {puzzle.grid.flat().map((letter, i) => (
+                                    <div key={i} className="flex items-center justify-center aspect-square border border-slate-300 font-mono font-bold text-lg text-slate-800">
+                                        {letter}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800 mb-4 border-b-2 border-slate-700 pb-2">PALABRAS A BUSCAR</h3>
+                            <ul className="grid grid-cols-2 gap-x-4 gap-y-2 font-semibold text-slate-700">
+                                {puzzle.words.map(w => <li key={w}>{w}</li>)}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div className="flex justify-end gap-4">
+                    <button onClick={() => setPuzzle(null)} className="bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300">Crear otra</button>
+                    <button onClick={handleDownloadPNG} className="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600">Descargar como PNG</button>
+                </div>
+            </div>
+        );
+    };
+
+    if (loading.data) {
+        return <div className="text-center py-10">Cargando...</div>;
+    }
+
     return (
         <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md space-y-6">
             <div className="flex items-center gap-4">
@@ -150,7 +219,6 @@ const SopaDeLetras: React.FC<{ onBack: () => void; }> = ({ onBack }) => {
                 </div>
             </div>
 
-            {/* Configuration Panel */}
             {!puzzle && (
                 <div className="space-y-6 pt-4 border-t dark:border-slate-700">
                     <div>
@@ -206,34 +274,7 @@ const SopaDeLetras: React.FC<{ onBack: () => void; }> = ({ onBack }) => {
                 </div>
             )}
             
-            {/* Puzzle Display */}
-            {puzzle && (
-                <div className="space-y-6">
-                    <div ref={puzzleRef} className="p-6 bg-white">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                            <div className="md:col-span-2">
-                                <div className="grid border-2 border-slate-700" style={{ gridTemplateColumns: `repeat(${puzzle.grid.length}, minmax(0, 1fr))` }}>
-                                    {puzzle.grid.flat().map((letter, i) => (
-                                        <div key={i} className="flex items-center justify-center aspect-square border border-slate-300 font-mono font-bold text-lg text-slate-800">
-                                            {letter}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                            <div>
-                                <h3 className="text-xl font-bold text-slate-800 mb-4 border-b-2 border-slate-700 pb-2">PALABRAS A BUSCAR</h3>
-                                <ul className="grid grid-cols-2 gap-x-4 gap-y-2 font-semibold text-slate-700">
-                                    {puzzle.words.map(w => <li key={w}>{w}</li>)}
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="flex justify-end gap-4">
-                        <button onClick={() => setPuzzle(null)} className="bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300">Crear otra</button>
-                        <button onClick={handleDownloadPNG} className="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600">Descargar como PNG</button>
-                    </div>
-                </div>
-            )}
+            {puzzle && renderPuzzle()}
         </div>
     );
 };
