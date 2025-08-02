@@ -1,37 +1,29 @@
 import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
 import { EvaluacionFormativa, CalificacionesFormativas, User, Profile, TrabajoGrupal, GrupoIntegrante } from '../../types';
 import { ASIGNATURAS, CURSOS, ROLES_TRABAJO_GRUPAL } from '../../constants';
-import { utils, writeFile } from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import {
+    subscribeToEvaluaciones,
+    createEvaluacion,
+    updateEvaluacion,
+    deleteEvaluacion,
+    subscribeToCalificaciones,
+    updateCalificaciones,
+    subscribeToTrabajosGrupales,
+    createTrabajoGrupal,
+    updateTrabajoGrupal,
+    subscribeToAllUsers
+} from '../../src/firebaseHelpers/evaluacionesFormativasHelper'; // AJUSTA la ruta a tu nuevo helper
 
-const EVALUACIONES_KEY = 'evaluacionesFormativas';
-const CALIFICACIONES_KEY = 'calificacionesFormativas';
-const TRABAJOS_GRUPALES_KEY = 'trabajosGrupalesFormativos';
-const USERS_KEY = 'usuariosLiceo';
-
-/**
- * Normaliza el nombre de un curso a un formato estándar (ej: "1ºA").
- * Elimina espacios, estandariza ordinales y capitaliza la letra final.
- */
 const normalizeCurso = (curso: string): string => {
     if (!curso) return '';
     let normalized = curso.trim().toLowerCase();
-    
-    // Estandarizar el símbolo de grado (°) al ordinal masculino (º)
     normalized = normalized.replace(/°/g, 'º');
-
-    // Reemplazar " medio", etc.
     normalized = normalized.replace(/\s+(medio|básico|basico)/g, '');
-    // Reemplazar 1ro, 2do, 3ro, 4to con 1º, 2º, 3º, 4º
     normalized = normalized.replace(/(\d)(st|nd|rd|th|ro|do|to|er)/, '$1º');
-    // Asegura que haya un símbolo de grado si no lo hay
     normalized = normalized.replace(/^(\d)(?![º])/, '$1º');
-    // Elimina todos los espacios y pone en mayúscula la parte de la letra
     normalized = normalized.replace(/\s+/g, '').toUpperCase();
     return normalized;
 };
-
 
 const asignaturaEmojis: Record<string, string> = {
     'Lengua y Literatura': '📚', 'Matemática': '➗', 'Inglés': '🇬🇧', 'Filosofía': '🤔',
@@ -56,7 +48,7 @@ interface EvaluacionesFormativasProps {
 // --- Subcomponentes para el nuevo flujo ---
 
 const ClassSelector: React.FC<{ cursos: string[]; onSelect: (curso: string) => void }> = ({ cursos, onSelect }) => (
-    <div className="bg-white p-6 md:p-8 rounded-xl shadow-md">
+    <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
         <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">Seleccione un Libro de Clases</h2>
         <p className="text-slate-500 dark:text-slate-400 mb-8">Cada libro representa un curso y contiene sus evaluaciones formativas.</p>
         {cursos.length > 0 ? (
@@ -89,7 +81,7 @@ const ClassSelector: React.FC<{ cursos: string[]; onSelect: (curso: string) => v
 const SubjectSelector: React.FC<{ curso: string; asignaturas: string[]; onSelect: (asignatura: string) => void; onBack: () => void; }> = ({ curso, asignaturas, onSelect, onBack }) => {
     const colors = getCourseColors(curso);
     return (
-        <div className="bg-white p-6 md:p-8 rounded-xl shadow-md">
+        <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
             <div className="flex items-center gap-4 mb-8">
                 <button onClick={onBack} className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">&larr; Volver a Cursos</button>
                 <div className={`p-2 rounded-md ${colors.bg} ${colors.text} font-bold`}>
@@ -128,28 +120,8 @@ const CalificacionesView: React.FC<{
     const [formData, setFormData] = useState({ fecha: new Date().toISOString().split('T')[0], nombreActividad: '' });
     const [editingEval, setEditingEval] = useState<EvaluacionFormativa | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
 
-     useEffect(() => {
-        try {
-            const storedEvaluaciones = localStorage.getItem(EVALUACIONES_KEY);
-            if (storedEvaluaciones) setEvaluaciones(JSON.parse(storedEvaluaciones));
-
-            const storedCalificaciones = localStorage.getItem(CALIFICACIONES_KEY);
-            if (storedCalificaciones) setCalificaciones(JSON.parse(storedCalificaciones));
-
-        } catch (e) { console.error("Error al cargar datos", e); }
-    }, []);
-
-    const persistEvaluaciones = (data: EvaluacionFormativa[]) => {
-        setEvaluaciones(data);
-        localStorage.setItem(EVALUACIONES_KEY, JSON.stringify(data));
-    };
-
-    const persistCalificaciones = (data: CalificacionesFormativas) => {
-        setCalificaciones(data);
-        localStorage.setItem(CALIFICACIONES_KEY, JSON.stringify(data));
-    };
-    
     const estudiantesDelCurso = useMemo(() => {
         return allUsers
             .filter(e => e.profile === Profile.ESTUDIANTE && normalizeCurso(e.curso || '') === curso)
@@ -157,11 +129,20 @@ const CalificacionesView: React.FC<{
             .sort((a, b) => a.localeCompare(b));
     }, [allUsers, curso]);
 
-    const evaluacionesFiltradas = useMemo(() => {
-        return evaluaciones
-            .filter(ev => ev.curso === curso && ev.asignatura === asignatura)
-            .sort((a,b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
-    }, [evaluaciones, curso, asignatura]);
+    useEffect(() => {
+        setLoading(true);
+        const unsubEvaluaciones = subscribeToEvaluaciones(curso, asignatura, (data) => {
+            setEvaluaciones(data);
+            const evalIds = data.map(ev => ev.id);
+            const unsubCalificaciones = subscribeToCalificaciones(evalIds, (califData) => {
+                setCalificaciones(prev => ({ ...prev, ...califData }));
+            });
+            setLoading(false);
+            return () => unsubCalificaciones();
+        });
+
+        return () => unsubEvaluaciones();
+    }, [curso, asignatura]);
     
     const handleFieldChange = (e: ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -172,62 +153,81 @@ const CalificacionesView: React.FC<{
         }
     };
 
-    const handleSubmit = (e: FormEvent) => {
+    const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
+        setError(null);
         if (!formData.nombreActividad.trim()) {
             setError("El nombre de la actividad es obligatorio.");
             return;
         }
         
-        const newEval: EvaluacionFormativa = { id: crypto.randomUUID(), asignatura, curso, ...formData };
-        persistEvaluaciones([...evaluaciones, newEval]);
-        
-        const newCalificacionesParaEval = estudiantesDelCurso.reduce((acc, nombre) => {
+        const newEvalData: Omit<EvaluacionFormativa, 'id'> = { asignatura, curso, ...formData };
+        const initialCalificaciones = estudiantesDelCurso.reduce((acc, nombre) => {
             acc[nombre] = 'trabajado';
             return acc;
         }, {} as Record<string, string>);
 
-        persistCalificaciones({ ...calificaciones, [newEval.id]: newCalificacionesParaEval });
-        setFormData({ fecha: new Date().toISOString().split('T')[0], nombreActividad: '' });
-        setError(null);
+        try {
+            await createEvaluacion(newEvalData, initialCalificaciones);
+            setFormData({ fecha: new Date().toISOString().split('T')[0], nombreActividad: '' });
+        } catch (err) {
+            console.error(err);
+            setError("No se pudo crear la evaluación.");
+        }
     };
 
     const handleCalificacionChange = (evaluacionId: string, nombreEstudiante: string) => {
         const currentStatus = calificaciones[evaluacionId]?.[nombreEstudiante] || 'trabajado';
         const newStatus = currentStatus === 'trabajado' ? 'no trabajado' : 'trabajado';
-        persistCalificaciones({
+        const updatedCalificaciones = {
             ...calificaciones,
             [evaluacionId]: { ...(calificaciones[evaluacionId] || {}), [nombreEstudiante]: newStatus },
+        };
+        setCalificaciones(updatedCalificaciones); // Optimistic update
+        updateCalificaciones(evaluacionId, { [nombreEstudiante]: newStatus }).catch(err => {
+            console.error("Error updating grade:", err);
+            // Revert on error if needed
         });
     };
 
     const handleEditClick = (evaluacion: EvaluacionFormativa) => setEditingEval(evaluacion);
-    const handleSaveEdit = () => {
+    const handleSaveEdit = async () => {
         if (!editingEval) return;
-        persistEvaluaciones(evaluaciones.map(ev => ev.id === editingEval.id ? editingEval : ev));
-        setEditingEval(null);
+        try {
+            await updateEvaluacion(editingEval.id, { nombreActividad: editingEval.nombreActividad, fecha: editingEval.fecha });
+            setEditingEval(null);
+        } catch (err) {
+            console.error(err);
+            setError("No se pudo guardar la edición.");
+        }
     };
-    const handleDelete = (evaluacionId: string) => {
+    const handleDelete = async (evaluacionId: string) => {
         if (window.confirm("¿Eliminar esta evaluación y todas sus calificaciones?")) {
-            persistEvaluaciones(evaluaciones.filter(ev => ev.id !== evaluacionId));
-            const newCalificaciones = { ...calificaciones };
-            delete newCalificaciones[evaluacionId];
-            persistCalificaciones(newCalificaciones);
+            try {
+                await deleteEvaluacion(evaluacionId);
+            } catch (err) {
+                console.error(err);
+                setError("No se pudo eliminar la evaluación.");
+            }
         }
     };
 
     const calcularPromedio = useCallback((nombreEstudiante: string) => {
-        if (evaluacionesFiltradas.length === 0) return '-';
+        if (evaluaciones.length === 0) return '-';
         let suma = 0, count = 0;
-        evaluacionesFiltradas.forEach(ev => {
+        evaluaciones.forEach(ev => {
             const calificacion = calificaciones[ev.id]?.[nombreEstudiante];
             if (calificacion === 'trabajado') { suma += 7.0; count++; }
             else if (calificacion === 'no trabajado') { suma += 2.0; count++; }
         });
         if (count === 0) return '-';
         return (suma / count).toFixed(1);
-    }, [calificaciones, evaluacionesFiltradas]);
+    }, [calificaciones, evaluaciones]);
     
+    if (loading) {
+        return <div className="text-center py-10">Cargando calificaciones...</div>;
+    }
+
     return (
         <div className="space-y-6">
             <div className="flex items-center gap-4">
@@ -256,7 +256,7 @@ const CalificacionesView: React.FC<{
                     <thead className="bg-slate-50 dark:bg-slate-700">
                         <tr>
                             <th scope="col" className="sticky left-0 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase z-10 w-48">Estudiante</th>
-                            {evaluacionesFiltradas.map(ev => (
+                            {evaluaciones.map(ev => (
                                 <th key={ev.id} scope="col" className="px-3 py-3 text-center text-xs font-medium text-slate-600 dark:text-slate-300 uppercase w-36">
                                     {editingEval?.id === ev.id ? (
                                         <div className="flex flex-col gap-1">
@@ -283,7 +283,7 @@ const CalificacionesView: React.FC<{
                         {estudiantesDelCurso.map(nombre => (
                             <tr key={nombre}>
                                 <td className="sticky left-0 bg-white dark:bg-slate-900 px-4 py-2 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-200 w-48">{nombre}</td>
-                                {evaluacionesFiltradas.map(ev => {
+                                {evaluaciones.map(ev => {
                                     const calificacion = calificaciones[ev.id]?.[nombre];
                                     const worked = calificacion === 'trabajado';
                                     return (
@@ -304,8 +304,6 @@ const CalificacionesView: React.FC<{
     );
 };
 
-
-// Componente para Trabajos Grupales
 const TrabajosGrupalesView: React.FC<{
     curso: string;
     asignatura: string;
@@ -318,23 +316,16 @@ const TrabajosGrupalesView: React.FC<{
     const [groupAssignments, setGroupAssignments] = useState<Record<string, { groupNumber: string; role: string }>>({});
     const [numAutoGroups, setNumAutoGroups] = useState(2);
     
-    useEffect(() => {
-        try {
-            const data = localStorage.getItem(TRABAJOS_GRUPALES_KEY);
-            if (data) setTrabajos(JSON.parse(data));
-        } catch (e) { console.error("Error al cargar trabajos grupales", e); }
-    }, []);
-
-    const persistTrabajos = (data: TrabajoGrupal[]) => {
-        setTrabajos(data);
-        localStorage.setItem(TRABAJOS_GRUPALES_KEY, JSON.stringify(data));
-    };
-    
     const estudiantesDelCurso = useMemo(() => {
         return allUsers
             .filter(u => u.profile === Profile.ESTUDIANTE && normalizeCurso(u.curso || '') === curso)
             .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
     }, [allUsers, curso]);
+
+    useEffect(() => {
+        const unsubscribe = subscribeToTrabajosGrupales(curso, asignatura, setTrabajos);
+        return () => unsubscribe();
+    }, [curso, asignatura]);
     
     useEffect(() => {
         if (selectedTrabajo) {
@@ -350,22 +341,26 @@ const TrabajosGrupalesView: React.FC<{
         }
     }, [selectedTrabajo]);
 
-    const handleCreateActivity = (e: FormEvent) => {
+    const handleCreateActivity = async (e: FormEvent) => {
         e.preventDefault();
         if (!newActivityData.nombre.trim()) return;
-        const newTrabajo: TrabajoGrupal = {
-            id: crypto.randomUUID(),
+        const newTrabajo: Omit<TrabajoGrupal, 'id'> = {
             curso,
             asignatura,
             nombreActividad: newActivityData.nombre,
             fechaPresentacion: newActivityData.fecha,
             grupos: [],
         };
-        persistTrabajos([newTrabajo, ...trabajos]);
-        setNewActivityData({ nombre: '', fecha: new Date().toISOString().split('T')[0] });
+        try {
+            await createTrabajoGrupal(newTrabajo);
+            setNewActivityData({ nombre: '', fecha: new Date().toISOString().split('T')[0] });
+        } catch (error) {
+            console.error(error);
+            alert("No se pudo crear la actividad grupal.");
+        }
     };
 
-    const handleSaveGroups = () => {
+    const handleSaveGroups = async () => {
         if (!selectedTrabajo) return;
 
         const groupsMap: Map<number, GrupoIntegrante[]> = new Map();
@@ -387,10 +382,13 @@ const TrabajosGrupalesView: React.FC<{
             .map(([numero, integrantes]) => ({ numero, integrantes }))
             .sort((a,b) => a.numero - b.numero);
 
-        const updatedTrabajo = { ...selectedTrabajo, grupos: updatedGrupos };
-        persistTrabajos(trabajos.map(t => t.id === updatedTrabajo.id ? updatedTrabajo : t));
-        setSelectedTrabajo(updatedTrabajo); // Update state to reflect saved changes
-        alert("Grupos guardados con éxito.");
+        try {
+            await updateTrabajoGrupal(selectedTrabajo.id, { grupos: updatedGrupos });
+            alert("Grupos guardados con éxito.");
+        } catch (error) {
+            console.error(error);
+            alert("No se pudieron guardar los grupos.");
+        }
     };
 
     const handleAutoAssign = () => {
@@ -413,7 +411,7 @@ const TrabajosGrupalesView: React.FC<{
         setGroupAssignments(prev => ({
             ...prev,
             [studentName]: {
-                ...prev[studentName],
+                ...(prev[studentName] || { groupNumber: '', role: '' }),
                 [field]: value
             }
         }));
@@ -451,7 +449,7 @@ const TrabajosGrupalesView: React.FC<{
                 </div>
                  <div className="space-y-3">
                      <h3 className="text-lg font-semibold">Actividades Creadas</h3>
-                     {trabajos.filter(t => t.curso === curso && t.asignatura === asignatura).map(t => (
+                     {trabajos.map(t => (
                          <button key={t.id} onClick={() => setSelectedTrabajo(t)} className="w-full text-left p-3 bg-white dark:bg-slate-700 hover:bg-slate-100 rounded-md border">
                              <p className="font-bold">{t.nombreActividad}</p>
                              <p className="text-sm text-slate-500">Fecha: {t.fechaPresentacion}</p>
@@ -462,7 +460,6 @@ const TrabajosGrupalesView: React.FC<{
         );
     }
     
-    // Vista de gestión de una actividad seleccionada
     return (
          <div className="space-y-6">
              <div className="flex justify-between items-center">
@@ -534,18 +531,20 @@ const TrabajosGrupalesView: React.FC<{
     );
 };
 
-
 const EvaluacionesFormativas: React.FC<EvaluacionesFormativasProps> = ({ currentUser }) => {
     const [activeTab, setActiveTab] = useState<'calificaciones' | 'grupos'>('calificaciones');
     const [selectedCurso, setSelectedCurso] = useState<string | null>(null);
     const [selectedAsignatura, setSelectedAsignatura] = useState<string | null>(null);
     const [allUsers, setAllUsers] = useState<User[]>([]);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        try {
-            const storedUsers = localStorage.getItem(USERS_KEY);
-            if (storedUsers) setAllUsers(JSON.parse(storedUsers));
-        } catch (e) { console.error("Error al cargar usuarios", e); }
+        setLoading(true);
+        const unsubscribe = subscribeToAllUsers((users) => {
+            setAllUsers(users);
+            setLoading(false);
+        });
+        return () => unsubscribe();
     }, []);
 
     const assignedCursos = useMemo(() => currentUser.cursos || [], [currentUser.cursos]);
@@ -565,6 +564,9 @@ const EvaluacionesFormativas: React.FC<EvaluacionesFormativasProps> = ({ current
     );
 
     const renderContent = () => {
+        if (loading) {
+            return <div className="text-center py-10">Cargando datos de usuario...</div>;
+        }
         if (!selectedCurso) {
             return <ClassSelector cursos={assignedCursos} onSelect={setSelectedCurso} />;
         }

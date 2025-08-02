@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, EvaluacionFormativa, CalificacionesFormativas, TrabajoGrupal, Insignia, GamificacionEstudiante } from '../../types';
 import { ROLES_TRABAJO_GRUPAL, INSIGNIAS_GAMIFICACION } from '../../constants';
-
-
-const EVALUACIONES_KEY = 'evaluacionesFormativas';
-const CALIFICACIONES_KEY = 'calificacionesFormativas';
-const TRABAJOS_GRUPALES_KEY = 'trabajosGrupalesFormativos';
+import {
+    subscribeToEvaluacionesEstudiante,
+    subscribeToCalificaciones,
+    subscribeToTrabajosGrupalesEstudiante,
+    updateTrabajoGrupal
+} from '../../src/firebaseHelpers/evaluacionEstudianteHelper'; // AJUSTA la ruta a tu nuevo helper
 
 const asignaturaEmojis: Record<string, string> = {
     'Lengua y Literatura': '📚', 'Matemática': '➗', 'Inglés': '🇬🇧', 'Filosofía': '🤔',
@@ -34,25 +35,32 @@ const EvaluacionFormativaEstudiante: React.FC<EvaluacionFormativaEstudianteProps
     const [evaluaciones, setEvaluaciones] = useState<EvaluacionFormativa[]>([]);
     const [calificaciones, setCalificaciones] = useState<CalificacionesFormativas>({});
     const [trabajosGrupales, setTrabajosGrupales] = useState<TrabajoGrupal[]>([]);
+    const [loading, setLoading] = useState(true);
     const [gamificacion, setGamificacion] = useState<GamificacionEstudiante | null>(null);
     const [isLogrosModalOpen, setIsLogrosModalOpen] = useState(false);
     const [newlyAchievedRank, setNewlyAchievedRank] = useState<Insignia | null>(null);
     const prevPromedioRef = useRef<number | null>(null);
 
     useEffect(() => {
-        try {
-            const storedEvaluaciones = localStorage.getItem(EVALUACIONES_KEY);
-            if (storedEvaluaciones) setEvaluaciones(JSON.parse(storedEvaluaciones));
-
-            const storedCalificaciones = localStorage.getItem(CALIFICACIONES_KEY);
-            if (storedCalificaciones) setCalificaciones(JSON.parse(storedCalificaciones));
-            
-            const storedTrabajos = localStorage.getItem(TRABAJOS_GRUPALES_KEY);
-            if(storedTrabajos) setTrabajosGrupales(JSON.parse(storedTrabajos));
-        } catch (e) {
-            console.error("Error al cargar datos desde localStorage", e);
+        if (!currentUser.curso) {
+            setLoading(false);
+            return;
         }
-    }, []);
+        setLoading(true);
+
+        const unsubEvaluaciones = subscribeToEvaluacionesEstudiante(currentUser.curso, setEvaluaciones);
+        const unsubCalificaciones = subscribeToCalificaciones(setCalificaciones);
+        const unsubTrabajos = subscribeToTrabajosGrupalesEstudiante(currentUser.curso, (data) => {
+            setTrabajosGrupales(data);
+            setLoading(false); // La carga se considera completa cuando llega la última suscripción
+        });
+
+        return () => {
+            unsubEvaluaciones();
+            unsubCalificaciones();
+            unsubTrabajos();
+        };
+    }, [currentUser.curso]);
 
     const resultadosPorAsignatura = useMemo<ResultadoAsignatura[]>(() => {
         if (!currentUser.curso) return [];
@@ -154,32 +162,34 @@ const EvaluacionFormativaEstudiante: React.FC<EvaluacionFormativaEstudianteProps
             .sort((a,b) => new Date(b.fechaPresentacion).getTime() - new Date(a.fechaPresentacion).getTime());
     }, [trabajosGrupales, currentUser]);
 
-    const handleRoleSelection = (trabajoId: string, newRole: string) => {
-        const allTrabajosData = localStorage.getItem(TRABAJOS_GRUPALES_KEY);
-        const allTrabajos: TrabajoGrupal[] = allTrabajosData ? JSON.parse(allTrabajosData) : [];
+    const handleRoleSelection = async (trabajoId: string, newRole: string) => {
+        const trabajoToUpdate = trabajosGrupales.find(t => t.id === trabajoId);
+        if (!trabajoToUpdate) return;
 
-        const updatedTrabajos = allTrabajos.map(trabajo => {
-            if (trabajo.id === trabajoId) {
-                const updatedGrupos = trabajo.grupos.map(grupo => {
-                    const isMyGroup = grupo.integrantes.some(i => i.nombre === currentUser.nombreCompleto);
-                    if (isMyGroup) {
-                        const updatedIntegrantes = grupo.integrantes.map(integrante => {
-                            if (integrante.nombre === currentUser.nombreCompleto) {
-                                return { ...integrante, rol: newRole || undefined };
-                            }
-                            return integrante;
-                        });
-                        return { ...grupo, integrantes: updatedIntegrantes };
-                    }
-                    return grupo;
-                });
-                return { ...trabajo, grupos: updatedGrupos };
-            }
-            return trabajo;
-        });
-
-        localStorage.setItem(TRABAJOS_GRUPALES_KEY, JSON.stringify(updatedTrabajos));
-        setTrabajosGrupales(updatedTrabajos);
+        const updatedTrabajo = {
+            ...trabajoToUpdate,
+            grupos: trabajoToUpdate.grupos.map(grupo => {
+                const isMyGroup = grupo.integrantes.some(i => i.nombre === currentUser.nombreCompleto);
+                if (isMyGroup) {
+                    return {
+                        ...grupo,
+                        integrantes: grupo.integrantes.map(integrante => 
+                            integrante.nombre === currentUser.nombreCompleto 
+                                ? { ...integrante, rol: newRole || undefined } 
+                                : integrante
+                        )
+                    };
+                }
+                return grupo;
+            })
+        };
+        
+        try {
+            await updateTrabajoGrupal(updatedTrabajo);
+        } catch (error) {
+            console.error("Error updating role:", error);
+            alert("No se pudo actualizar el rol.");
+        }
     };
 
     const getPromedioColor = (promedio: string) => {
@@ -189,6 +199,10 @@ const EvaluacionFormativaEstudiante: React.FC<EvaluacionFormativaEstudianteProps
         if (nota < 5.5) return 'bg-yellow-500';
         return 'bg-green-500';
     };
+
+    if (loading) {
+        return <div className="text-center py-10">Cargando tu rendimiento...</div>;
+    }
 
     return (
         <div className="space-y-8 animate-fade-in">

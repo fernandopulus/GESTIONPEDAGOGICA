@@ -1,14 +1,25 @@
 import React, { useState, useEffect, useCallback, useRef, FC } from 'react';
-import { GoogleGenAI, Type } from "@google/genai";
+// Se elimina la importación directa de GoogleGenAI
 import { toPng } from 'html-to-image';
-import type { CrosswordPuzzle, CrosswordClue, CrosswordGridCell } from '../../../types';
+import type { CrosswordPuzzle, CrosswordClue, CrosswordGridCell, User } from '../../../types';
+import { 
+    subscribeToCrucigramas,
+    saveCrucigrama,
+    deleteCrucigrama 
+} from '../../../src/firebaseHelpers/recursosHelper'; // RUTA CORREGIDA
 
 // --- ICONS ---
 const Spinner = () => (<svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>);
 const SparklesIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>);
 
 // --- MAIN COMPONENT ---
-const Crucigramas: FC<{ onBack: () => void; }> = ({ onBack }) => {
+interface CrucigramasProps {
+    onBack: () => void;
+    currentUser: User; // Se asume que el usuario actual está disponible
+}
+
+const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
+    const [savedPuzzles, setSavedPuzzles] = useState<CrosswordPuzzle[]>([]);
     const [numWords, setNumWords] = useState<number>(10);
     const [isCustomNumWords, setIsCustomNumWords] = useState(false);
     const [words, setWords] = useState<string[]>(Array(10).fill(''));
@@ -16,8 +27,17 @@ const Crucigramas: FC<{ onBack: () => void; }> = ({ onBack }) => {
     const [aiTheme, setAiTheme] = useState('');
     const [puzzle, setPuzzle] = useState<CrosswordPuzzle | null>(null);
     const [showSolution, setShowSolution] = useState(false);
-    const [loading, setLoading] = useState({ ai: false, puzzle: false });
+    const [loading, setLoading] = useState({ ai: false, puzzle: false, data: true });
     const puzzleRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        setLoading(p => ({ ...p, data: true }));
+        const unsubscribe = subscribeToCrucigramas((data) => {
+            setSavedPuzzles(data);
+            setLoading(p => ({ ...p, data: false }));
+        });
+        return () => unsubscribe();
+    }, []);
 
     useEffect(() => {
         const newSize = numWords;
@@ -41,35 +61,20 @@ const Crucigramas: FC<{ onBack: () => void; }> = ({ onBack }) => {
         if (!aiTheme.trim()) return;
         setLoading(p => ({ ...p, ai: true }));
         try {
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
+            const apiKey = "";
+            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            
             const prompt = `Genera una lista de ${numWords} palabras y sus pistas correspondientes para un crucigrama, basado en el tema "${aiTheme}". Las palabras no deben contener espacios.`;
-            const schema = {
-                type: Type.OBJECT,
-                properties: {
-                    items: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                word: { type: Type.STRING },
-                                clue: { type: Type.STRING }
-                            },
-                            required: ["word", "clue"]
-                        }
-                    }
-                },
-                required: ["items"]
-            };
+            
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
 
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: { responseMimeType: "application/json", responseSchema: schema }
-            });
-
-            const result = JSON.parse(response.text);
-            const aiWords = result.items.map((item: any) => item.word.toUpperCase().replace(/\s/g, ''));
-            const aiClues = result.items.map((item: any) => item.clue);
+            // Asumimos que la respuesta es un JSON, si no, habría que parsearla
+            const resultJson = JSON.parse(text); 
+            const aiWords = resultJson.items.map((item: any) => item.word.toUpperCase().replace(/\s/g, ''));
+            const aiClues = resultJson.items.map((item: any) => item.clue);
             
             setWords(Array.from({ length: numWords }, (_, i) => aiWords[i] || ''));
             setClues(Array.from({ length: numWords }, (_, i) => aiClues[i] || ''));
@@ -82,7 +87,6 @@ const Crucigramas: FC<{ onBack: () => void; }> = ({ onBack }) => {
         }
     };
     
-    // --- Crucigramas Generation Logic ---
     const generateCrossword = useCallback(() => {
         try {
             const entries = words.map((word, i) => ({ word: word.toUpperCase().replace(/[^A-ZÑ]/g, ''), clue: clues[i] })).filter(e => e.word.length > 0);
@@ -99,7 +103,6 @@ const Crucigramas: FC<{ onBack: () => void; }> = ({ onBack }) => {
             let grid: (string | null)[][] = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
             const placedWords: Omit<CrosswordClue, 'number'>[] = [];
     
-            // Place first word
             const firstWord = entries.shift()!;
             const startRow = Math.floor(gridSize / 2);
             const startCol = Math.floor((gridSize - firstWord.word.length) / 2);
@@ -108,7 +111,6 @@ const Crucigramas: FC<{ onBack: () => void; }> = ({ onBack }) => {
             }
             placedWords.push({ word: firstWord.word, clue: firstWord.clue, direction: 'across', row: startRow, col: startCol });
     
-            // Place subsequent words
             for (const entry of entries) {
                 let bestFit = { score: -1, row: -1, col: -1, direction: 'across' as 'across' | 'down' };
                 
@@ -168,7 +170,6 @@ const Crucigramas: FC<{ onBack: () => void; }> = ({ onBack }) => {
                 }
             }
             
-            // Finalize grid
             let minRow = gridSize, maxRow = -1, minCol = gridSize, maxCol = -1;
             placedWords.forEach(w => {
                 minRow = Math.min(minRow, w.row);
@@ -177,7 +178,7 @@ const Crucigramas: FC<{ onBack: () => void; }> = ({ onBack }) => {
                 maxCol = Math.max(maxCol, w.col + (w.direction === 'across' ? w.word.length - 1: 0));
             });
 
-            if (maxRow === -1) { // Only one word was placed
+            if (maxRow === -1) {
                 minRow = placedWords[0].row;
                 maxRow = placedWords[0].row;
                 minCol = placedWords[0].col;
@@ -198,7 +199,6 @@ const Crucigramas: FC<{ onBack: () => void; }> = ({ onBack }) => {
                 col: w.col - cropStartCol
             })).sort((a,b) => a.row - b.row || a.col - b.col);
             
-            // Assign numbers
             let clueNum = 1;
             const numberedClues: CrosswordClue[] = [];
             const starts = new Map<string, number>();
@@ -234,21 +234,32 @@ const Crucigramas: FC<{ onBack: () => void; }> = ({ onBack }) => {
         }
     }, [words, clues]);
 
-    const handleGeneratePuzzle = () => {
+    const handleGeneratePuzzle = async () => {
         setLoading(p => ({ ...p, puzzle: true }));
         setPuzzle(null);
-        setTimeout(() => {
-            const result = generateCrossword();
-            if (result) {
-                setPuzzle(result);
+        await new Promise(resolve => setTimeout(resolve, 100)); // Allow UI to update
+        
+        const result = generateCrossword();
+        if (result) {
+            const newPuzzleData: Omit<CrosswordPuzzle, 'id' | 'fechaCreacion' | 'creadorId' | 'creadorNombre'> = {
+                tema: aiTheme,
+                grid: result.grid,
+                clues: result.clues,
+            };
+            try {
+                const newId = await saveCrucigrama(newPuzzleData, currentUser);
+                setPuzzle({ ...newPuzzleData, id: newId, fechaCreacion: new Date().toISOString(), creadorId: currentUser.id, creadorNombre: currentUser.nombreCompleto });
+            } catch (error) {
+                console.error("Error saving puzzle:", error);
+                alert("No se pudo guardar el crucigrama en la base de datos.");
             }
-            setLoading(p => ({ ...p, puzzle: false }));
-        }, 100);
+        }
+        setLoading(p => ({ ...p, puzzle: false }));
     };
 
     const handleDownloadPNG = () => {
         if (!puzzleRef.current) return;
-        setShowSolution(false); // Ensure solution isn't shown in the base puzzle
+        setShowSolution(false);
         setTimeout(() => {
              toPng(puzzleRef.current!, { cacheBust: true, backgroundColor: '#ffffff', pixelRatio: 2 })
             .then((dataUrl) => {
