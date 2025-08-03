@@ -1,14 +1,18 @@
 import {onCall, CallableRequest, HttpsError} from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 
-// Inicializa la app de admin para tener acceso a los servicios de Firebase
 admin.initializeApp();
 const db = admin.firestore();
 const auth = admin.auth();
 
-// Función para verificar si el que llama es un Subdirector
 const esSubdirector = (request: CallableRequest) => {
-  if (request.auth?.token?.profile !== "SUBDIRECCION") {
+  if (!request.auth) {
+    throw new HttpsError(
+      "unauthenticated",
+      "La función debe ser llamada por un usuario autenticado."
+    );
+  }
+  if (request.auth.token?.profile !== "SUBDIRECCION") {
     throw new HttpsError(
       "permission-denied",
       "No tienes permiso para realizar esta acción."
@@ -16,9 +20,6 @@ const esSubdirector = (request: CallableRequest) => {
   }
 };
 
-/**
- * Crea un usuario en Auth y un documento en Firestore.
- */
 export const createUser = onCall(async (request) => {
   esSubdirector(request);
 
@@ -34,10 +35,11 @@ export const createUser = onCall(async (request) => {
   try {
     const userRecord = await auth.createUser({
       email,
-      password: password || "recoleta", // Contraseña por defecto
+      password: password || "recoleta",
       displayName: nombreCompleto,
     });
 
+    await auth.setCustomUserClaims(userRecord.uid, {profile: profile});
 
     const userData = {email, nombreCompleto, profile, ...otrosDatos};
     await db.collection("usuarios").doc(email).set(userData);
@@ -51,13 +53,10 @@ export const createUser = onCall(async (request) => {
 });
 
 
-/**
- * Actualiza un usuario en Auth y en Firestore.
- */
 export const updateUser = onCall(async (request) => {
   esSubdirector(request);
 
-  const {email, password, ...datosParaActualizar} = request.data;
+  const {email, password, profile, ...datosParaActualizar} = request.data;
   if (!email) {
     throw new HttpsError(
       "invalid-argument",
@@ -80,7 +79,14 @@ export const updateUser = onCall(async (request) => {
       await auth.updateUser(user.uid, updatePayload);
     }
 
-    await db.collection("usuarios").doc(email).update(datosParaActualizar);
+    if (profile) {
+      await auth.setCustomUserClaims(user.uid, {profile: profile});
+    }
+
+    await db.collection("usuarios").doc(email).update({
+      profile,
+      ...datosParaActualizar,
+    });
 
     return {status: "success"};
   } catch (error) {
@@ -90,9 +96,6 @@ export const updateUser = onCall(async (request) => {
   }
 });
 
-/**
- * Elimina un usuario de Auth y de Firestore.
- */
 export const deleteUser = onCall(async (request) => {
   esSubdirector(request);
 

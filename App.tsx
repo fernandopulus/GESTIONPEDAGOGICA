@@ -85,48 +85,48 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const handleLoginAttempt = async (email: string, password: string) => {
-    setLoginError(null);
-    if (!email.trim() || !password.trim()) {
-      setLoginError('Por favor ingrese email y contraseña');
-      return;
+const handleLoginAttempt = async (email: string, password: string) => {
+  setLoginError(null);
+  if (!email.trim() || !password.trim()) {
+    setLoginError('Por favor ingrese email y contraseña');
+    return;
+  }
+  try {
+    console.log('🔄 Intentando login para:', email);
+    
+    // CAMBIO: Solo autenticar, no verificar Firestore aquí
+    await signInWithEmailAndPassword(auth, email.trim(), password);
+    console.log('✅ Login exitoso');
+    
+    // La verificación de Firestore se hará automáticamente en useEffect
+    // cuando onAuthStateChanged detecte al usuario autenticado
+    
+  } catch (error: any) {
+    console.error('❌ Error de login:', error);
+    switch (error.code) {
+      case 'auth/user-not-found':
+        setLoginError('No existe una cuenta con este correo electrónico');
+        break;
+      case 'auth/wrong-password':
+        setLoginError('Contraseña incorrecta');
+        break;
+      case 'auth/invalid-email':
+        setLoginError('Formato de correo electrónico inválido');
+        break;
+      case 'auth/too-many-requests':
+        setLoginError('Demasiados intentos fallidos. Intente más tarde o restablezca su contraseña');
+        break;
+      case 'auth/network-request-failed':
+        setLoginError('Error de conexión. Verifique su internet');
+        break;
+      case 'auth/invalid-credential':
+        setLoginError('Credenciales inválidas. Verifique su email y contraseña');
+        break;
+      default:
+        setLoginError(`Error de autenticación: ${error.message}`);
     }
-    try {
-      console.log('🔄 Intentando login para:', email);
-      const userRef = doc(db, "usuarios", email.trim().toLowerCase());
-      const userSnap = await getDoc(userRef);
-      if (!userSnap.exists()) {
-        setLoginError('Usuario no registrado en el sistema');
-        return;
-      }
-      await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
-      console.log('✅ Login exitoso');
-    } catch (error: any) {
-      console.error('❌ Error de login:', error);
-      switch (error.code) {
-        case 'auth/user-not-found':
-          setLoginError('No existe una cuenta con este correo electrónico');
-          break;
-        case 'auth/wrong-password':
-          setLoginError('Contraseña incorrecta');
-          break;
-        case 'auth/invalid-email':
-          setLoginError('Formato de correo electrónico inválido');
-          break;
-        case 'auth/too-many-requests':
-          setLoginError('Demasiados intentos fallidos. Intente más tarde o restablezca su contraseña');
-          break;
-        case 'auth/network-request-failed':
-          setLoginError('Error de conexión. Verifique su internet');
-          break;
-        case 'auth/invalid-credential':
-          setLoginError('Credenciales inválidas. Verifique su email y contraseña');
-          break;
-        default:
-          setLoginError(`Error de autenticación: ${error.message}`);
-      }
-    }
-  };
+  }
+};
 
   const handleForgotPassword = async (email: string) => {
     try {
