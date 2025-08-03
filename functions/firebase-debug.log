@@ -1,0 +1,70 @@
+[debug] [2025-08-03T20:53:25.716Z] ----------------------------------------------------------------------
+[debug] [2025-08-03T20:53:25.718Z] Command:       /usr/local/share/nvm/versions/node/v22.17.0/bin/node /home/codespace/nvm/current/bin/firebase functions:config:set gemini.api_key=AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE
+[debug] [2025-08-03T20:53:25.718Z] CLI Version:   14.11.2
+[debug] [2025-08-03T20:53:25.718Z] Platform:      linux
+[debug] [2025-08-03T20:53:25.718Z] Node Version:  v22.17.0
+[debug] [2025-08-03T20:53:25.719Z] Time:          Sun Aug 03 2025 20:53:25 GMT+0000 (Coordinated Universal Time)
+[debug] [2025-08-03T20:53:25.719Z] Env Overrides: GITHUB_API_URL, GITHUB_API_URL
+[debug] [2025-08-03T20:53:25.719Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-08-03T20:53:26.106Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-08-03T20:53:26.106Z] > authorizing via signed-in user (Fernando.sagredo@industrialderecoleta.cl)
+[debug] [2025-08-03T20:53:26.107Z] [iam] checking project planificador-145df for permissions ["firebase.projects.get","runtimeconfig.configs.create","runtimeconfig.configs.delete","runtimeconfig.configs.get","runtimeconfig.configs.list","runtimeconfig.configs.update","runtimeconfig.variables.create","runtimeconfig.variables.delete","runtimeconfig.variables.get","runtimeconfig.variables.list","runtimeconfig.variables.update"]
+[debug] [2025-08-03T20:53:26.108Z] Checked if tokens are valid: false, expires at: 1754255031773
+[debug] [2025-08-03T20:53:26.108Z] Checked if tokens are valid: false, expires at: 1754255031773
+[debug] [2025-08-03T20:53:26.108Z] > refreshing access token with scopes: []
+[debug] [2025-08-03T20:53:26.110Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-08-03T20:53:26.110Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-08-03T20:53:26.229Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-08-03T20:53:26.229Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-08-03T20:53:26.235Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/planificador-145df:testIamPermissions [none]
+[debug] [2025-08-03T20:53:26.235Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/planificador-145df:testIamPermissions x-goog-quota-user=projects/planificador-145df
+[debug] [2025-08-03T20:53:26.235Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/planificador-145df:testIamPermissions {"permissions":["firebase.projects.get","runtimeconfig.configs.create","runtimeconfig.configs.delete","runtimeconfig.configs.get","runtimeconfig.configs.list","runtimeconfig.configs.update","runtimeconfig.variables.create","runtimeconfig.variables.delete","runtimeconfig.variables.get","runtimeconfig.variables.list","runtimeconfig.variables.update"]}
+[debug] [2025-08-03T20:53:26.346Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/planificador-145df:testIamPermissions 200
+[debug] [2025-08-03T20:53:26.346Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/planificador-145df:testIamPermissions {"permissions":["firebase.projects.get","runtimeconfig.configs.create","runtimeconfig.configs.delete","runtimeconfig.configs.get","runtimeconfig.configs.list","runtimeconfig.configs.update","runtimeconfig.variables.create","runtimeconfig.variables.delete","runtimeconfig.variables.get","runtimeconfig.variables.list","runtimeconfig.variables.update"]}
+[debug] [2025-08-03T20:53:26.348Z] Checked if tokens are valid: true, expires at: 1754258005229
+[debug] [2025-08-03T20:53:26.348Z] Checked if tokens are valid: true, expires at: 1754258005229
+[debug] [2025-08-03T20:53:26.348Z] >>> [apiv2][query] GET https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables/api_key [none]
+[debug] [2025-08-03T20:53:46.590Z] <<< [apiv2][status] GET https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables/api_key 503
+[debug] [2025-08-03T20:53:46.590Z] <<< [apiv2][body] GET https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables/api_key {"error":{"code":503,"message":"The service is currently unavailable.","status":"UNAVAILABLE"}}
+[debug] [2025-08-03T20:53:47.592Z] *** [apiv2] Attempting the request again. Attempt number 2
+[debug] [2025-08-03T20:53:47.592Z] >>> [apiv2][query] GET https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables/api_key [none]
+[debug] [2025-08-03T20:53:47.715Z] <<< [apiv2][status] GET https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables/api_key 404
+[debug] [2025-08-03T20:53:47.716Z] <<< [apiv2][body] GET https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables/api_key {"error":{"code":404,"message":"Requested entity was not found.","status":"NOT_FOUND"}}
+[debug] [2025-08-03T20:53:47.716Z] Checked if tokens are valid: true, expires at: 1754258005229
+[debug] [2025-08-03T20:53:47.716Z] Checked if tokens are valid: true, expires at: 1754258005229
+[debug] [2025-08-03T20:53:47.716Z] >>> [apiv2][query] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables [none]
+[debug] [2025-08-03T20:53:47.716Z] >>> [apiv2][body] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables {"name":"/projects/planificador-145df/configs/gemini/variables/api_key","text":"AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE"}
+[debug] [2025-08-03T20:53:47.836Z] <<< [apiv2][status] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables 404
+[debug] [2025-08-03T20:53:47.836Z] <<< [apiv2][body] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables {"error":{"code":404,"message":"Requested entity was not found.","status":"NOT_FOUND"}}
+[debug] [2025-08-03T20:53:47.837Z] Checked if tokens are valid: true, expires at: 1754258005229
+[debug] [2025-08-03T20:53:47.837Z] Checked if tokens are valid: true, expires at: 1754258005229
+[debug] [2025-08-03T20:53:47.837Z] >>> [apiv2][query] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs [none]
+[debug] [2025-08-03T20:53:47.837Z] >>> [apiv2][body] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs {"name":"projects/planificador-145df/configs/gemini"}
+[debug] [2025-08-03T20:53:48.192Z] <<< [apiv2][status] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs 200
+[debug] [2025-08-03T20:53:48.192Z] <<< [apiv2][body] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs {"name":"projects/planificador-145df/configs/gemini"}
+[debug] [2025-08-03T20:53:48.192Z] Checked if tokens are valid: true, expires at: 1754258005229
+[debug] [2025-08-03T20:53:48.192Z] Checked if tokens are valid: true, expires at: 1754258005229
+[debug] [2025-08-03T20:53:48.192Z] >>> [apiv2][query] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables [none]
+[debug] [2025-08-03T20:53:48.192Z] >>> [apiv2][body] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables {"name":"/projects/planificador-145df/configs/gemini/variables/api_key","text":"AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE"}
+[debug] [2025-08-03T20:54:08.581Z] <<< [apiv2][status] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables 503
+[debug] [2025-08-03T20:54:08.581Z] <<< [apiv2][body] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables {"error":{"code":503,"message":"The service is currently unavailable.","status":"UNAVAILABLE"}}
+[debug] [2025-08-03T20:54:09.582Z] *** [apiv2] Attempting the request again. Attempt number 2
+[debug] [2025-08-03T20:54:09.583Z] >>> [apiv2][query] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables [none]
+[debug] [2025-08-03T20:54:09.583Z] >>> [apiv2][body] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables {"name":"/projects/planificador-145df/configs/gemini/variables/api_key","text":"AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE"}
+[debug] [2025-08-03T20:54:29.783Z] <<< [apiv2][status] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables 503
+[debug] [2025-08-03T20:54:29.783Z] <<< [apiv2][body] POST https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables {"error":{"code":503,"message":"The service is currently unavailable.","status":"UNAVAILABLE"}}
+[error] 
+[error] Error: Request to https://runtimeconfig.googleapis.com/v1beta1/projects/planificador-145df/configs/gemini/variables had HTTP Error: 503, The service is currently unavailable.
+[debug] [2025-08-03T20:54:29.834Z] Error Context: {
+  "body": {
+    "error": {
+      "code": 503,
+      "message": "The service is currently unavailable.",
+      "status": "UNAVAILABLE"
+    }
+  },
+  "response": {
+    "statusCode": 503
+  }
+}

@@ -141,7 +141,6 @@ const Administracion: React.FC = () => {
     }, [userFormData, editingUserId, fetchUsers, handleUserResetForm]);
 
     const handleUserEdit = useCallback((user: User) => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
         setEditingUserId(user.email);
         setUserFormData({
             nombreCompleto: user.nombreCompleto,
@@ -153,6 +152,18 @@ const Administracion: React.FC = () => {
             cursos: user.cursos || [],
             asignaturas: user.asignaturas || []
         });
+        
+        // Scroll mejorado: esperar a que el formulario se actualice
+        setTimeout(() => {
+            const formulario = document.querySelector('form');
+            if (formulario) {
+                formulario.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start',
+                    inline: 'nearest'
+                });
+            }
+        }, 100);
     }, []);
 
     const handleUserDelete = useCallback(async (email: string) => {
@@ -380,7 +391,7 @@ const Administracion: React.FC = () => {
                     </div>
 
                     {/* Formulario de usuario */}
-                    <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
+                    <div id="formulario-usuario" className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
                         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">
                             {editingUserId ? 'Editando usuario' : 'Agregar nuevo usuario'}
                         </h2>
@@ -478,20 +489,21 @@ const Administracion: React.FC = () => {
 
                             {/* Sección de asignación de cursos para profesores */}
                             {userFormData.profile === Profile.PROFESORADO && (
-                                <div className="mt-6">
-                                    <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-4">
+                                <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border-l-4 border-blue-400">
+                                    <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-4 flex items-center">
+                                        <span className="bg-blue-500 text-white px-2 py-1 rounded text-sm mr-2">📚</span>
                                         Asignación de Cursos
                                     </h3>
-                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4 bg-slate-50 dark:bg-slate-700 rounded-lg">
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                                         {CURSOS.map(curso => (
-                                            <label key={curso} className="flex items-center space-x-2 cursor-pointer">
+                                            <label key={curso} className="flex items-center space-x-2 cursor-pointer bg-white dark:bg-slate-700 p-2 rounded border hover:bg-blue-50 dark:hover:bg-blue-800/20">
                                                 <input
                                                     type="checkbox"
                                                     checked={userFormData.cursos?.includes(curso) || false}
                                                     onChange={() => handleAssignmentChange('cursos', curso)}
-                                                    className="w-4 h-4 text-amber-600 bg-gray-100 border-gray-300 rounded focus:ring-amber-500"
+                                                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
                                                 />
-                                                <span className="text-sm text-slate-700 dark:text-slate-300">{curso}</span>
+                                                <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{curso}</span>
                                             </label>
                                         ))}
                                     </div>
@@ -500,20 +512,21 @@ const Administracion: React.FC = () => {
 
                             {/* Sección de asignación de asignaturas para profesores */}
                             {userFormData.profile === Profile.PROFESORADO && (
-                                <div className="mt-6">
-                                    <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-4">
+                                <div className="mt-6 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border-l-4 border-green-400">
+                                    <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-4 flex items-center">
+                                        <span className="bg-green-500 text-white px-2 py-1 rounded text-sm mr-2">📖</span>
                                         Asignación de Asignaturas
                                     </h3>
-                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4 bg-slate-50 dark:bg-slate-700 rounded-lg">
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                                         {ASIGNATURAS.map(asignatura => (
-                                            <label key={asignatura} className="flex items-center space-x-2 cursor-pointer">
+                                            <label key={asignatura} className="flex items-center space-x-2 cursor-pointer bg-white dark:bg-slate-700 p-2 rounded border hover:bg-green-50 dark:hover:bg-green-800/20">
                                                 <input
                                                     type="checkbox"
                                                     checked={userFormData.asignaturas?.includes(asignatura) || false}
                                                     onChange={() => handleAssignmentChange('asignaturas', asignatura)}
-                                                    className="w-4 h-4 text-amber-600 bg-gray-100 border-gray-300 rounded focus:ring-amber-500"
+                                                    className="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500"
                                                 />
-                                                <span className="text-sm text-slate-700 dark:text-slate-300">{asignatura}</span>
+                                                <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{asignatura}</span>
                                             </label>
                                         ))}
                                     </div>
@@ -524,7 +537,8 @@ const Administracion: React.FC = () => {
                                 <p className="text-red-600 bg-red-100 p-3 rounded-md mt-4">{userError}</p>
                             )}
 
-                            <div className="pt-4 flex justify-end items-center gap-4">
+                            {/* BOTONES TEMPORALES Y PRINCIPALES */}
+                            <div className="pt-4 flex justify-end items-center gap-4 flex-wrap">
                                 {editingUserId && (
                                     <button
                                         type="button"
@@ -534,6 +548,67 @@ const Administracion: React.FC = () => {
                                         Cancelar
                                     </button>
                                 )}
+                                
+                                {/* BOTÓN ROJO - Agregar Custom Claim */}
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        try {
+                                            console.log('🔧 Agregando custom claim...');
+                                            const functions = getFunctions();
+                                            const addCustomClaim = httpsCallable(functions, 'addCustomClaim');
+                                            
+                                            const result = await addCustomClaim({
+                                                email: 'fernando.sagredo@industrialderecoleta.cl',
+                                                profile: 'SUBDIRECCION'
+                                            });
+                                            
+                                            console.log('✅ Custom claim agregado:', result);
+                                            setUserError('✅ Custom claim agregado exitosamente');
+                                        } catch (error: any) {
+                                            console.error('❌ Error al agregar custom claim:', error);
+                                            setUserError(`Error: ${error.message}`);
+                                        }
+                                    }}
+                                    className="bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600 text-sm"
+                                >
+                                    🔧 Claim
+                                </button>
+                                
+                                {/* BOTÓN AZUL - Verificar Token */}
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        try {
+                                            // Importar auth desde tu archivo firebase
+                                            const { auth } = await import('../../src/firebase');
+                                            
+                                            console.log('🔍 Usuario actual:', auth.currentUser?.email);
+                                            
+                                            // Forzar refresh del token
+                                            const token = await auth.currentUser?.getIdToken(true);
+                                            console.log('🔑 Token refreshed:', !!token);
+                                            
+                                            // Verificar claims
+                                            const result = await auth.currentUser?.getIdTokenResult();
+                                            console.log('📋 Claims completos:', result?.claims);
+                                            console.log('👤 Profile claim:', result?.claims?.profile);
+                                            
+                                            if (result?.claims?.profile === 'SUBDIRECCION') {
+                                                setUserError('✅ Custom claim FUNCIONANDO - Ya puedes crear/editar usuarios');
+                                            } else {
+                                                setUserError(`❌ Custom claim faltante. Claims: ${JSON.stringify(result?.claims)}`);
+                                            }
+                                        } catch (error: any) {
+                                            console.error('❌ Error verificando token:', error);
+                                            setUserError(`Error verificando token: ${error.message}`);
+                                        }
+                                    }}
+                                    className="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 text-sm"
+                                >
+                                    🔍 Token
+                                </button>
+                                
                                 <button
                                     type="submit"
                                     className="bg-slate-800 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-700 dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600"
