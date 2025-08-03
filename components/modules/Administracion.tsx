@@ -64,7 +64,9 @@ const Administracion: React.FC = () => {
         setUserFormData(prev => ({
             ...prev,
             [name]: value,
-            curso: name === 'profile' && value !== Profile.ESTUDIANTE ? '' : prev.curso
+            curso: name === 'profile' && value !== Profile.ESTUDIANTE ? '' : prev.curso,
+            cursos: name === 'profile' && value !== Profile.PROFESORADO ? [] : prev.cursos,
+            asignaturas: name === 'profile' && value !== Profile.PROFESORADO ? [] : prev.asignaturas
         }));
     }, []);
 
@@ -474,6 +476,50 @@ const Administracion: React.FC = () => {
                                 )}
                             </div>
 
+                            {/* Sección de asignación de cursos para profesores */}
+                            {userFormData.profile === Profile.PROFESORADO && (
+                                <div className="mt-6">
+                                    <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-4">
+                                        Asignación de Cursos
+                                    </h3>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4 bg-slate-50 dark:bg-slate-700 rounded-lg">
+                                        {CURSOS.map(curso => (
+                                            <label key={curso} className="flex items-center space-x-2 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={userFormData.cursos?.includes(curso) || false}
+                                                    onChange={() => handleAssignmentChange('cursos', curso)}
+                                                    className="w-4 h-4 text-amber-600 bg-gray-100 border-gray-300 rounded focus:ring-amber-500"
+                                                />
+                                                <span className="text-sm text-slate-700 dark:text-slate-300">{curso}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Sección de asignación de asignaturas para profesores */}
+                            {userFormData.profile === Profile.PROFESORADO && (
+                                <div className="mt-6">
+                                    <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-4">
+                                        Asignación de Asignaturas
+                                    </h3>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4 bg-slate-50 dark:bg-slate-700 rounded-lg">
+                                        {ASIGNATURAS.map(asignatura => (
+                                            <label key={asignatura} className="flex items-center space-x-2 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={userFormData.asignaturas?.includes(asignatura) || false}
+                                                    onChange={() => handleAssignmentChange('asignaturas', asignatura)}
+                                                    className="w-4 h-4 text-amber-600 bg-gray-100 border-gray-300 rounded focus:ring-amber-500"
+                                                />
+                                                <span className="text-sm text-slate-700 dark:text-slate-300">{asignatura}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {userError && (
                                 <p className="text-red-600 bg-red-100 p-3 rounded-md mt-4">{userError}</p>
                             )}
@@ -558,7 +604,7 @@ const Administracion: React.FC = () => {
                                                 Perfil
                                             </th>
                                             <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-300 uppercase tracking-wider">
-                                                Curso
+                                                Curso/Asignaciones
                                             </th>
                                             <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 dark:text-slate-300 uppercase tracking-wider">
                                                 Acciones
@@ -585,8 +631,56 @@ const Administracion: React.FC = () => {
                                                         {user.profile}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-300">
-                                                    {user.curso || '-'}
+                                                <td className="px-4 py-4 text-sm text-slate-500 dark:text-slate-300">
+                                                    {user.profile === Profile.ESTUDIANTE && (
+                                                        <span className="inline-flex px-2 py-1 text-xs bg-slate-100 text-slate-700 rounded dark:bg-slate-600 dark:text-slate-300">
+                                                            {user.curso || 'Sin curso'}
+                                                        </span>
+                                                    )}
+                                                    {user.profile === Profile.PROFESORADO && (
+                                                        <div className="space-y-1">
+                                                            {user.cursos && user.cursos.length > 0 && (
+                                                                <div>
+                                                                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Cursos:</span>
+                                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                                        {user.cursos.slice(0, 3).map(curso => (
+                                                                            <span key={curso} className="inline-flex px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded dark:bg-blue-900 dark:text-blue-300">
+                                                                                {curso}
+                                                                            </span>
+                                                                        ))}
+                                                                        {user.cursos.length > 3 && (
+                                                                            <span className="inline-flex px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded dark:bg-slate-600 dark:text-slate-400">
+                                                                                +{user.cursos.length - 3}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {user.asignaturas && user.asignaturas.length > 0 && (
+                                                                <div>
+                                                                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Asignaturas:</span>
+                                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                                        {user.asignaturas.slice(0, 2).map(asignatura => (
+                                                                            <span key={asignatura} className="inline-flex px-2 py-1 text-xs bg-green-100 text-green-700 rounded dark:bg-green-900 dark:text-green-300">
+                                                                                {asignatura}
+                                                                            </span>
+                                                                        ))}
+                                                                        {user.asignaturas.length > 2 && (
+                                                                            <span className="inline-flex px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded dark:bg-slate-600 dark:text-slate-400">
+                                                                                +{user.asignaturas.length - 2}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {(!user.cursos || user.cursos.length === 0) && (!user.asignaturas || user.asignaturas.length === 0) && (
+                                                                <span className="text-xs text-slate-400 italic">Sin asignaciones</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {user.profile !== Profile.ESTUDIANTE && user.profile !== Profile.PROFESORADO && (
+                                                        <span className="text-xs text-slate-400">-</span>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-center space-x-2">
                                                     <button
