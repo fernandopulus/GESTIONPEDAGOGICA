@@ -1,7 +1,7 @@
 // src/firebase.ts
 
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, connectAuthEmulator } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -17,4 +17,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app); 
+
+// Conectar al emulador de Auth en desarrollo
+if (import.meta.env.MODE === "development") {
+  connectAuthEmulator(auth, "http://localhost:9099");
+}
 export const db = getFirestore(app);// ← ESTO es lo importante

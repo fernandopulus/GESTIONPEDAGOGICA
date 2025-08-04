@@ -10,7 +10,10 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "typeRoots": [
+      "./node_modules/@types"
+    ]
   },
   "compileOnSave": true,
   "include": [

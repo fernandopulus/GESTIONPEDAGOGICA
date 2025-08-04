@@ -1,0 +1,170 @@
+[debug] [2025-08-04T01:49:01.765Z] ----------------------------------------------------------------------
+[debug] [2025-08-04T01:49:01.767Z] Command:       /usr/local/share/nvm/versions/node/v22.17.0/bin/node /home/codespace/nvm/current/bin/firebase emulators:start
+[debug] [2025-08-04T01:49:01.768Z] CLI Version:   14.11.2
+[debug] [2025-08-04T01:49:01.768Z] Platform:      linux
+[debug] [2025-08-04T01:49:01.768Z] Node Version:  v22.17.0
+[debug] [2025-08-04T01:49:01.768Z] Time:          Mon Aug 04 2025 01:49:01 GMT+0000 (Coordinated Universal Time)
+[debug] [2025-08-04T01:49:01.769Z] Env Overrides: GITHUB_API_URL, GITHUB_API_URL
+[debug] [2025-08-04T01:49:01.769Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-08-04T01:49:02.122Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-08-04T01:49:02.122Z] > authorizing via signed-in user (Fernando.sagredo@industrialderecoleta.cl)
+[debug] [2025-08-04T01:49:02.178Z] openjdk version "21.0.7" 2025-04-15 LTS
+OpenJDK Runtime Environment Microsoft-11369942 (build 21.0.7+6-LTS)
+OpenJDK 64-Bit Server VM Microsoft-11369942 (build 21.0.7+6-LTS, mixed mode, sharing)
+
+[debug] [2025-08-04T01:49:02.189Z] Parsed Java major version: 21
+[info] i  emulators: Starting emulators: auth, functions, firestore, hosting, storage, tasks, extensions {"metadata":{"emulator":{"name":"hub"},"message":"Starting emulators: auth, functions, firestore, hosting, storage, tasks, extensions"}}
+[debug] [2025-08-04T01:49:02.192Z] Checked if tokens are valid: true, expires at: 1754273387270
+[debug] [2025-08-04T01:49:02.193Z] Checked if tokens are valid: true, expires at: 1754273387270
+[debug] [2025-08-04T01:49:02.194Z] >>> [apiv2][query] GET https://cloudresourcemanager.googleapis.com/v1/projects/planificador-145df [none]
+[debug] [2025-08-04T01:49:02.413Z] <<< [apiv2][status] GET https://cloudresourcemanager.googleapis.com/v1/projects/planificador-145df 200
+[debug] [2025-08-04T01:49:02.413Z] <<< [apiv2][body] GET https://cloudresourcemanager.googleapis.com/v1/projects/planificador-145df {"projectNumber":"1022861144167","projectId":"planificador-145df","lifecycleState":"ACTIVE","name":"Planificador","labels":{"firebase":"enabled","firebase-core":"disabled","generative-language":"enabled"},"createTime":"2025-06-05T14:05:38.946273Z","parent":{"type":"organization","id":"167724724152"}}
+[debug] [2025-08-04T01:49:02.423Z] [auth] Authentication Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2025-08-04T01:49:02.423Z] [firestore] Firestore Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2025-08-04T01:49:02.423Z] [hosting] Hosting Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2025-08-04T01:49:02.423Z] [storage] Storage Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[warn] ⚠  hub: emulator hub unable to start on port 4400, starting on 4401 instead. {"metadata":{"emulator":{"name":"hub"},"message":"emulator hub unable to start on port 4400, starting on 4401 instead."}}
+[warn] ⚠  ui: Emulator UI unable to start on port 4000, starting on 4001 instead. {"metadata":{"emulator":{"name":"ui"},"message":"Emulator UI unable to start on port 4000, starting on 4001 instead."}}
+[warn] ⚠  logging: Logging Emulator unable to start on port 4500, starting on 4501 instead. {"metadata":{"emulator":{"name":"logging"},"message":"Logging Emulator unable to start on port 4500, starting on 4501 instead."}}
+[debug] [2025-08-04T01:49:02.424Z] [logging] Logging Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2025-08-04T01:49:02.425Z] [firestore.websocket] websocket server for firestore only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2025-08-04T01:49:02.425Z] assigned listening specs for emulators {"user":{"auth":[{"address":"127.0.0.1","family":"IPv4","port":9099}],"firestore":[{"address":"127.0.0.1","family":"IPv4","port":8085}],"hosting":[{"address":"127.0.0.1","family":"IPv4","port":5005}],"storage":[{"address":"127.0.0.1","family":"IPv4","port":9205}],"hub":[{"address":"127.0.0.1","family":"IPv4","port":4401},{"address":"::1","family":"IPv6","port":4401}],"ui":[{"address":"127.0.0.1","family":"IPv4","port":4001},{"address":"::1","family":"IPv6","port":4001}],"logging":[{"address":"127.0.0.1","family":"IPv4","port":4501}],"firestore.websocket":[{"address":"127.0.0.1","family":"IPv4","port":9151}]},"metadata":{"message":"assigned listening specs for emulators"}}
+[debug] [2025-08-04T01:49:02.430Z] [hub] writing locator at /tmp/hub-planificador-145df.json
+[debug] [2025-08-04T01:49:02.441Z] [Extensions] Started Extensions emulator, this is a noop.
+[debug] [2025-08-04T01:49:02.443Z] [tasks] Cloud Tasks Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[warn] ⚠  eventarc: Eventarc Emulator unable to start on port 9299, starting on 9300 instead. {"metadata":{"emulator":{"name":"eventarc"},"message":"Eventarc Emulator unable to start on port 9299, starting on 9300 instead."}}
+[debug] [2025-08-04T01:49:02.445Z] [eventarc] Eventarc Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2025-08-04T01:49:02.445Z] late-assigned ports for functions and eventarc emulators {"user":{"auth":[{"address":"127.0.0.1","family":"IPv4","port":9099}],"firestore":[{"address":"127.0.0.1","family":"IPv4","port":8085}],"hosting":[{"address":"127.0.0.1","family":"IPv4","port":5005}],"storage":[{"address":"127.0.0.1","family":"IPv4","port":9205}],"hub":[{"address":"127.0.0.1","family":"IPv4","port":4401},{"address":"::1","family":"IPv6","port":4401}],"ui":[{"address":"127.0.0.1","family":"IPv4","port":4001},{"address":"::1","family":"IPv6","port":4001}],"logging":[{"address":"127.0.0.1","family":"IPv4","port":4501}],"firestore.websocket":[{"address":"127.0.0.1","family":"IPv4","port":9151}],"functions":[{"address":"127.0.0.1","family":"IPv4","port":5002}],"tasks":[{"address":"127.0.0.1","family":"IPv4","port":9505}],"eventarc":[{"address":"127.0.0.1","family":"IPv4","port":9300}]},"metadata":{"message":"late-assigned ports for functions and eventarc emulators"}}
+[warn] ⚠  functions: The following emulators are not running, calls to these services from the Functions emulator will affect production: apphosting, database, pubsub, dataconnect {"metadata":{"emulator":{"name":"functions"},"message":"The following emulators are not running, calls to these services from the Functions emulator will affect production: \u001b[1mapphosting, database, pubsub, dataconnect\u001b[22m"}}
+[debug] [2025-08-04T01:49:02.464Z] defaultcredentials: writing to file /home/codespace/.config/firebase/Fernando_sagredo_industrialderecoleta.cl_application_default_credentials.json
+[debug] [2025-08-04T01:49:02.472Z] Setting GAC to /home/codespace/.config/firebase/Fernando_sagredo_industrialderecoleta.cl_application_default_credentials.json {"metadata":{"emulator":{"name":"functions"},"message":"Setting GAC to /home/codespace/.config/firebase/Fernando_sagredo_industrialderecoleta.cl_application_default_credentials.json"}}
+[debug] [2025-08-04T01:49:02.473Z] Checked if tokens are valid: true, expires at: 1754273387270
+[debug] [2025-08-04T01:49:02.473Z] Checked if tokens are valid: true, expires at: 1754273387270
+[debug] [2025-08-04T01:49:02.473Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/planificador-145df/adminSdkConfig [none]
+[debug] [2025-08-04T01:49:02.763Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/planificador-145df/adminSdkConfig 200
+[debug] [2025-08-04T01:49:02.763Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/planificador-145df/adminSdkConfig {"projectId":"planificador-145df","storageBucket":"planificador-145df.firebasestorage.app"}
+[debug] [2025-08-04T01:49:02.783Z] Ignoring unsupported arg: auto_download {"metadata":{"emulator":{"name":"firestore"},"message":"Ignoring unsupported arg: auto_download"}}
+[debug] [2025-08-04T01:49:02.783Z] Ignoring unsupported arg: single_project_mode_error {"metadata":{"emulator":{"name":"firestore"},"message":"Ignoring unsupported arg: single_project_mode_error"}}
+[debug] [2025-08-04T01:49:02.783Z] Starting Firestore Emulator with command {"binary":"java","args":["-Dgoogle.cloud_firestore.debug_log_level=FINE","-Duser.language=en","-jar","/home/codespace/.cache/firebase/emulators/cloud-firestore-emulator-v1.19.8.jar","--host","127.0.0.1","--port",8085,"--websocket_port",9151,"--project_id","planificador-145df","--rules","/workspaces/GESTIONPEDAGOGICA/firestore.rules","--single_project_mode",true,"--functions_emulator","127.0.0.1:5002"],"optionalArgs":["port","webchannel_port","host","rules","websocket_port","functions_emulator","seed_from_export","project_id","single_project_mode"],"joinArgs":false,"shell":false,"port":8085} {"metadata":{"emulator":{"name":"firestore"},"message":"Starting Firestore Emulator with command {\"binary\":\"java\",\"args\":[\"-Dgoogle.cloud_firestore.debug_log_level=FINE\",\"-Duser.language=en\",\"-jar\",\"/home/codespace/.cache/firebase/emulators/cloud-firestore-emulator-v1.19.8.jar\",\"--host\",\"127.0.0.1\",\"--port\",8085,\"--websocket_port\",9151,\"--project_id\",\"planificador-145df\",\"--rules\",\"/workspaces/GESTIONPEDAGOGICA/firestore.rules\",\"--single_project_mode\",true,\"--functions_emulator\",\"127.0.0.1:5002\"],\"optionalArgs\":[\"port\",\"webchannel_port\",\"host\",\"rules\",\"websocket_port\",\"functions_emulator\",\"seed_from_export\",\"project_id\",\"single_project_mode\"],\"joinArgs\":false,\"shell\":false,\"port\":8085}"}}
+[info] i  firestore: Firestore Emulator logging to firestore-debug.log {"metadata":{"emulator":{"name":"firestore"},"message":"Firestore Emulator logging to \u001b[1mfirestore-debug.log\u001b[22m"}}
+[debug] [2025-08-04T01:49:04.171Z] Aug 04, 2025 1:49:04 AM com.google.cloud.datastore.emulator.firestore.websocket.WebSocketServer start
+INFO: Started WebSocket server on ws://127.0.0.1:9151
+ {"metadata":{"emulator":{"name":"firestore"},"message":"Aug 04, 2025 1:49:04 AM com.google.cloud.datastore.emulator.firestore.websocket.WebSocketServer start\nINFO: Started WebSocket server on ws://127.0.0.1:9151\n"}}
+[debug] [2025-08-04T01:49:04.225Z] API endpoint: http://127.0.0.1:8085
+If you are using a library that supports the FIRESTORE_EMULATOR_HOST environment variable, run:
+
+   export FIRESTORE_EMULATOR_HOST=127.0.0.1:8085
+
+If you are running a Firestore in Datastore Mode project, run:
+
+   export DATASTORE_EMULATOR_HOST= {"metadata":{"emulator":{"name":"firestore"},"message":"API endpoint: http://127.0.0.1:8085\nIf you are using a library that supports the FIRESTORE_EMULATOR_HOST environment variable, run:\n\n   export FIRESTORE_EMULATOR_HOST=127.0.0.1:8085\n\nIf you are running a Firestore in Datastore Mode project, run:\n\n   export DATASTORE_EMULATOR_HOST="}}
+[debug] [2025-08-04T01:49:04.231Z] 127.0.0.1:8085 {"metadata":{"emulator":{"name":"firestore"},"message":"127.0.0.1:8085"}}
+[debug] [2025-08-04T01:49:04.232Z] 
+
+Note: Support for Datastore Mode is in preview. If you encounter any bugs please file at https://github.com/firebase/firebase-tools/issues.
+Dev App Server is now running.
+
+ {"metadata":{"emulator":{"name":"firestore"},"message":"\n\nNote: Support for Datastore Mode is in preview. If you encounter any bugs please file at https://github.com/firebase/firebase-tools/issues.\nDev App Server is now running.\n\n"}}
+[info] ✔  firestore: Firestore Emulator UI websocket is running on 9151. {"metadata":{"emulator":{"name":"firestore"},"message":"Firestore Emulator UI websocket is running on 9151."}}
+[debug] [2025-08-04T01:49:11.568Z] Ignoring unsupported arg: port {"metadata":{"emulator":{"name":"storage"},"message":"Ignoring unsupported arg: port"}}
+[debug] [2025-08-04T01:49:12.521Z] Temp file directory for storage emulator: /tmp/firebase/storage/blobs {"metadata":{"emulator":{"name":"storage"},"message":"Temp file directory for storage emulator: /tmp/firebase/storage/blobs"}}
+[debug] [2025-08-04T01:49:12.536Z] Checked if tokens are valid: true, expires at: 1754273387270
+[debug] [2025-08-04T01:49:12.537Z] Checked if tokens are valid: true, expires at: 1754273387270
+[debug] [2025-08-04T01:49:12.537Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/planificador-145df/sites 
+[debug] [2025-08-04T01:49:13.001Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/planificador-145df/sites 200
+[debug] [2025-08-04T01:49:13.001Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/planificador-145df/sites {"sites":[{"name":"projects/planificador-145df/sites/gestion-pedagogica-7597b","defaultUrl":"https://gestion-pedagogica-7597b.web.app","appId":"1:1022861144167:web:7c277dd701dad5986864c2","type":"USER_SITE"},{"name":"projects/planificador-145df/sites/planificador-145df","defaultUrl":"https://planificador-145df.web.app","appId":"1:1022861144167:web:00878538b62d3fde6864c2","type":"DEFAULT_SITE"},{"name":"projects/planificador-145df/sites/planificador-145df-a49a3","defaultUrl":"https://planificador-145df-a49a3.web.app","appId":"1:1022861144167:web:1e645d6f228b4f516864c2","type":"USER_SITE"},{"name":"projects/planificador-145df/sites/planificador-145df-b648b","defaultUrl":"https://planificador-145df-b648b.web.app","appId":"1:1022861144167:web:435f3bc63e4d81536864c2","type":"USER_SITE"}]}
+[debug] [2025-08-04T01:49:13.001Z] Checked if tokens are valid: true, expires at: 1754273387270
+[debug] [2025-08-04T01:49:13.001Z] Checked if tokens are valid: true, expires at: 1754273387270
+[debug] [2025-08-04T01:49:13.002Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/planificador-145df/webApps/1:1022861144167:web:00878538b62d3fde6864c2/config [none]
+[debug] [2025-08-04T01:49:13.360Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/planificador-145df/webApps/1:1022861144167:web:00878538b62d3fde6864c2/config 200
+[debug] [2025-08-04T01:49:13.360Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/planificador-145df/webApps/1:1022861144167:web:00878538b62d3fde6864c2/config {"projectId":"planificador-145df","appId":"1:1022861144167:web:00878538b62d3fde6864c2","storageBucket":"planificador-145df.firebasestorage.app","apiKey":"AIzaSyAfL9dpeLfpWQPg4orpFSh3X5dzXrSsBwc","authDomain":"planificador-145df.firebaseapp.com","messagingSenderId":"1022861144167","measurementId":"G-ZL3E8DHKWT"}
+[debug] [2025-08-04T01:49:13.366Z] Checked if tokens are valid: true, expires at: 1754273387270
+[debug] [2025-08-04T01:49:13.366Z] Checked if tokens are valid: true, expires at: 1754273387270
+[debug] [2025-08-04T01:49:13.367Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/planificador-145df [none]
+[debug] [2025-08-04T01:49:13.607Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/planificador-145df 200
+[debug] [2025-08-04T01:49:13.607Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/planificador-145df {"projectId":"planificador-145df","projectNumber":"1022861144167","displayName":"Planificador","name":"projects/planificador-145df","resources":{"hostingSite":"planificador-145df"},"state":"ACTIVE","etag":"1_4f825686-94f7-4043-a798-53535850caa0"}
+[info] i  hosting[planificador-145df]: Serving hosting files from: dist {"metadata":{"emulator":{"name":"hosting"},"message":"Serving hosting files from: \u001b[1mdist\u001b[22m"}}
+[info] ✔  hosting[planificador-145df]: Local server: http://127.0.0.1:5005 {"metadata":{"emulator":{"name":"hosting"},"message":"Local server: \u001b[4m\u001b[1mhttp://127.0.0.1:5005\u001b[22m\u001b[24m"}}
+[debug] [2025-08-04T01:49:13.624Z] [Extensions] Connecting Extensions emulator, this is a noop.
+[info] i  functions: Watching "/workspaces/GESTIONPEDAGOGICA/functions" for Cloud Functions... {"metadata":{"emulator":{"name":"functions"},"message":"Watching \"/workspaces/GESTIONPEDAGOGICA/functions\" for Cloud Functions..."}}
+[debug] [2025-08-04T01:49:13.646Z] Validating nodejs source
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] ⚠  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2025-08-04T01:49:14.238Z] > [functions] package.json contents: {
+  "name": "functions",
+  "scripts": {
+    "lint": "eslint --ext .js,.ts .",
+    "build": "tsc --skipLibCheck",
+    "build:watch": "tsc --watch --skipLibCheck",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "shell": "npm run build && firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "engines": {
+    "node": "18"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^4.8.0"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^5.62.0",
+    "@typescript-eslint/parser": "^5.62.0",
+    "eslint": "^8.57.0",
+    "eslint-config-google": "^0.14.0",
+    "eslint-plugin-import": "^2.29.1",
+    "firebase-functions-test": "^3.1.0",
+    "typescript": "^4.9.5"
+  },
+  "private": true
+}
+[debug] [2025-08-04T01:49:14.238Z] Building nodejs source
+[debug] [2025-08-04T01:49:14.239Z] Failed to find version of module node: reached end of search path /workspaces/GESTIONPEDAGOGICA/functions/node_modules
+[warn] ⚠  functions: Your requested "node" version "18" doesn't match your global version "22". Using node@22 from host. 
+[info] i  functions: Loaded environment variables from .env. 
+[info] i  functions: You are using a version of firebase-functions SDK (4.9.0) that does not have support for the newest Firebase Extensions features. Please update firebase-functions SDK to >=5.1.0 to use them correctly 
+[debug] [2025-08-04T01:49:14.251Z] Could not find functions.yaml. Must use http discovery
+[debug] [2025-08-04T01:49:14.263Z] Found firebase-functions binary at '/workspaces/GESTIONPEDAGOGICA/functions/node_modules/.bin/firebase-functions'
+[info] Serving at port 8285
+
+[debug] [2025-08-04T01:49:14.707Z] Got response from /__/functions.yaml {"endpoints":{"addCustomClaim":{"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"concurrency":null,"serviceAccountEmail":null,"vpc":null,"platform":"gcfv2","labels":{},"callableTrigger":{},"entryPoint":"addCustomClaim"},"createUser":{"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"concurrency":null,"serviceAccountEmail":null,"vpc":null,"platform":"gcfv2","labels":{},"callableTrigger":{},"entryPoint":"createUser"},"updateUser":{"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"concurrency":null,"serviceAccountEmail":null,"vpc":null,"platform":"gcfv2","labels":{},"callableTrigger":{},"entryPoint":"updateUser"},"deleteUser":{"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"concurrency":null,"serviceAccountEmail":null,"vpc":null,"platform":"gcfv2","labels":{},"callableTrigger":{},"entryPoint":"deleteUser"}},"specVersion":"v1alpha1","requiredAPIs":[]}
+[info] ✔  functions: Loaded functions definitions from source: addCustomClaim, createUser, updateUser, deleteUser. {"metadata":{"emulator":{"name":"functions"},"message":"Loaded functions definitions from source: addCustomClaim, createUser, updateUser, deleteUser."}}
+[info] ✔  functions[us-central1-addCustomClaim]: http function initialized (http://127.0.0.1:5002/planificador-145df/us-central1/addCustomClaim). {"metadata":{"emulator":{"name":"functions"},"message":"\u001b[1mhttp\u001b[22m function initialized (http://127.0.0.1:5002/planificador-145df/us-central1/addCustomClaim)."}}
+[info] ✔  functions[us-central1-createUser]: http function initialized (http://127.0.0.1:5002/planificador-145df/us-central1/createUser). {"metadata":{"emulator":{"name":"functions"},"message":"\u001b[1mhttp\u001b[22m function initialized (http://127.0.0.1:5002/planificador-145df/us-central1/createUser)."}}
+[info] ✔  functions[us-central1-updateUser]: http function initialized (http://127.0.0.1:5002/planificador-145df/us-central1/updateUser). {"metadata":{"emulator":{"name":"functions"},"message":"\u001b[1mhttp\u001b[22m function initialized (http://127.0.0.1:5002/planificador-145df/us-central1/updateUser)."}}
+[info] ✔  functions[us-central1-deleteUser]: http function initialized (http://127.0.0.1:5002/planificador-145df/us-central1/deleteUser). {"metadata":{"emulator":{"name":"functions"},"message":"\u001b[1mhttp\u001b[22m function initialized (http://127.0.0.1:5002/planificador-145df/us-central1/deleteUser)."}}
+[debug] [2025-08-04T01:49:18.760Z] Could not find VSCode notification endpoint: FetchError: request to http://localhost:40001/vscode/notify failed, reason: . If you are not running the Firebase Data Connect VSCode extension, this is expected and not an issue.
+[info] 
+┌─────────────────────────────────────────────────────────────┐
+│ ✔  All emulators ready! It is now safe to connect your app. │
+│ i  View Emulator UI at http://127.0.0.1:4001/               │
+└─────────────────────────────────────────────────────────────┘
+
+┌────────────────┬────────────────┬──────────────────────────────────┐
+│ Emulator       │ Host:Port      │ View in Emulator UI              │
+├────────────────┼────────────────┼──────────────────────────────────┤
+│ Authentication │ 127.0.0.1:9099 │ http://127.0.0.1:4001/auth       │
+├────────────────┼────────────────┼──────────────────────────────────┤
+│ Functions      │ 127.0.0.1:5002 │ http://127.0.0.1:4001/functions  │
+├────────────────┼────────────────┼──────────────────────────────────┤
+│ Firestore      │ 127.0.0.1:8085 │ http://127.0.0.1:4001/firestore  │
+├────────────────┼────────────────┼──────────────────────────────────┤
+│ Hosting        │ 127.0.0.1:5005 │ n/a                              │
+├────────────────┼────────────────┼──────────────────────────────────┤
+│ Storage        │ 127.0.0.1:9205 │ http://127.0.0.1:4001/storage    │
+├────────────────┼────────────────┼──────────────────────────────────┤
+│ Cloud Tasks    │ 127.0.0.1:9505 │ n/a                              │
+├────────────────┼────────────────┼──────────────────────────────────┤
+│ Extensions     │ 127.0.0.1:5002 │ http://127.0.0.1:4001/extensions │
+└────────────────┴────────────────┴──────────────────────────────────┘
+  Emulator Hub host: 127.0.0.1 port: 4401
+  Other reserved ports: 4501, 9151
+┌─────────────────────────┬───────────────┬─────────────────────┐
+│ Extension Instance Name │ Extension Ref │ View in Emulator UI │
+└─────────────────────────┴───────────────┴─────────────────────┘
+Issues? Report them at https://github.com/firebase/firebase-tools/issues and attach the *-debug.log files.
+ 
