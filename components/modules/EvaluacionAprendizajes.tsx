@@ -17,7 +17,6 @@ import {
     subscribeToAllUsers
 } from '../../src/firebaseHelpers/evaluacionHelper';
 
-// ✅ CORRECCIÓN 1: Importar la librería de Google Generative AI
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 
@@ -270,7 +269,6 @@ const PruebasSubmodule: React.FC = () => {
             - Para 'Selección Múltiple', asegúrate de que los distractores sean claramente incorrectos y no ambiguos.`
             : '';
 
-        // ✅ MEJORA: Prompt fortalecido para asegurar un JSON limpio.
         const prompt = `
             Eres un experto en evaluación educativa para la educación media en Chile.
             Genera una prueba o guía de trabajo completa en formato JSON estructurado.
@@ -303,14 +301,13 @@ const PruebasSubmodule: React.FC = () => {
                        - Para 'Selección múltiple': 'opciones' (array de EXACTAMENTE 4 strings sin la letra de la alternativa) y 'respuestaCorrecta' (índice numérico de la respuesta correcta, de 0 a 3).
                        - Para 'Verdadero o Falso': 'respuestaCorrecta' (booleano).
                        - Para 'Términos pareados': 'pares' (array de objetos con 'concepto' y 'definicion').
-                       - Para 'Comprensión de lectura': 'texto' (string con el texto) y 'preguntas' (un array de sub-preguntas que pueden ser 'Selección múltiple' o 'Desarrollo', y cada una debe tener también 'habilidadBloom', 'id', 'puntaje', etc.).
+                       - Para 'Comprensión de lectura': 'texto' (un string que DEBE contener un texto original y coherente de 150 a 250 palabras, generado por ti, sobre el contenido a evaluar) y 'preguntas' (un array de sub-preguntas basadas en el texto que acabas de generar, las cuales pueden ser 'Selección múltiple' o 'Desarrollo', y cada una debe tener su propia 'id', 'pregunta', 'puntaje', 'habilidadBloom', etc.).
                        - Para 'Desarrollo': no necesita campos adicionales.
         `;
 
         try {
             logApiCall('Evaluación - Pruebas');
             
-            // ✅ CORRECCIÓN 2: Cargar la API Key desde el entorno y verificarla.
             const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
             if (!apiKey) {
                 setError("La API Key de Gemini no está configurada.");
@@ -318,7 +315,6 @@ const PruebasSubmodule: React.FC = () => {
                 return;
             }
 
-            // ✅ CORRECCIÓN 3: Instanciar el cliente de IA correctamente.
             const ai = new GoogleGenerativeAI(apiKey);
             const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
             
@@ -326,7 +322,6 @@ const PruebasSubmodule: React.FC = () => {
             const response = await result.response;
             const text = response.text();
             
-            // La limpieza es un buen respaldo, aunque el prompt pide JSON directamente.
             const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
             const generatedData = JSON.parse(cleanedText);
 
@@ -334,7 +329,7 @@ const PruebasSubmodule: React.FC = () => {
             generatedData.actividades.forEach((act: PruebaActividad) => {
                 act.items.forEach((item: any) => {
                     puntajeIdeal += item.puntaje || 0;
-                    if (item.tipo === 'Comprensión de lectura') {
+                    if (item.tipo === 'Comprensión de lectura' && item.preguntas) {
                         item.preguntas.forEach((subItem: any) => {
                             puntajeIdeal += subItem.puntaje || 0;
                         });
@@ -342,6 +337,7 @@ const PruebasSubmodule: React.FC = () => {
                 });
             });
 
+            // ✅ CORRECCIÓN FIRESTORE: Usar "spread condicional" para evitar el valor 'undefined'.
             const newPrueba: Prueba = {
                 id: crypto.randomUUID(),
                 fechaCreacion: new Date().toISOString(),
@@ -355,7 +351,7 @@ const PruebasSubmodule: React.FC = () => {
                 puntajeIdeal,
                 actividades: generatedData.actividades,
                 dificultad: formData.dificultad,
-                adaptacionNEE: formData.isNee ? formData.selectedNee : undefined,
+                ...(formData.isNee && { adaptacionNEE: formData.selectedNee }),
             };
 
             setCurrentPrueba(newPrueba);
@@ -369,7 +365,7 @@ const PruebasSubmodule: React.FC = () => {
         }
     };
     
-    // ... (El resto del componente PruebasSubmodule no necesita cambios en la lógica de guardado, borrado, o PDF)
+    // ... (El resto del componente sigue igual)
     const handleSavePrueba = async () => {
         if (!currentPrueba) return;
         try {
@@ -813,7 +809,7 @@ const RubricasSubmodule: React.FC<{
             const response = await result.response;
             const text = response.text();
             
-            const generatedDimensions = JSON.parse(text); // No cleaning needed with responseMimeType
+            const generatedDimensions = JSON.parse(text);
             
             const newRubrica: RubricaEstatica = {
                 id: crypto.randomUUID(),
@@ -894,7 +890,7 @@ const RubricasSubmodule: React.FC<{
         }
     };
     
-    // ... (El resto del componente RubricasSubmodule no necesita cambios)
+    // ... (El resto del componente RubricasSubmodule no cambia)
     const handleSave = () => {
         if (!currentRubrica) return;
         const exists = rubricas.some(r => r.id === currentRubrica.id);
@@ -1075,7 +1071,7 @@ const RubricasInteractivas: React.FC<{
         const newInteractiveRubric: Omit<RubricaInteractiva, 'id'> = {
             nombre: selectedStatic.titulo,
             curso: formState.curso,
-            asignatura: 'N/A', // Could be added to RubricaEstatica later
+            asignatura: 'N/A',
             rubricaEstaticaId: selectedStatic.id,
             resultados: {}
         };
@@ -1094,7 +1090,7 @@ const RubricasInteractivas: React.FC<{
         setModifiedRubrica(JSON.parse(JSON.stringify(rubrica)));
     };
 
-    const handleScoreChange = (estudiante: string, dimension: string, score: number) => {
+    const handleScoreChange = (estudiante: string, dimensionId: string, score: number) => {
         if (!modifiedRubrica) return;
         setModifiedRubrica(prev => {
             if (!prev) return null;
@@ -1102,7 +1098,7 @@ const RubricasInteractivas: React.FC<{
             if (!updated.resultados[estudiante]) {
                 updated.resultados[estudiante] = { puntajes: {}, feedback: '' };
             }
-            updated.resultados[estudiante].puntajes[dimension] = score;
+            updated.resultados[estudiante].puntajes[dimensionId] = score;
             return updated;
         });
     };
@@ -1179,7 +1175,6 @@ const RubricasInteractivas: React.FC<{
         }
     };
     
-    // ... (El resto del componente RubricasInteractivas no necesita cambios)
     if (selectedRubrica && modifiedRubrica) {
         const staticRubric = rubricasEstaticas.find(r => r.id === selectedRubrica.rubricaEstaticaId);
         const studentList = allUsers.filter(u => u.profile === Profile.ESTUDIANTE && normalizeCurso(u.curso || '') === selectedRubrica.curso).map(u => u.nombreCompleto).sort();
@@ -1357,7 +1352,7 @@ const EvaluacionAprendizajes: React.FC = () => {
         const unsubUsers = subscribeToAllUsers(setAllUsers);
         const unsubRubricas = subscribeToRubricasEstaticas((data) => {
             setRubricasEstaticas(data);
-            setLoading(false); // Consideramos cargado cuando las rúbricas están listas
+            setLoading(false);
         });
 
         return () => {
