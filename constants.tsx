@@ -7,12 +7,11 @@ export const profileIconClass = "w-24 h-24";
 
 // --- ÍCONOS ---
 export const MainLogo = () => (
-    <svg className="w-32 h-32 text-slate-700 dark:text-slate-300" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V6.5A2.5 2.5 0 0 0 17.5 4h-11A2.5 2.5 0 0 0 4 6.5v13Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M16 4.5V17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M9 14V10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M12 14V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
+    <img 
+        src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754320187/ChatGPT_Image_4_ago_2025_11_09_32_a.m._nb456n.png"
+        alt="Logo Gestión Pedagógica LIR"
+        className="w-32 h-32 object-contain"
+    />
 );
 
 export const LirLogoIcon = () => (

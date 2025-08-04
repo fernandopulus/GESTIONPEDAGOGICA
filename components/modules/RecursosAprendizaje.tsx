@@ -3,6 +3,7 @@ import MapasMentales from './recursos/MapasMentales';
 import SopaDeLetras from './recursos/SopaDeLetras';
 import LineasDeTiempo from './recursos/LineasDeTiempo';
 import Crucigramas from './recursos/Crucigramas';
+import { useAuth } from '@/src/hooks/useAuth'; // ✅ Añade 'src/' después del alias // ✅ Usa el alias '@/' para apuntar a 'src/' // ✅ 1. IMPORTA EL HOOK
 
 interface Recurso {
     id: 'sopaDeLetras' | 'mapasMentales' | 'crucigramas' | 'lineasDeTiempo';
@@ -12,30 +13,11 @@ interface Recurso {
 }
 
 const recursos: Recurso[] = [
-    {
-        id: 'sopaDeLetras',
-        icon: '🅰️',
-        nombre: 'Sopa de Letras',
-        descripcion: 'Crea y resuelve sopas de letras personalizadas para aprender palabras clave de cualquier asignatura.',
-    },
-    {
-        id: 'mapasMentales',
-        icon: '🧠',
-        nombre: 'Mapas Mentales',
-        descripcion: 'Organiza ideas y conceptos de forma visual para facilitar el estudio y la memoria.',
-    },
-    {
-        id: 'crucigramas',
-        icon: '✏️',
-        nombre: 'Crucigramas',
-        descripcion: 'Crea y resuelve crucigramas para reforzar vocabulario y conceptos clave.',
-    },
-    {
-        id: 'lineasDeTiempo',
-        icon: '🕒',
-        nombre: 'Líneas de Tiempo',
-        descripcion: 'Construye líneas de tiempo para comprender procesos, hechos históricos o secuencias.',
-    },
+    // ... la lista de recursos no cambia
+    { id: 'sopaDeLetras', icon: '🅰️', nombre: 'Sopa de Letras', descripcion: 'Crea y resuelve sopas de letras personalizadas para aprender palabras clave de cualquier asignatura.' },
+    { id: 'mapasMentales', icon: '🧠', nombre: 'Mapas Mentales', descripcion: 'Organiza ideas y conceptos de forma visual para facilitar el estudio y la memoria.' },
+    { id: 'crucigramas', icon: '✏️', nombre: 'Crucigramas', descripcion: 'Crea y resuelve crucigramas para reforzar vocabulario y conceptos clave.' },
+    { id: 'lineasDeTiempo', icon: '🕒', nombre: 'Líneas de Tiempo', descripcion: 'Construye líneas de tiempo para comprender procesos, hechos históricos o secuencias.' },
 ];
 
 type ActiveResource = 'menu' | Recurso['id'];
@@ -53,25 +35,33 @@ const RecursoCard: React.FC<{ recurso: Recurso; onClick: () => void }> = ({ recu
 
 const RecursosAprendizaje: React.FC = () => {
     const [activeResource, setActiveResource] = useState<ActiveResource>('menu');
+    const { currentUser } = useAuth(); // ✅ 2. OBTÉN EL USUARIO ACTUAL
 
     const renderContent = () => {
+        // ✅ 3. VERIFICA QUE EL USUARIO EXISTA ANTES DE RENDERIZAR UN SUBMÓDULO
+        if (activeResource !== 'menu' && !currentUser) {
+            // Muestra un mensaje o spinner mientras se carga el usuario
+            return <div className="text-center p-8">Cargando información de usuario...</div>;
+        }
+
+        // ✅ 4. PASA 'currentUser' A CADA COMPONENTE HIJO
         if (activeResource === 'mapasMentales') {
-            return <MapasMentales onBack={() => setActiveResource('menu')} />;
+            return <MapasMentales onBack={() => setActiveResource('menu')} currentUser={currentUser!} />;
         }
 
         if (activeResource === 'sopaDeLetras') {
-            return <SopaDeLetras onBack={() => setActiveResource('menu')} />;
+            return <SopaDeLetras onBack={() => setActiveResource('menu')} currentUser={currentUser!} />;
         }
         
         if (activeResource === 'lineasDeTiempo') {
-            return <LineasDeTiempo onBack={() => setActiveResource('menu')} />;
+            return <LineasDeTiempo onBack={() => setActiveResource('menu')} currentUser={currentUser!} />;
         }
         
         if (activeResource === 'crucigramas') {
-            return <Crucigramas onBack={() => setActiveResource('menu')} />;
+            return <Crucigramas onBack={() => setActiveResource('menu')} currentUser={currentUser!} />;
         }
 
-        // Default view: Menu
+        // Vista del menú por defecto
         return (
             <>
                 <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">

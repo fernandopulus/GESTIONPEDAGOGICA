@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef, FC } from 'react';
-// ✅ IA: Importar la librería de Google Generative AI
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { toPng } from 'html-to-image';
 import type { WordSearchPuzzle, User } from '../../../types';
@@ -54,7 +53,6 @@ const SopaDeLetras: React.FC<SopaDeLetrasProps> = ({ onBack, currentUser }) => {
         setWords(newWords);
     };
 
-    // ✅ IA: Función corregida y mejorada para generar la lista de palabras
     const handleGenerateWordsWithAI = async () => {
         if (!aiTheme.trim()) return;
         setLoading(p => ({ ...p, ai: true }));
@@ -88,7 +86,7 @@ const SopaDeLetras: React.FC<SopaDeLetrasProps> = ({ onBack, currentUser }) => {
             }
 
             const aiWords = resultJson.palabras
-                .map((w: string) => w.toUpperCase().replace(/[^A-ZÑ]/g, '')) // Limpieza extra
+                .map((w: string) => w.toUpperCase().replace(/[^A-ZÑ]/g, ''))
                 .slice(0, numWords);
             
             const finalWords = [...aiWords];
@@ -162,9 +160,10 @@ const SopaDeLetras: React.FC<SopaDeLetrasProps> = ({ onBack, currentUser }) => {
 
         const finalGrid = grid.map(row => row.map(cell => cell || 'ABCDEFGHIJKLMNOPQRSTUVWXYZÑ'[Math.floor(Math.random() * 27)]));
         
+        // ✅ SOLUCIÓN 1: Convertir la matriz en un array de strings antes de guardar
         const newPuzzleData: Omit<WordSearchPuzzle, 'id' | 'createdAt'> = {
             tema: aiTheme || 'Personalizado',
-            grid: finalGrid,
+            grid: finalGrid.map(row => row.join('')), // Convertir cada array de fila en un string
             words: cleanWords.sort()
         };
 
@@ -196,13 +195,18 @@ const SopaDeLetras: React.FC<SopaDeLetrasProps> = ({ onBack, currentUser }) => {
 
     const renderPuzzle = () => {
         if (!puzzle) return null;
+
+        // ✅ SOLUCIÓN 2: Convertir el array de strings de vuelta en un array plano de letras para renderizar
+        const gridWidth = puzzle.grid[0]?.length || 1; // Ancho de la grilla
+        const flatLetters = puzzle.grid.join('').split(''); // Une todas las filas y luego las separa en letras individuales
+
         return (
             <div className="space-y-6">
                 <div ref={puzzleRef} className="p-6 bg-white">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                         <div className="md:col-span-2">
-                            <div className="grid border-2 border-slate-700" style={{ gridTemplateColumns: `repeat(${puzzle.grid.length}, minmax(0, 1fr))` }}>
-                                {puzzle.grid.flat().map((letter, i) => (
+                            <div className="grid border-2 border-slate-700" style={{ gridTemplateColumns: `repeat(${gridWidth}, minmax(0, 1fr))` }}>
+                                {flatLetters.map((letter, i) => (
                                     <div key={i} className="flex items-center justify-center aspect-square border border-slate-300 font-mono font-bold text-lg text-slate-800">
                                         {letter}
                                     </div>
@@ -224,8 +228,10 @@ const SopaDeLetras: React.FC<SopaDeLetrasProps> = ({ onBack, currentUser }) => {
             </div>
         );
     };
-    
-    // ... el resto del componente no necesita cambios
+
+    if (loading.data) {
+        return <div className="text-center py-10">Cargando...</div>;
+    }
 
     return (
         <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md space-y-6">
