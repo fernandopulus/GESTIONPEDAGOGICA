@@ -35,6 +35,11 @@ const PlanDetailModal: React.FC<{ plan: PlanificacionDocente; onClose: () => voi
                 <p><strong>Objetivo de Aprendizaje:</strong> {p.objetivosAprendizaje}</p>
                 <p><strong>Indicadores de Evaluación:</strong> {p.indicadoresEvaluacion}</p>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-2"><strong>Contenidos Clave:</strong> {p.contenidos}</p>
+                <div className="mt-2">
+                  <span className="inline-block bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 px-3 py-1 rounded-full text-sm font-semibold">
+                    Avance de la Unidad: {typeof p.progreso === 'number' ? `${p.progreso}%` : 'No registrado'}
+                  </span>
+                </div>
             </div>
             <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 border-b pb-2">Secuencia de Clases ({p.cantidadClases})</h3>
             <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-2">
@@ -56,7 +61,14 @@ const PlanDetailModal: React.FC<{ plan: PlanificacionDocente; onClose: () => voi
 
     const renderClaseDetails = (p: PlanificacionClase) => (
         <div className="space-y-4">
-            <p className="p-4 bg-slate-100 dark:bg-slate-700 rounded-lg"><strong>Contenidos:</strong> {p.contenidos}</p>
+            <div className="p-4 bg-slate-100 dark:bg-slate-700 rounded-lg">
+              <p><strong>Contenidos:</strong> {p.contenidos}</p>
+              <div className="mt-2">
+                <span className="inline-block bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 px-3 py-1 rounded-full text-sm font-semibold">
+                  Avance de la Clase: {typeof p.progreso === 'number' ? `${p.progreso}%` : 'No registrado'}
+                </span>
+              </div>
+            </div>
             <div className="space-y-3">
                 <div>
                     <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">Inicio</h3>

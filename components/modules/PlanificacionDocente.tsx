@@ -178,11 +178,39 @@ interface LessonPlanViewerProps {
 }
 
 const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson, onUseLesson, isLoading = false }) => {
+  const [progreso, setProgreso] = useState<number>(plan.progreso ?? 0);
+  const [saving, setSaving] = useState(false);
+  const handleProgresoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(e.target.value, 10);
+    setProgreso(value);
+    setSaving(true);
+    try {
+      // Actualizar progreso en Firestore
+      if (plan.id) {
+        await import('../../src/firebaseHelpers/planificacionHelper').then(mod =>
+          mod.updatePlanificacion(plan.id, { progreso: value }, plan.autor || '')
+        );
+      }
+    } catch (err) {
+      // Manejo simple de error
+      alert('Error al guardar el avance');
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <div className="space-y-6">
       <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
         <p><strong>Objetivo de Aprendizaje:</strong> {plan.objetivosAprendizaje}</p>
         <p><strong>Indicadores de Evaluación:</strong> {plan.indicadoresEvaluacion}</p>
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Avance de la Unidad</label>
+          <div className="flex items-center gap-3">
+            <input type="range" min={0} max={100} value={progreso} onChange={handleProgresoChange} disabled={saving || isLoading} />
+            <span className="font-bold w-12">{progreso}%</span>
+            {saving && <span className="text-xs text-slate-400">Guardando...</span>}
+          </div>
+        </div>
       </div>
       <div className="space-y-4">
         {plan.detallesLeccion.map((lesson, index) => (
@@ -231,34 +259,41 @@ interface ClassPlanViewerProps {
 const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave, isLoading = false }) => {
   const [editablePlan, setEditablePlan] = useState<PlanificacionClase>(plan);
   const [saving, setSaving] = useState(false);
+  const [progreso, setProgreso] = useState<number>(plan.progreso ?? 0);
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    const [moment, momentKey] = name.split('.'); 
-    if (moment === 'momentosClase') {
-      setEditablePlan(prev => ({
-        ...prev,
-        momentosClase: {
-          ...prev.momentosClase,
-          [momentKey]: value,
-        }
-      }));
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+    const { name, value, type } = e.target;
+    if (name === 'progreso') {
+      const val = parseInt(value, 10);
+      setProgreso(val);
+      setEditablePlan(prev => ({ ...prev, progreso: val }));
     } else {
-      setEditablePlan(prev => ({ ...prev, [name]: value } as PlanificacionClase));
+      const [moment, momentKey] = name.split('.') as [string, string];
+      if (moment === 'momentosClase') {
+        setEditablePlan(prev => ({
+          ...prev,
+          momentosClase: {
+            ...prev.momentosClase,
+            [momentKey]: value,
+          }
+        }));
+      } else {
+        setEditablePlan(prev => ({ ...prev, [name]: value } as PlanificacionClase));
+      }
     }
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave(editablePlan);
+      await onSave({ ...editablePlan, progreso });
     } catch (error) {
       console.error('Error al guardar plan de clase:', error);
     } finally {
       setSaving(false);
     }
   };
-  
+
   return (
     <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
       <div className="flex justify-between items-center mb-6">
@@ -304,6 +339,13 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
             className="w-full mt-2 p-2 border rounded-md bg-slate-50 dark:bg-slate-700"
             disabled={isLoading || saving}
           />
+        </div>
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Avance de la Clase</label>
+          <div className="flex items-center gap-3">
+            <input type="range" min={0} max={100} name="progreso" value={progreso} onChange={handleChange} disabled={saving || isLoading} />
+            <span className="font-bold w-12">{progreso}%</span>
+          </div>
         </div>
       </div>
       <div className="text-right mt-6">

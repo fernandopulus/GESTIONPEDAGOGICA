@@ -148,6 +148,7 @@ export interface PlanificacionUnidad extends PlanificacionBase {
   cantidadClases: number;
   detallesLeccion: DetalleLeccion[];
   ideasParaUnidad?: string;
+  progreso?: number; // Porcentaje de avance de la unidad (0-100)
 }
 
 export interface PlanificacionClase extends PlanificacionBase {
@@ -156,6 +157,7 @@ export interface PlanificacionClase extends PlanificacionBase {
   duracionClase: number; // en minutos
   momentosClase: MomentosClase;
   detalleLeccionOrigen?: DetalleLeccion; // Optional link back
+  progreso?: number; // Porcentaje de avance de la clase (0-100)
 }
 
 export type PlanificacionDocente = PlanificacionUnidad | PlanificacionClase;
