@@ -7,7 +7,7 @@ import {
     createSeguimientoRecord,
     updateSeguimientoRecord,
     deleteSeguimientoRecord,
-    batchUpdateSeguimiento, // <-- Importar la nueva función
+    batchUpdateSeguimiento,
 } from '../../src/firebaseHelpers/seguimientoDualHelper'; 
 
 const normalizeCurso = (curso: string): string => {
@@ -26,6 +26,54 @@ const estadoColors: Record<EstadoSeguimientoDual, string> = {
     'Desvinculado': 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
     'En proceso': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
     'Empresa': 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
+};
+
+// 🔧 FUNCIÓN PARA PROCESAR FECHAS DE EXCEL DE FORMA SEGURA
+const parseExcelDate = (dateValue: any): string | null => {
+    if (!dateValue || dateValue === '' || dateValue === 'N/A' || dateValue === 'Pendiente') {
+        return null;
+    }
+    
+    try {
+        // Si es un número de Excel (días desde 1900)
+        if (typeof dateValue === 'number') {
+            // Excel cuenta desde 1900-01-01, pero hay un bug de año bisiesto
+            const excelEpoch = new Date(1900, 0, 1);
+            const date = new Date(excelEpoch.getTime() + (dateValue - 2) * 24 * 60 * 60 * 1000);
+            return isNaN(date.getTime()) ? null : date.toISOString().split('T')[0];
+        }
+        
+        // Si ya es un objeto Date
+        if (dateValue instanceof Date) {
+            return isNaN(dateValue.getTime()) ? null : dateValue.toISOString().split('T')[0];
+        }
+        
+        // Si es texto, intentar parsearlo
+        if (typeof dateValue === 'string') {
+            const cleanDate = dateValue.trim();
+            if (cleanDate === '') return null;
+            
+            // Intentar diferentes formatos
+            const parsedDate = new Date(cleanDate);
+            return isNaN(parsedDate.getTime()) ? null : parsedDate.toISOString().split('T')[0];
+        }
+        
+        return null;
+    } catch (error) {
+        console.warn('Error parsing date:', dateValue, error);
+        return null;
+    }
+};
+
+// 🔧 FUNCIÓN PARA PROCESAR VALORES BOOLEANOS DE EXCEL
+const parseExcelBoolean = (value: any): boolean => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+        const lower = value.toLowerCase().trim();
+        return ['true', 'verdadero', 'sí', 'si', 'yes', '1', 'x'].includes(lower);
+    }
+    if (typeof value === 'number') return value === 1;
+    return false;
 };
 
 const SupervisionModal: React.FC<{
@@ -53,8 +101,17 @@ const SupervisionModal: React.FC<{
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4" onClick={onClose}>
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
                 <div className="p-6">
-                    <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Seguimiento de Supervisión</h2>
-                    <p className="text-slate-600 dark:text-slate-400 mb-6">{record.nombreEstudiante}</p>
+                    <div className="flex items-center gap-3 mb-6">
+                        <img 
+                            src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754320187/ChatGPT_Image_4_ago_2025_11_09_32_a.m._nb456n.png"
+                            alt="Logo LIR"
+                            className="w-12 h-12 object-contain"
+                        />
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Seguimiento de Supervisión</h2>
+                            <p className="text-slate-600 dark:text-slate-400">{record.nombreEstudiante}</p>
+                        </div>
+                    </div>
                     
                     <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-4 text-slate-700 dark:text-slate-300">
                         <fieldset className="border p-4 rounded-lg dark:border-slate-600">
@@ -138,7 +195,6 @@ const SupervisionModal: React.FC<{
         </div>
     );
 };
-
 
 const SeguimientoDual: React.FC = () => {
     const [records, setRecords] = useState<SeguimientoDualRecord[]>([]);
@@ -258,6 +314,7 @@ const SeguimientoDual: React.FC = () => {
         writeFile(wb, "Plantilla_Seguimiento_Dual.xlsx");
     };
 
+    // 🔧 FUNCIÓN DE CARGA DE ARCHIVO CORREGIDA
     const handleFileUpload = (event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
@@ -267,10 +324,17 @@ const SeguimientoDual: React.FC = () => {
         reader.onload = async (e) => {
             try {
                 const data = new Uint8Array(e.target?.result as ArrayBuffer);
-                const workbook: WorkBook = read(data, { type: 'array', cellDates: true });
+                const workbook: WorkBook = read(data, { 
+                    type: 'array', 
+                    cellDates: true,
+                    dateNF: 'yyyy-mm-dd' // Formato de fecha preferido
+                });
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
-                const json: any[] = utils.sheet_to_json(worksheet);
+                const json: any[] = utils.sheet_to_json(worksheet, {
+                    raw: false, // No convertir automáticamente
+                    dateNF: 'yyyy-mm-dd' // Formato de fecha
+                });
 
                 if (json.length === 0) throw new Error("El archivo está vacío.");
 
@@ -291,36 +355,72 @@ const SeguimientoDual: React.FC = () => {
                 const missingHeader = requiredHeaders.find(rh => !headers.includes(rh));
                 if (missingHeader) throw new Error(`Falta la columna requerida: '${missingHeader}'`);
                 
-                const newRecords = json.map(row => {
-                    const record: any = {};
-                    for (const header in row) {
-                        const mappedKey = columnMap[header.trim().toLowerCase()];
-                        if (mappedKey) {
-                            let value = row[header];
-                            if (value instanceof Date) {
-                                value = value.toISOString().split('T')[0];
-                            }
-                            if (typeof value === 'boolean' || (typeof value === 'string' && ['true', 'false', 'verdadero', 'falso'].includes(value.toLowerCase()))) {
-                                record[mappedKey] = ['true', 'verdadero'].includes(String(value).toLowerCase());
-                            } else if (value !== null && value !== undefined) {
-                                record[mappedKey] = value;
+                const newRecords = json.map((row, index) => {
+                    try {
+                        const record: any = {};
+                        for (const header in row) {
+                            const mappedKey = columnMap[header.trim().toLowerCase()];
+                            if (mappedKey) {
+                                let value = row[header];
+                                
+                                // 🔧 PROCESAMIENTO SEGURO DE FECHAS
+                                const dateFields = [
+                                    'fecha1raSupervision1erSemestre', 'fecha2daSupervision1erSemestre',
+                                    'fechaSupervisionExcepcional', 'fecha1raSupervision2doSemestre',
+                                    'fecha2daSupervision2doSemestre', 'fechaDesvinculacion'
+                                ];
+                                
+                                if (dateFields.includes(mappedKey)) {
+                                    value = parseExcelDate(value);
+                                    if (value) {
+                                        record[mappedKey] = value;
+                                    }
+                                }
+                                // 🔧 PROCESAMIENTO SEGURO DE BOOLEANOS
+                                else if (mappedKey.includes('realizada')) {
+                                    record[mappedKey] = parseExcelBoolean(value);
+                                }
+                                // 🔧 PROCESAMIENTO DE TEXTO
+                                else if (value !== null && value !== undefined && value !== '') {
+                                    record[mappedKey] = String(value).trim();
+                                }
                             }
                         }
+                        
+                        // Validar campos requeridos
+                        if (!record.nombreEstudiante || !record.rutEstudiante) {
+                            console.warn(`Fila ${index + 2}: Faltan campos requeridos`);
+                            return null;
+                        }
+                        
+                        return record as Omit<SeguimientoDualRecord, 'id'>;
+                    } catch (rowError) {
+                        console.error(`Error procesando fila ${index + 2}:`, rowError);
+                        return null;
                     }
-                    if (!record.nombreEstudiante || !record.rutEstudiante) return null;
-                    return record as Omit<SeguimientoDualRecord, 'id'>;
                 }).filter((r): r is Omit<SeguimientoDualRecord, 'id'> => r !== null);
+
+                console.log('Registros procesados:', newRecords);
 
                 if (newRecords.length > 0) {
                     const { updated, created } = await batchUpdateSeguimiento(newRecords);
-                    setUploadStatus({ message: `Carga exitosa. ${created} registros creados, ${updated} actualizados.`, isError: false });
+                    setUploadStatus({ 
+                        message: `Carga exitosa. ${created} registros creados, ${updated} actualizados.`, 
+                        isError: false 
+                    });
                 } else {
-                    setUploadStatus({ message: 'No se encontraron nuevos registros válidos para agregar.', isError: false });
+                    setUploadStatus({ 
+                        message: 'No se encontraron registros válidos para procesar. Verifique el formato del archivo.', 
+                        isError: true 
+                    });
                 }
 
             } catch (err: any) {
-                console.error(err);
-                setUploadStatus({ message: `Error al procesar el archivo: ${err.message}`, isError: true });
+                console.error('Error completo:', err);
+                setUploadStatus({ 
+                    message: `Error al procesar el archivo: ${err.message}. Verifique que las fechas estén en formato correcto.`, 
+                    isError: true 
+                });
             }
         };
         reader.readAsArrayBuffer(file);
@@ -363,8 +463,18 @@ const SeguimientoDual: React.FC = () => {
     return (
         <div className="space-y-8 animate-fade-in">
             <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
-                <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">Seguimiento de Práctica Dual</h1>
-                <p className="text-slate-500 dark:text-slate-400 mb-6">{editingId ? 'Editando registro existente.' : 'Registre un nuevo estudiante en práctica.'}</p>
+                <div className="flex items-center gap-3 mb-6">
+                    <img 
+                        src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754320187/ChatGPT_Image_4_ago_2025_11_09_32_a.m._nb456n.png"
+                        alt="Logo Gestión Pedagógica LIR"
+                        className="w-12 h-12 object-contain"
+                    />
+                    <div>
+                        <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Seguimiento de Práctica Dual</h1>
+                        <p className="text-slate-500 dark:text-slate-400">{editingId ? 'Editando registro existente.' : 'Registre un nuevo estudiante en práctica.'}</p>
+                    </div>
+                </div>
+                
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <div>
@@ -430,16 +540,32 @@ const SeguimientoDual: React.FC = () => {
                     </div>
                 </form>
             </div>
+            
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
-                <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Carga Masiva</h2>
+                <div className="flex items-center gap-3 mb-4">
+                    <img 
+                        src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754320187/ChatGPT_Image_4_ago_2025_11_09_32_a.m._nb456n.png"
+                        alt="Logo LIR"
+                        className="w-8 h-8 object-contain"
+                    />
+                    <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200">Carga Masiva</h2>
+                </div>
                  <div className="flex flex-col sm:flex-row gap-4 items-start">
                     <button onClick={handleDownloadTemplate} className="bg-green-100 text-green-700 font-semibold py-2 px-4 rounded-lg hover:bg-green-200">Descargar Plantilla Excel</button>
                     <input type="file" onChange={handleFileUpload} accept=".xlsx, .xls" className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100"/>
                 </div>
                 {uploadStatus && <p className={`text-sm p-2 rounded-md mt-4 ${uploadStatus.isError ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{uploadStatus.message}</p>}
             </div>
+            
              <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
-                <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Registros de Estudiantes</h2>
+                <div className="flex items-center gap-3 mb-4">
+                    <img 
+                        src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754320187/ChatGPT_Image_4_ago_2025_11_09_32_a.m._nb456n.png"
+                        alt="Logo LIR"
+                        className="w-8 h-8 object-contain"
+                    />
+                    <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200">Registros de Estudiantes</h2>
+                </div>
                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4">
                     <input type="text" placeholder="Buscar por estudiante, empresa o RUT..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={`${inputStyles} md:col-span-2 lg:col-span-1`} />
                     <select name="curso" value={filters.curso} onChange={handleFilterChange} className={inputStyles}><option value="">Todos los Cursos</option>{CURSOS_DUAL.map(c => <option key={c}>{c}</option>)}</select>

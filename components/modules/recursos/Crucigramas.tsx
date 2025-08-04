@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef, FC } from 'react';
-// Se elimina la importación directa de GoogleGenAI
+// ✅ IA: Importar la librería de Google Generative AI
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { toPng } from 'html-to-image';
 import type { CrosswordPuzzle, CrosswordClue, CrosswordGridCell, User } from '../../../types';
 import { 
     subscribeToCrucigramas,
     saveCrucigrama,
     deleteCrucigrama 
-} from '../../../src/firebaseHelpers/recursosHelper'; // RUTA CORREGIDA
+} from '../../../src/firebaseHelpers/recursosHelper';
 
 // --- ICONS ---
 const Spinner = () => (<svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>);
@@ -15,7 +16,7 @@ const SparklesIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h
 // --- MAIN COMPONENT ---
 interface CrucigramasProps {
     onBack: () => void;
-    currentUser: User; // Se asume que el usuario actual está disponible
+    currentUser: User;
 }
 
 const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
@@ -28,6 +29,8 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
     const [puzzle, setPuzzle] = useState<CrosswordPuzzle | null>(null);
     const [showSolution, setShowSolution] = useState(false);
     const [loading, setLoading] = useState({ ai: false, puzzle: false, data: true });
+    // ✅ IA: Nuevo estado para la carga de pistas individuales
+    const [aiLoadingClueIndex, setAiLoadingClueIndex] = useState<number | null>(null);
     const puzzleRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -57,24 +60,43 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
         setClues(newClues);
     };
 
+    // ✅ IA: Función corregida y mejorada para generar todas las palabras y pistas
     const handleGenerateWordsAndClues = async () => {
         if (!aiTheme.trim()) return;
         setLoading(p => ({ ...p, ai: true }));
         try {
-            const apiKey = "";
-            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            if (!apiKey) {
+                alert("La API Key de Gemini no está configurada.");
+                setLoading(p => ({ ...p, ai: false }));
+                return;
+            }
+
+            const ai = new GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
             
-            const prompt = `Genera una lista de ${numWords} palabras y sus pistas correspondientes para un crucigrama, basado en el tema "${aiTheme}". Las palabras no deben contener espacios.`;
+            const prompt = `
+                Genera una lista de ${numWords} palabras y sus pistas correspondientes para un crucigrama, basado en el tema "${aiTheme}".
+                Tu respuesta DEBE ser un único objeto JSON válido sin texto adicional ni bloques \`\`\`json.
+                El objeto debe tener una clave "items", que es un array de ${numWords} objetos.
+                Cada objeto en el array "items" debe tener dos claves:
+                1. "word": Un string con la palabra (sin espacios y en mayúsculas).
+                2. "clue": Un string con la pista para esa palabra.
+            `;
             
             const result = await model.generateContent(prompt);
             const response = await result.response;
             const text = response.text();
 
-            // Asumimos que la respuesta es un JSON, si no, habría que parsearla
-            const resultJson = JSON.parse(text); 
-            const aiWords = resultJson.items.map((item: any) => item.word.toUpperCase().replace(/\s/g, ''));
-            const aiClues = resultJson.items.map((item: any) => item.clue);
+            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+            const resultJson = JSON.parse(cleanedText); 
+            
+            if (!resultJson.items || !Array.isArray(resultJson.items)) {
+                throw new Error("La respuesta de la IA no contiene la lista de 'items' esperada.");
+            }
+
+            const aiWords = resultJson.items.map((item: any) => (item.word || '').toUpperCase().replace(/\s/g, ''));
+            const aiClues = resultJson.items.map((item: any) => item.clue || '');
             
             setWords(Array.from({ length: numWords }, (_, i) => aiWords[i] || ''));
             setClues(Array.from({ length: numWords }, (_, i) => aiClues[i] || ''));
@@ -87,7 +109,49 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
         }
     };
     
+    // ✅ IA: Nueva función para generar una pista para una palabra específica
+    const handleAIGenerateClue = async (index: number) => {
+        const wordToGetClueFor = words[index];
+        if (!wordToGetClueFor || !wordToGetClueFor.trim()) {
+            alert("Por favor, escribe una palabra antes de generar su pista.");
+            return;
+        }
+        setAiLoadingClueIndex(index);
+
+        try {
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+             if (!apiKey) {
+                alert("La API Key de Gemini no está configurada.");
+                setAiLoadingClueIndex(null);
+                return;
+            }
+            
+            const ai = new GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+
+            const prompt = `Para un crucigrama con el tema "${aiTheme || 'general'}", genera una pista concisa y creativa para la palabra "${wordToGetClueFor}". La respuesta debe ser un único objeto JSON válido sin texto adicional, con una sola clave: "clue".`;
+
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+
+            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+            const resultJson = JSON.parse(cleanedText);
+
+            if (resultJson.clue) {
+                handleClueChange(index, resultJson.clue);
+            }
+
+        } catch (error) {
+            console.error("Error generating clue with AI:", error);
+            alert("No se pudo generar la pista.");
+        } finally {
+            setAiLoadingClueIndex(null);
+        }
+    };
+
     const generateCrossword = useCallback(() => {
+        // ... (Esta función de lógica interna no requiere cambios)
         try {
             const entries = words.map((word, i) => ({ word: word.toUpperCase().replace(/[^A-ZÑ]/g, ''), clue: clues[i] })).filter(e => e.word.length > 0);
             if (entries.length === 0) {
@@ -237,12 +301,12 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
     const handleGeneratePuzzle = async () => {
         setLoading(p => ({ ...p, puzzle: true }));
         setPuzzle(null);
-        await new Promise(resolve => setTimeout(resolve, 100)); // Allow UI to update
+        await new Promise(resolve => setTimeout(resolve, 100));
         
         const result = generateCrossword();
         if (result) {
             const newPuzzleData: Omit<CrosswordPuzzle, 'id' | 'fechaCreacion' | 'creadorId' | 'creadorNombre'> = {
-                tema: aiTheme,
+                tema: aiTheme || 'Personalizado',
                 grid: result.grid,
                 clues: result.clues,
             };
@@ -272,45 +336,7 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
         }, 100);
     };
     
-
-    const renderPuzzle = () => {
-        if (!puzzle) return null;
-        return (
-            <div className="space-y-6">
-                <div ref={puzzleRef} className="p-6 bg-white dark:bg-slate-900 text-black dark:text-white">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div>
-                             <div className="border border-black dark:border-white" style={{ display: 'grid', gridTemplateColumns: `repeat(${puzzle.grid[0].length}, 2rem)` }}>
-                                {puzzle.grid.flat().map((cell, i) => (
-                                    <div key={i} className="relative w-8 h-8 border border-black dark:border-white flex items-center justify-center font-bold uppercase" style={{ backgroundColor: cell.char ? 'white' : 'black' }}>
-                                        {cell.number && <span className="absolute top-0 left-0.5 text-[8px]">{cell.number}</span>}
-                                        {(showSolution && cell.char) && <span>{cell.char}</span>}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="text-sm">
-                            <h3 className="font-bold text-lg mb-2">HORIZONTALES</h3>
-                            <ul className="space-y-1">{puzzle.clues.across.map(c => <li key={`${c.word}-${c.clue}`}><strong>{c.number}.</strong> {c.clue}</li>)}</ul>
-                            <h3 className="font-bold text-lg mt-4 mb-2">VERTICALES</h3>
-                            <ul className="space-y-1">{puzzle.clues.down.map(c => <li key={`${c.word}-${c.clue}`}><strong>{c.number}.</strong> {c.clue}</li>)}</ul>
-                        </div>
-                    </div>
-                </div>
-                <div className="flex justify-between items-center">
-                    <label className="flex items-center gap-2">
-                        <input type="checkbox" checked={showSolution} onChange={() => setShowSolution(!showSolution)} className="h-5 w-5 rounded"/>
-                        <span>Mostrar Solución</span>
-                    </label>
-                    <div className="flex gap-4">
-                        <button onClick={() => setPuzzle(null)} className="bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300">Crear otro</button>
-                        <button onClick={handleDownloadPNG} className="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600">Descargar como PNG</button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
+    // ... (El resto de funciones como renderPuzzle y la lógica principal no requieren cambios)
 
     return (
         <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md space-y-6">
@@ -322,7 +348,41 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
                 </div>
             </div>
 
-            {puzzle ? renderPuzzle() : (
+            {puzzle ? ( 
+                /* renderPuzzle() fue movido aquí para simplificar la lógica */
+                <div className="space-y-6">
+                    <div ref={puzzleRef} className="p-6 bg-white dark:bg-slate-900 text-black dark:text-white">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div>
+                                 <div className="border border-black dark:border-white" style={{ display: 'grid', gridTemplateColumns: `repeat(${puzzle.grid[0].length}, 2rem)` }}>
+                                    {puzzle.grid.flat().map((cell, i) => (
+                                        <div key={i} className="relative w-8 h-8 border border-black dark:border-white flex items-center justify-center font-bold uppercase" style={{ backgroundColor: cell.char ? 'white' : 'black' }}>
+                                            {cell.number && <span className="absolute top-0 left-0.5 text-[8px]">{cell.number}</span>}
+                                            {(showSolution && cell.char) && <span>{cell.char}</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="text-sm">
+                                <h3 className="font-bold text-lg mb-2">HORIZONTALES</h3>
+                                <ul className="space-y-1">{puzzle.clues.across.map(c => <li key={`${c.word}-${c.clue}`}><strong>{c.number}.</strong> {c.clue}</li>)}</ul>
+                                <h3 className="font-bold text-lg mt-4 mb-2">VERTICALES</h3>
+                                <ul className="space-y-1">{puzzle.clues.down.map(c => <li key={`${c.word}-${c.clue}`}><strong>{c.number}.</strong> {c.clue}</li>)}</ul>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                        <label className="flex items-center gap-2">
+                            <input type="checkbox" checked={showSolution} onChange={() => setShowSolution(!showSolution)} className="h-5 w-5 rounded"/>
+                            <span>Mostrar Solución</span>
+                        </label>
+                        <div className="flex gap-4">
+                            <button onClick={() => setPuzzle(null)} className="bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300">Crear otro</button>
+                            <button onClick={handleDownloadPNG} className="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600">Descargar como PNG</button>
+                        </div>
+                    </div>
+                </div>
+            ) : (
                 <div className="space-y-6 pt-4 border-t dark:border-slate-700">
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Número de palabras</label>
@@ -347,7 +407,13 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
                         {Array.from({ length: numWords }).map((_, index) => (
                             <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <input type="text" value={words[index]} onChange={e => handleWordChange(index, e.target.value)} placeholder={`Palabra ${index + 1}`} className="border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"/>
-                                <textarea value={clues[index]} onChange={e => handleClueChange(index, e.target.value)} placeholder={`Pista ${index + 1}`} rows={1} className="md:col-span-2 border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"/>
+                                <div className="md:col-span-2 flex items-center gap-2">
+                                    <textarea value={clues[index]} onChange={e => handleClueChange(index, e.target.value)} placeholder={`Pista ${index + 1}`} rows={1} className="flex-grow border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"/>
+                                    {/* ✅ IA: Botón para generar pista individual */}
+                                    <button onClick={() => handleAIGenerateClue(index)} disabled={aiLoadingClueIndex === index} className="p-2 bg-slate-200 dark:bg-slate-600 rounded-md hover:bg-slate-300 disabled:opacity-50" title="Generar Pista con IA">
+                                        {aiLoadingClueIndex === index ? <div className="w-5 h-5 border-2 border-slate-400 border-t-amber-500 rounded-full animate-spin"></div> : <SparklesIcon />}
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>

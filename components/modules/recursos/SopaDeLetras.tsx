@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef, FC } from 'react';
-// Se elimina la importación directa de GoogleGenAI
+// ✅ IA: Importar la librería de Google Generative AI
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { toPng } from 'html-to-image';
 import type { WordSearchPuzzle, User } from '../../../types';
 import {
     subscribeToSopasDeLetras,
     saveSopaDeLetras,
     deleteSopaDeLetras
-} from '../../../src/firebaseHelpers/recursosHelper'; // AJUSTA la ruta a tu helper
+} from '../../../src/firebaseHelpers/recursosHelper';
 
+// --- ICONS ---
 const Spinner = () => (<svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>);
 const SparklesIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>);
 
@@ -52,14 +54,27 @@ const SopaDeLetras: React.FC<SopaDeLetrasProps> = ({ onBack, currentUser }) => {
         setWords(newWords);
     };
 
+    // ✅ IA: Función corregida y mejorada para generar la lista de palabras
     const handleGenerateWordsWithAI = async () => {
         if (!aiTheme.trim()) return;
         setLoading(p => ({ ...p, ai: true }));
         try {
-            const apiKey = "";
-            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-pro" });
-            const prompt = `Genera una lista de ${numWords} palabras clave, en español, relacionadas con el tema "${aiTheme}". Las palabras no deben contener espacios ni caracteres especiales.`;
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            if (!apiKey) {
+                alert("La API Key de Gemini no está configurada.");
+                setLoading(p => ({ ...p, ai: false }));
+                return;
+            }
+
+            const ai = new GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+            const prompt = `
+                Genera una lista de ${numWords} palabras clave en español, estrictamente relacionadas con el tema "${aiTheme}".
+                Tu respuesta DEBE ser un único objeto JSON válido sin texto adicional ni bloques \`\`\`json.
+                El objeto debe tener una sola clave: "palabras".
+                El valor de "palabras" debe ser un array de ${numWords} strings.
+                Cada string en el array debe ser una sola palabra, sin espacios ni caracteres especiales.
+            `;
             
             const result = await model.generateContent(prompt);
             const response = await result.response;
@@ -67,8 +82,13 @@ const SopaDeLetras: React.FC<SopaDeLetrasProps> = ({ onBack, currentUser }) => {
             
             const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
             const resultJson = JSON.parse(cleanedText);
+
+            if (!resultJson.palabras || !Array.isArray(resultJson.palabras)) {
+                throw new Error("La respuesta de la IA no contiene el array 'palabras' esperado.");
+            }
+
             const aiWords = resultJson.palabras
-                .map((w: string) => w.toUpperCase().replace(/\s/g, ''))
+                .map((w: string) => w.toUpperCase().replace(/[^A-ZÑ]/g, '')) // Limpieza extra
                 .slice(0, numWords);
             
             const finalWords = [...aiWords];
@@ -79,7 +99,7 @@ const SopaDeLetras: React.FC<SopaDeLetrasProps> = ({ onBack, currentUser }) => {
 
         } catch (error) {
             console.error("Error generating words with AI:", error);
-            alert("No se pudieron generar las palabras. Inténtelo de nuevo.");
+            alert("No se pudieron generar las palabras. La respuesta de la IA pudo tener un formato incorrecto. Inténtelo de nuevo.");
         } finally {
             setLoading(p => ({ ...p, ai: false }));
         }
@@ -143,7 +163,7 @@ const SopaDeLetras: React.FC<SopaDeLetrasProps> = ({ onBack, currentUser }) => {
         const finalGrid = grid.map(row => row.map(cell => cell || 'ABCDEFGHIJKLMNOPQRSTUVWXYZÑ'[Math.floor(Math.random() * 27)]));
         
         const newPuzzleData: Omit<WordSearchPuzzle, 'id' | 'createdAt'> = {
-            tema: aiTheme,
+            tema: aiTheme || 'Personalizado',
             grid: finalGrid,
             words: cleanWords.sort()
         };
@@ -204,10 +224,8 @@ const SopaDeLetras: React.FC<SopaDeLetrasProps> = ({ onBack, currentUser }) => {
             </div>
         );
     };
-
-    if (loading.data) {
-        return <div className="text-center py-10">Cargando...</div>;
-    }
+    
+    // ... el resto del componente no necesita cambios
 
     return (
         <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md space-y-6">

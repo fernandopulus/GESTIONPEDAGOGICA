@@ -158,7 +158,7 @@ export const ESTADOS_ACCION: EstadoAccion[] = ['Pendiente', 'En Proceso', 'Cumpl
 export const NIVELES: NivelPlanificacion[] = ['1º Medio', '2º Medio', '3º Medio', '4º Medio'];
 export const ASIGNATURAS = ['Lengua y Literatura', 'Matemática', 'Inglés', 'Filosofía', 'Historia y Geografía', 'Educación Ciudadana', 'Ciencias', 'Ciencias para la Ciudadanía', 'Artes', 'Música', 'Educación Física', 'Orientación', 'Mecánica Industrial', 'Mecánica Automotriz', 'Emprendimiento', 'Tecnología', 'Pensamiento Lógico', 'Competencia Lectora'];
 export const CURSOS = [ '1ºA', '1ºB', '1ºC', '1ºD', '1ºE', '2ºA', '2ºB', '2ºC', '2ºD', '3ºA', '3ºB', '3ºC', '3ºD', '4ºA', '4ºB', '4ºC', '4ºD' ];
-export const PROFESORES = [ 'Juan Pérez', 'María González', 'Carlos Soto', 'Ana Fernández', 'Luis Rojas', 'Laura Muñoz', 'Pedro Castillo', 'Sofía Reyes', 'Diego Flores', 'Valentina Castro' ];
+export const PROFESORES = [ 'Nelson Laubreaux', 'Julian Seguel', 'Martin Moya', 'Leonel Moya', 'Miguel Becerra' ];
 export const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 export const HORARIO_BLOQUES = [
     { bloque: 1, inicio: '08:00', fin: '08:40' }, { bloque: 2, inicio: '08:40', fin: '09:20' },
