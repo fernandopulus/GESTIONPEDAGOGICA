@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
 import { User, Profile, RubricaInteractiva, ResultadoInteractivo, Prueba, PruebaItemTipo, PruebaActividad, PruebaItem, SeleccionMultipleItem, TerminosPareadosItem, RubricaEstatica, DimensionRubrica, NivelDescriptor, VerdaderoFalsoItem, ComprensionLecturaItem, DesarrolloItem, DificultadAprendizaje } from '../../types';
 import { ASIGNATURAS, CURSOS, NIVELES, PDFIcon, DIFICULTADES_APRENDIZAJE } from '../../constants';
-// Se elimina la importación directa de GoogleGenAI
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logApiCall } from '../utils/apiLogger';
@@ -16,7 +15,11 @@ import {
     saveRubricaInteractiva,
     createRubricaInteractiva,
     subscribeToAllUsers
-} from '../../src/firebaseHelpers/evaluacionHelper'; // AJUSTA la ruta a tu nuevo helper
+} from '../../src/firebaseHelpers/evaluacionHelper';
+
+// ✅ CORRECCIÓN 1: Importar la librería de Google Generative AI
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
 
 const TIPOS_ACTIVIDAD_PRUEBA: PruebaItemTipo[] = ['Selección múltiple', 'Verdadero o Falso', 'Desarrollo', 'Términos pareados', 'Comprensión de lectura'];
 
@@ -267,6 +270,7 @@ const PruebasSubmodule: React.FC = () => {
             - Para 'Selección Múltiple', asegúrate de que los distractores sean claramente incorrectos y no ambiguos.`
             : '';
 
+        // ✅ MEJORA: Prompt fortalecido para asegurar un JSON limpio.
         const prompt = `
             Eres un experto en evaluación educativa para la educación media en Chile.
             Genera una prueba o guía de trabajo completa en formato JSON estructurado.
@@ -282,15 +286,15 @@ const PruebasSubmodule: React.FC = () => {
             
             ${neeAdaptationPrompt}
 
-            Tu respuesta DEBE ser un único objeto JSON que contenga:
+            Tu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, explicaciones, ni el bloque \`\`\`json. El objeto debe contener:
             1. 'objetivo': Un objetivo de aprendizaje claro para la evaluación.
             2. 'instruccionesGenerales': Instrucciones claras para el estudiante.
             3. 'actividades': Un array de objetos, donde cada objeto es una actividad por cada tipo de ítem solicitado. Cada actividad debe tener:
-               - 'id': Un UUID.
+               - 'id': Un UUID generado por ti.
                - 'titulo': Un título descriptivo (ej: "Actividad 1: Selección Múltiple").
                - 'instrucciones': Instrucciones para esa actividad específica.
                - 'items': Un array de preguntas con la cantidad exacta solicitada. Cada pregunta (item) debe tener:
-                   - 'id': Un UUID.
+                   - 'id': Un UUID generado por ti.
                    - 'tipo': El tipo de ítem.
                    - 'pregunta': El enunciado de la pregunta.
                    - 'puntaje': Un puntaje numérico.
@@ -299,19 +303,30 @@ const PruebasSubmodule: React.FC = () => {
                        - Para 'Selección múltiple': 'opciones' (array de EXACTAMENTE 4 strings sin la letra de la alternativa) y 'respuestaCorrecta' (índice numérico de la respuesta correcta, de 0 a 3).
                        - Para 'Verdadero o Falso': 'respuestaCorrecta' (booleano).
                        - Para 'Términos pareados': 'pares' (array de objetos con 'concepto' y 'definicion').
-                       - Para 'Comprensión de lectura': 'texto' (string con el texto) y 'preguntas' (un array de sub-preguntas que pueden ser 'Selección múltiple' o 'Desarrollo', y cada una debe tener también 'habilidadBloom').
+                       - Para 'Comprensión de lectura': 'texto' (string con el texto) y 'preguntas' (un array de sub-preguntas que pueden ser 'Selección múltiple' o 'Desarrollo', y cada una debe tener también 'habilidadBloom', 'id', 'puntaje', etc.).
                        - Para 'Desarrollo': no necesita campos adicionales.
         `;
 
         try {
             logApiCall('Evaluación - Pruebas');
-            const apiKey = "";
-            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            
+            // ✅ CORRECCIÓN 2: Cargar la API Key desde el entorno y verificarla.
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            if (!apiKey) {
+                setError("La API Key de Gemini no está configurada.");
+                setIsGenerating(false);
+                return;
+            }
+
+            // ✅ CORRECCIÓN 3: Instanciar el cliente de IA correctamente.
+            const ai = new GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+            
             const result = await model.generateContent(prompt);
             const response = await result.response;
             const text = response.text();
             
+            // La limpieza es un buen respaldo, aunque el prompt pide JSON directamente.
             const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
             const generatedData = JSON.parse(cleanedText);
 
@@ -348,12 +363,13 @@ const PruebasSubmodule: React.FC = () => {
 
         } catch(err) {
             console.error(err);
-            setError("Error al generar la prueba con IA. Inténtelo de nuevo.");
+            setError("Error al generar la prueba con IA. Revisa la consola para más detalles.");
         } finally {
             setIsGenerating(false);
         }
     };
     
+    // ... (El resto del componente PruebasSubmodule no necesita cambios en la lógica de guardado, borrado, o PDF)
     const handleSavePrueba = async () => {
         if (!currentPrueba) return;
         try {
@@ -762,7 +778,7 @@ const RubricasSubmodule: React.FC<{
             return;
         }
         setIsLoading(true);
-        const prompt = `Crea una rúbrica de evaluación detallada sobre "${title}" con el propósito de "${description}". Genera entre 3 y 5 dimensiones de evaluación. Para cada dimensión, crea un descriptor para 4 niveles: Insuficiente, Suficiente, Competente, y Avanzado.`;
+        const prompt = `Crea una rúbrica de evaluación detallada sobre "${title}" con el propósito de "${description}". Genera entre 3 y 5 dimensiones de evaluación. Para cada dimensión, crea un descriptor para 4 niveles: Insuficiente, Suficiente, Competente, y Avanzado. Tu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, explicaciones, ni el bloque \`\`\`json.`;
         const schema = {
             type: "ARRAY",
             items: {
@@ -780,9 +796,16 @@ const RubricasSubmodule: React.FC<{
 
         try {
             logApiCall('Evaluación - Rúbricas');
-            const apiKey = "";
-            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            if (!apiKey) {
+                alert("La API Key de Gemini no está configurada.");
+                setIsLoading(false);
+                return;
+            }
+
+            const ai = new GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
             const result = await model.generateContent({
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { responseMimeType: 'application/json', responseSchema: schema }
@@ -790,8 +813,7 @@ const RubricasSubmodule: React.FC<{
             const response = await result.response;
             const text = response.text();
             
-            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
-            const generatedDimensions = JSON.parse(cleanedText);
+            const generatedDimensions = JSON.parse(text); // No cleaning needed with responseMimeType
             
             const newRubrica: RubricaEstatica = {
                 id: crypto.randomUUID(),
@@ -827,7 +849,7 @@ const RubricasSubmodule: React.FC<{
         setCurrentRubrica(prev => prev ? { ...prev, dimensiones: [...prev.dimensiones, placeholderDimension] } : null);
         setNewDimensionName('');
 
-        const prompt = `Para una rúbrica sobre "${currentRubrica.titulo}", genera los descriptores para los 4 niveles de logro (Insuficiente, Suficiente, Competente, Avanzado) para la nueva dimensión: "${newDimensionName}". Considera las dimensiones existentes como contexto: ${currentRubrica.dimensiones.map(d => d.nombre).join(', ')}.`;
+        const prompt = `Para una rúbrica sobre "${currentRubrica.titulo}", genera los descriptores para los 4 niveles de logro (Insuficiente, Suficiente, Competente, Avanzado) para la nueva dimensión: "${newDimensionName}". Considera las dimensiones existentes como contexto: ${currentRubrica.dimensiones.map(d => d.nombre).join(', ')}. Tu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, explicaciones, ni el bloque \`\`\`json.`;
         const schema = {
             type: "OBJECT",
             properties: {
@@ -841,9 +863,16 @@ const RubricasSubmodule: React.FC<{
 
         try {
             logApiCall('Evaluación - Rúbricas (Añadir Dimensión)');
-            const apiKey = "";
-            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            if (!apiKey) {
+                alert("La API Key de Gemini no está configurada.");
+                setCurrentRubrica(prev => prev ? { ...prev, dimensiones: prev.dimensiones.filter(d => d.id !== newDimId) } : null);
+                return;
+            }
+
+            const ai = new GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
             const result = await model.generateContent({
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { responseMimeType: 'application/json', responseSchema: schema }
@@ -851,8 +880,7 @@ const RubricasSubmodule: React.FC<{
             const response = await result.response;
             const text = response.text();
             
-            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
-            const generatedLevels = JSON.parse(cleanedText);
+            const generatedLevels = JSON.parse(text);
 
             setCurrentRubrica(prev => prev ? {
                 ...prev,
@@ -865,7 +893,8 @@ const RubricasSubmodule: React.FC<{
             setCurrentRubrica(prev => prev ? { ...prev, dimensiones: prev.dimensiones.filter(d => d.id !== newDimId) } : null);
         }
     };
-
+    
+    // ... (El resto del componente RubricasSubmodule no necesita cambios)
     const handleSave = () => {
         if (!currentRubrica) return;
         const exists = rubricas.some(r => r.id === currentRubrica.id);
@@ -1111,17 +1140,27 @@ const RubricasInteractivas: React.FC<{
         if (!modifiedRubrica) return;
         const staticRubric = rubricasEstaticas.find(r => r.id === modifiedRubrica.rubricaEstaticaId);
         const studentResult = modifiedRubrica.resultados[studentName];
-        if (!staticRubric || !studentResult || Object.keys(studentResult.puntajes).length === 0) return;
+        if (!staticRubric || !studentResult || Object.keys(studentResult.puntajes).length === 0) {
+            alert("El estudiante no tiene puntajes para generar feedback.");
+            return;
+        }
         
         setFeedbackLoadingStudent(studentName);
-        const performance = staticRubric.dimensiones.map(d => `${d.nombre}: ${studentResult.puntajes[d.nombre] || 'N/A'}/4`).join('; ');
-        const prompt = `Genera una retroalimentación constructiva para un estudiante basada en estos puntajes de rúbrica (de 1 a 4): ${performance}. Destaca fortalezas y sugiere 1-2 áreas de mejora concretas. Sé breve y motivador.`;
+        const performance = staticRubric.dimensiones.map(d => `${d.nombre}: ${studentResult.puntajes[d.id] || 'N/A'}/4`).join('; ');
+        const prompt = `Genera una retroalimentación constructiva para un estudiante basada en estos puntajes de rúbrica (de 1 a 4): ${performance}. El nombre de la evaluación es "${staticRubric.titulo}". Destaca fortalezas y sugiere 1-2 áreas de mejora concretas. Sé breve y motivador.`;
         
         try {
             logApiCall('Evaluación - Rúbricas Interactivas (Feedback)');
-            const apiKey = "";
-            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            if (!apiKey) {
+                alert("La API Key de Gemini no está configurada.");
+                setFeedbackLoadingStudent(null);
+                return;
+            }
+
+            const ai = new GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
             const result = await model.generateContent(prompt);
             const response = await result.response;
             const text = response.text();
@@ -1140,6 +1179,7 @@ const RubricasInteractivas: React.FC<{
         }
     };
     
+    // ... (El resto del componente RubricasInteractivas no necesita cambios)
     if (selectedRubrica && modifiedRubrica) {
         const staticRubric = rubricasEstaticas.find(r => r.id === selectedRubrica.rubricaEstaticaId);
         const studentList = allUsers.filter(u => u.profile === Profile.ESTUDIANTE && normalizeCurso(u.curso || '') === selectedRubrica.curso).map(u => u.nombreCompleto).sort();
@@ -1176,7 +1216,7 @@ const RubricasInteractivas: React.FC<{
                                         <td key={dim.id} className="p-2 border dark:border-slate-600 text-center">
                                             <div className="flex justify-center gap-1">
                                                 {[1,2,3,4].map(s => (
-                                                    <button key={s} onClick={() => handleScoreChange(studentName, dim.nombre, s)} className={`w-7 h-7 rounded-md font-semibold transition-colors ${modifiedRubrica.resultados[studentName]?.puntajes[dim.nombre] === s ? 'bg-amber-400 text-white' : 'bg-slate-200 dark:bg-slate-600 hover:bg-slate-300'}`}>
+                                                    <button key={s} onClick={() => handleScoreChange(studentName, dim.id, s)} className={`w-7 h-7 rounded-md font-semibold transition-colors ${modifiedRubrica.resultados[studentName]?.puntajes[dim.id] === s ? 'bg-amber-400 text-white' : 'bg-slate-200 dark:bg-slate-600 hover:bg-slate-300'}`}>
                                                         {s}
                                                     </button>
                                                 ))}
@@ -1235,6 +1275,7 @@ const RubricasInteractivas: React.FC<{
         </div>
     );
 };
+
 
 // --- SUB-MÓDULO 4: GESTIÓN DE NÓMINAS (Read-only view) ---
 const GestionNominas: React.FC<{ allUsers: User[] }> = ({ allUsers }) => {
