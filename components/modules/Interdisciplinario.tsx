@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
 import { PlanificacionInterdisciplinaria, ActividadInterdisciplinaria, FechaClave, TareaInterdisciplinaria, EntregaTareaInterdisciplinaria, User, Profile } from '../../types';
 import { ASIGNATURAS, CURSOS } from '../../constants';
-// import { GoogleGenAI } from "@google/genai"; // Se elimina para usar la versión global
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
@@ -13,7 +12,10 @@ import {
     subscribeToEntregas,
     saveFeedbackEntrega,
     subscribeToAllUsers
-} from '../../src/firebaseHelpers/interdisciplinarioHelper'; // AJUSTA la ruta a tu nuevo helper
+} from '../../src/firebaseHelpers/interdisciplinarioHelper';
+
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
 
 const ProjectTimeline: React.FC<{
     planificaciones: PlanificacionInterdisciplinaria[],
@@ -235,6 +237,7 @@ const PlanificacionForm: React.FC<{
     const [newTarea, setNewTarea] = useState({ instrucciones: '', fechaEntrega: '', recursoUrl: '' });
     const [isGeneratingObjectives, setIsGeneratingObjectives] = useState(false);
     const [isGeneratingIndicators, setIsGeneratingIndicators] = useState(false);
+    const [isGeneratingStructure, setIsGeneratingStructure] = useState(false);
 
     useEffect(() => {
         setFormData(initialPlan || {
@@ -252,20 +255,27 @@ const PlanificacionForm: React.FC<{
         if (targetField === 'objetivos') setIsGeneratingObjectives(true);
         else setIsGeneratingIndicators(true);
 
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        if (!apiKey) {
+            alert("La API Key de Gemini no está configurada.");
+            setIsGeneratingObjectives(false);
+            setIsGeneratingIndicators(false);
+            return;
+        }
+
         let prompt = '';
         if (targetField === 'objetivos') {
-            prompt = `Basado en la siguiente descripción de un proyecto escolar interdisciplinario, genera 3 a 5 objetivos de aprendizaje claros, medibles y concisos. La respuesta debe ser solo el texto de los objetivos, formateado en una lista.
+            prompt = `Basado en la siguiente descripción de un proyecto escolar interdisciplinario, genera 3 a 5 objetivos de aprendizaje claros, medibles y concisos. La respuesta debe ser solo el texto de los objetivos, formateado en una lista con guiones.
             Descripción del Proyecto: "${formData.descripcionProyecto}"`;
         } else {
-            prompt = `Basado en la siguiente descripción y objetivos de un proyecto escolar interdisciplinario, genera una lista de 5 a 7 indicadores de logro concretos y observables que permitan evaluar el cumplimiento de los objetivos. La respuesta debe ser solo el texto de los indicadores, formateado en una lista.
+            prompt = `Basado en la siguiente descripción y objetivos de un proyecto escolar interdisciplinario, genera una lista de 5 a 7 indicadores de logro concretos y observables que permitan evaluar el cumplimiento de los objetivos. La respuesta debe ser solo el texto de los indicadores, formateado en una lista con guiones.
             Descripción del Proyecto: "${formData.descripcionProyecto}"
             Objetivos (si existen): "${formData.objetivos || 'Aún no definidos, genéralos a partir de la descripción.'}"`;
         }
 
         try {
-            const apiKey = "";
-            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-pro"});
+            const ai = new GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest"});
             const result = await model.generateContent(prompt);
             const response = await result.response;
             const text = response.text();
@@ -278,6 +288,59 @@ const PlanificacionForm: React.FC<{
             else setIsGeneratingIndicators(false);
         }
     };
+
+    const handleAIGenerateStructure = async () => {
+        if (!formData.descripcionProyecto.trim()) {
+            alert("Por favor, ingrese una descripción del proyecto para usar la IA.");
+            return;
+        }
+        setIsGeneratingStructure(true);
+        
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        if (!apiKey) {
+            alert("La API Key de Gemini no está configurada.");
+            setIsGeneratingStructure(false);
+            return;
+        }
+
+        const prompt = `
+            Basado en la descripción de un proyecto escolar, genera una estructura completa. La respuesta DEBE ser un único objeto JSON válido sin texto adicional ni bloques \`\`\`json.
+            Descripción del proyecto: "${formData.descripcionProyecto}"
+            Docentes responsables: "${formData.docentesResponsables}"
+            Asignaturas involucradas: "${formData.asignaturas.join(', ')}"
+
+            El JSON debe tener tres claves: 'actividades', 'fechasClave', y 'tareas'.
+            1. 'actividades': Un array de 3 a 5 objetos. Cada objeto debe tener: "nombre" (string), "fechaInicio" (string "YYYY-MM-DD"), "fechaFin" (string "YYYY-MM-DD"), y "responsables" (string, uno de los docentes).
+            2. 'fechasClave': Un array de 2 a 3 objetos (hitos importantes). Cada objeto debe tener: "nombre" (string) y "fecha" (string "YYYY-MM-DD").
+            3. 'tareas': Un array de 2 a 3 objetos (tareas para estudiantes). Cada objeto debe tener: "instrucciones" (string detallado) y "fechaEntrega" (string "YYYY-MM-DD").
+            Las fechas deben ser lógicas y secuenciales. Asume que el proyecto comienza hoy.
+        `;
+        
+        try {
+            const ai = new GoogleGenerativeAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest"});
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+            
+            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+            const structure = JSON.parse(cleanedText);
+
+            setFormData(prev => ({
+                ...prev,
+                actividades: structure.actividades?.map((a: any) => ({ ...a, id: crypto.randomUUID() })) || prev.actividades,
+                fechasClave: structure.fechasClave?.map((f: any) => ({ ...f, id: crypto.randomUUID() })) || prev.fechasClave,
+                tareas: structure.tareas?.map((t: any, i: number) => ({ ...t, id: crypto.randomUUID(), numero: i + 1 })) || prev.tareas,
+            }));
+
+        } catch (error) {
+            console.error('Error al generar la estructura del proyecto:', error);
+            alert('No se pudo generar la estructura del proyecto. Intente de nuevo.');
+        } finally {
+            setIsGeneratingStructure(false);
+        }
+    };
+
 
     const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -357,6 +420,11 @@ const PlanificacionForm: React.FC<{
                 
                 <FormCard icon={<CalendarDaysIcon />} label="Carta Gantt">
                      <div className="space-y-4 mt-2">
+                        <div className="text-center border-b pb-4 mb-4 dark:border-slate-700">
+                             <button type="button" onClick={handleAIGenerateStructure} disabled={isGeneratingStructure || !formData.descripcionProyecto} className="bg-sky-500 text-white font-semibold py-2 px-5 rounded-lg disabled:bg-slate-400 flex items-center gap-2 mx-auto">
+                                {isGeneratingStructure ? 'Generando...' : '✨ Sugerir Estructura con IA'}
+                            </button>
+                        </div>
                          <div className="space-y-2 p-3 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
                             <h4 className="text-sm font-semibold">Actividades</h4>
                             <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
@@ -448,7 +516,14 @@ const Interdisciplinario: React.FC = () => {
         setView('form');
     };
 
+    // ✅ DEBUG: console.log añadido para depuración
     const handleDelete = async (id: string) => {
+        console.log('ID recibido por handleDelete:', id);
+        if (!id) {
+            console.error('handleDelete fue llamado con un ID inválido:', id);
+            alert('Error: No se puede eliminar un proyecto sin un ID válido.');
+            return;
+        }
         if (window.confirm("¿Está seguro de eliminar esta planificación?")) {
             try {
                 await deletePlanificacion(id);
@@ -618,6 +693,7 @@ const Interdisciplinario: React.FC = () => {
         const [allUsers, setAllUsers] = useState<User[]>([]);
         const [entregas, setEntregas] = useState<EntregaTareaInterdisciplinaria[]>([]);
         const [selectedTask, setSelectedTask] = useState<TareaInterdisciplinaria | null>(plan.tareas?.[0] || null);
+        const [isGeneratingFeedbackFor, setIsGeneratingFeedbackFor] = useState<string | null>(null);
 
         useEffect(() => {
             const unsubUsers = subscribeToAllUsers(setAllUsers);
@@ -635,12 +711,39 @@ const Interdisciplinario: React.FC = () => {
                 .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
         }, [allUsers, plan.cursos]);
 
-        const handleSaveFeedback = async (entregaId: string, feedback: string) => {
+        const handleAIGenerateFeedback = async (entrega: EntregaTareaInterdisciplinaria) => {
+            setIsGeneratingFeedbackFor(entrega.id);
+
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            if (!apiKey) {
+                alert("La API Key de Gemini no está configurada.");
+                setIsGeneratingFeedbackFor(null);
+                return;
+            }
+
+            const prompt = `
+                Eres un profesor asistente. Genera una retroalimentación constructiva para la entrega de un estudiante.
+                - Instrucciones de la tarea: "${selectedTask?.instrucciones}"
+                - Comentario del estudiante: "${entrega.observacionesEstudiante || 'No dejó comentarios.'}"
+                - Enlace entregado: "${entrega.enlaceUrl || 'No aplica'}"
+                - Archivo entregado: "${entrega.archivoAdjunto?.nombre || 'No aplica'}"
+                
+                La retroalimentación debe ser breve (2-3 frases), motivadora, y enfocada en cómo podría mejorar.
+            `;
+
             try {
-                await saveFeedbackEntrega(entregaId, feedback);
+                const ai = new GoogleGenerativeAI(apiKey);
+                const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                const feedbackText = response.text().replace(/(\*\*|\*)/g, '');
+                
+                await saveFeedbackEntrega(entrega.id, feedbackText);
             } catch (error) {
-                console.error("Error saving feedback:", error);
-                alert("No se pudo guardar la retroalimentación.");
+                console.error("Error al generar feedback con IA:", error);
+                alert("No se pudo generar la retroalimentación.");
+            } finally {
+                setIsGeneratingFeedbackFor(null);
             }
         };
 
@@ -662,19 +765,32 @@ const Interdisciplinario: React.FC = () => {
                         return (
                             <div key={student.id} className="p-4 border rounded-lg bg-slate-50 dark:bg-slate-700/50">
                                 <p className="font-bold text-slate-800 dark:text-slate-200">{student.nombreCompleto} - {entrega?.completada ? <span className="text-green-600">Entregado</span> : <span className="text-red-600">Pendiente</span>}</p>
-                                {entrega && (
+                                {entrega ? (
                                     <div className="text-sm mt-2 space-y-2">
                                         {entrega.observacionesEstudiante && <p><strong>Comentario:</strong> {entrega.observacionesEstudiante}</p>}
                                         {entrega.enlaceUrl && <p><strong>Enlace:</strong> <a href={entrega.enlaceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{entrega.enlaceUrl}</a></p>}
                                         {entrega.archivoAdjunto && <p><strong>Archivo:</strong> <a href={entrega.archivoAdjunto.url} download={entrega.archivoAdjunto.nombre} className="text-blue-500 hover:underline">{entrega.archivoAdjunto.nombre}</a></p>}
-                                        <textarea 
-                                            placeholder="Escribir retroalimentación..." 
-                                            defaultValue={entrega.feedbackProfesor || ''}
-                                            onBlur={(e) => handleSaveFeedback(entrega.id, e.target.value)}
-                                            rows={2}
-                                            className="w-full mt-2 p-1 border rounded-md dark:bg-slate-700 dark:border-slate-600"
-                                        />
+                                        <div className="flex items-end gap-2">
+                                            <textarea 
+                                                key={entrega.id} 
+                                                placeholder="Escribir retroalimentación..." 
+                                                defaultValue={entrega.feedbackProfesor || ''}
+                                                onBlur={(e) => saveFeedbackEntrega(entrega.id, e.target.value)}
+                                                rows={2}
+                                                className="w-full mt-2 p-1 border rounded-md dark:bg-slate-700 dark:border-slate-600 flex-grow"
+                                            />
+                                            <button 
+                                                onClick={() => handleAIGenerateFeedback(entrega)} 
+                                                disabled={isGeneratingFeedbackFor === entrega.id}
+                                                className="p-2 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50" 
+                                                title="Generar Feedback con IA"
+                                            >
+                                               {isGeneratingFeedbackFor === entrega.id ? '...' : <SparklesIcon />}
+                                            </button>
+                                        </div>
                                     </div>
+                                ) : (
+                                    <p className="text-xs text-slate-400 mt-2">El estudiante aún no ha realizado la entrega.</p>
                                 )}
                             </div>
                         )
@@ -701,28 +817,32 @@ const Interdisciplinario: React.FC = () => {
                         <button onClick={handleCreateNew} className="bg-slate-800 text-white font-bold py-2 px-5 rounded-lg hover:bg-slate-700 dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600">Crear Nuevo</button>
                     </div>
                      <div className="space-y-4">
-                        {planificaciones.map(plan => (
-                            <div key={plan.id} className="p-4 border dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-700/50">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">{plan.nombreProyecto}</h3>
-                                        <p className="text-sm text-slate-500 dark:text-slate-400">Cursos: {(plan.cursos || []).join(', ')}</p>
-                                    </div>
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <button onClick={() => setViewingSubmissionsForPlan(plan)} className="text-green-600 hover:text-green-800 dark:text-green-400 font-semibold text-sm">Ver Entregas</button>
-                                        <button 
-                                            onClick={() => handleExportProjectPDF(plan)} 
-                                            disabled={isExportingId === plan.id}
-                                            className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-semibold text-sm disabled:opacity-50"
-                                        >
-                                            {isExportingId === plan.id ? 'Exportando...' : 'Exportar PDF'}
-                                        </button>
-                                        <button onClick={() => handleEdit(plan)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-semibold text-sm">Editar</button>
-                                        <button onClick={() => handleDelete(plan.id)} title="Eliminar" className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/40">🗑️</button>
+                        {planificaciones.map(plan => {
+                             // ✅ DEBUG: console.log añadido para inspeccionar el objeto plan
+                            console.log('Inspeccionando objeto plan:', plan);
+                            return (
+                                <div key={plan.id} className="p-4 border dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-700/50">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">{plan.nombreProyecto}</h3>
+                                            <p className="text-sm text-slate-500 dark:text-slate-400">Cursos: {(plan.cursos || []).join(', ')}</p>
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <button onClick={() => setViewingSubmissionsForPlan(plan)} className="text-green-600 hover:text-green-800 dark:text-green-400 font-semibold text-sm">Ver Entregas</button>
+                                            <button 
+                                                onClick={() => handleExportProjectPDF(plan)} 
+                                                disabled={isExportingId === plan.id}
+                                                className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-semibold text-sm disabled:opacity-50"
+                                            >
+                                                {isExportingId === plan.id ? 'Exportando...' : 'Exportar PDF'}
+                                            </button>
+                                            <button onClick={() => handleEdit(plan)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-semibold text-sm">Editar</button>
+                                            <button onClick={() => handleDelete(plan.id)} title="Eliminar" className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/40">🗑️</button>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            )
+                        })}
                     </div>
                 </div>
             ) : <PlanificacionForm initialPlan={editingPlan} onSave={handleSave} onCancel={() => { setView('list'); setEditingPlan(null); }} />}
