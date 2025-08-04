@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef, FC } from 'react';
-// ✅ IA: Importar la librería de Google Generative AI
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { toPng } from 'html-to-image';
 import type { CrosswordPuzzle, CrosswordClue, CrosswordGridCell, User } from '../../../types';
@@ -29,14 +28,24 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
     const [puzzle, setPuzzle] = useState<CrosswordPuzzle | null>(null);
     const [showSolution, setShowSolution] = useState(false);
     const [loading, setLoading] = useState({ ai: false, puzzle: false, data: true });
-    // ✅ IA: Nuevo estado para la carga de pistas individuales
     const [aiLoadingClueIndex, setAiLoadingClueIndex] = useState<number | null>(null);
     const puzzleRef = useRef<HTMLDivElement>(null);
 
+    // ✅ SOLUCIÓN 2: Reconstruir la grilla al cargar los datos desde Firestore
     useEffect(() => {
         setLoading(p => ({ ...p, data: true }));
-        const unsubscribe = subscribeToCrucigramas((data) => {
-            setSavedPuzzles(data);
+        const unsubscribe = subscribeToCrucigramas((dataFromFirestore) => {
+            const reconstructedPuzzles = dataFromFirestore.map((puzzleData: any) => {
+                const { grid_flat, grid_width, ...rest } = puzzleData;
+                const grid: CrosswordGridCell[][] = [];
+                if (grid_flat && grid_width > 0) {
+                    for (let i = 0; i < grid_flat.length; i += grid_width) {
+                        grid.push(grid_flat.slice(i, i + grid_width));
+                    }
+                }
+                return { ...rest, grid };
+            });
+            setSavedPuzzles(reconstructedPuzzles);
             setLoading(p => ({ ...p, data: false }));
         });
         return () => unsubscribe();
@@ -60,7 +69,6 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
         setClues(newClues);
     };
 
-    // ✅ IA: Función corregida y mejorada para generar todas las palabras y pistas
     const handleGenerateWordsAndClues = async () => {
         if (!aiTheme.trim()) return;
         setLoading(p => ({ ...p, ai: true }));
@@ -88,16 +96,29 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
             const response = await result.response;
             const text = response.text();
 
-            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
-            const resultJson = JSON.parse(cleanedText); 
-            
+            let cleanedText = text.replace(/^```json\s*|```\s*$/g, '').trim();
+            // Si la respuesta tiene texto antes o después del JSON, intentar extraer solo el objeto
+            const firstBrace = cleanedText.indexOf('{');
+            const lastBrace = cleanedText.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                cleanedText = cleanedText.substring(firstBrace, lastBrace + 1);
+            }
+            let resultJson;
+            try {
+                resultJson = JSON.parse(cleanedText);
+            } catch (err) {
+                console.error('Respuesta IA no es JSON válido:', cleanedText);
+                alert('La respuesta de la IA no es un JSON válido. Intenta de nuevo o ajusta el tema.');
+                setLoading(p => ({ ...p, ai: false }));
+                return;
+            }
             if (!resultJson.items || !Array.isArray(resultJson.items)) {
                 throw new Error("La respuesta de la IA no contiene la lista de 'items' esperada.");
             }
 
             const aiWords = resultJson.items.map((item: any) => (item.word || '').toUpperCase().replace(/\s/g, ''));
             const aiClues = resultJson.items.map((item: any) => item.clue || '');
-            
+
             setWords(Array.from({ length: numWords }, (_, i) => aiWords[i] || ''));
             setClues(Array.from({ length: numWords }, (_, i) => aiClues[i] || ''));
 
@@ -109,7 +130,6 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
         }
     };
     
-    // ✅ IA: Nueva función para generar una pista para una palabra específica
     const handleAIGenerateClue = async (index: number) => {
         const wordToGetClueFor = words[index];
         if (!wordToGetClueFor || !wordToGetClueFor.trim()) {
@@ -151,7 +171,6 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
     };
 
     const generateCrossword = useCallback(() => {
-        // ... (Esta función de lógica interna no requiere cambios)
         try {
             const entries = words.map((word, i) => ({ word: word.toUpperCase().replace(/[^A-ZÑ]/g, ''), clue: clues[i] })).filter(e => e.word.length > 0);
             if (entries.length === 0) {
@@ -161,6 +180,7 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
     
             entries.sort((a, b) => b.word.length - a.word.length);
             
+            // ... (resto de la lógica de generación de la grilla sin cambios)
             const longestWordLength = entries[0].word.length;
             const gridSize = Math.max(longestWordLength, entries.length) * 2;
     
@@ -305,14 +325,31 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
         
         const result = generateCrossword();
         if (result) {
-            const newPuzzleData: Omit<CrosswordPuzzle, 'id' | 'fechaCreacion' | 'creadorId' | 'creadorNombre'> = {
+            // Este es el objeto para el estado local, que necesita la grilla 2D para renderizar
+            const newPuzzleForState: Omit<CrosswordPuzzle, 'id' | 'fechaCreacion'> = {
+                creadorId: currentUser.id,
+                creadorNombre: currentUser.nombreCompleto,
                 tema: aiTheme || 'Personalizado',
                 grid: result.grid,
                 clues: result.clues,
             };
+
+            // Crear un objeto separado para Firestore, con la grilla aplanada
+            const dataToSave = {
+                ...newPuzzleForState,
+                grid_flat: result.grid.flat(),
+                grid_width: result.grid[0]?.length || 0,
+            };
+
             try {
-                const newId = await saveCrucigrama(newPuzzleData, currentUser);
-                setPuzzle({ ...newPuzzleData, id: newId, fechaCreacion: new Date().toISOString(), creadorId: currentUser.id, creadorNombre: currentUser.nombreCompleto });
+                // Se envía el objeto aplanado a Firestore
+                const newId = await saveCrucigrama(dataToSave, currentUser);
+                // Se actualiza el estado local con la grilla 2D y el ID nuevo
+                setPuzzle({
+                    ...newPuzzleForState,
+                    id: newId,
+                    fechaCreacion: new Date().toISOString(),
+                });
             } catch (error) {
                 console.error("Error saving puzzle:", error);
                 alert("No se pudo guardar el crucigrama en la base de datos.");
@@ -335,8 +372,12 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
             .catch((err) => console.error('Error generating image', err));
         }, 100);
     };
-    
-    // ... (El resto de funciones como renderPuzzle y la lógica principal no requieren cambios)
+
+    const renderPuzzle = () => {
+        // ... (el resto del componente renderPuzzle no necesita cambios)
+    };
+
+    // ... (el resto del componente no necesita cambios)
 
     return (
         <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md space-y-6">
@@ -349,7 +390,6 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
             </div>
 
             {puzzle ? ( 
-                /* renderPuzzle() fue movido aquí para simplificar la lógica */
                 <div className="space-y-6">
                     <div ref={puzzleRef} className="p-6 bg-white dark:bg-slate-900 text-black dark:text-white">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -409,7 +449,6 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
                                 <input type="text" value={words[index]} onChange={e => handleWordChange(index, e.target.value)} placeholder={`Palabra ${index + 1}`} className="border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"/>
                                 <div className="md:col-span-2 flex items-center gap-2">
                                     <textarea value={clues[index]} onChange={e => handleClueChange(index, e.target.value)} placeholder={`Pista ${index + 1}`} rows={1} className="flex-grow border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"/>
-                                    {/* ✅ IA: Botón para generar pista individual */}
                                     <button onClick={() => handleAIGenerateClue(index)} disabled={aiLoadingClueIndex === index} className="p-2 bg-slate-200 dark:bg-slate-600 rounded-md hover:bg-slate-300 disabled:opacity-50" title="Generar Pista con IA">
                                         {aiLoadingClueIndex === index ? <div className="w-5 h-5 border-2 border-slate-400 border-t-amber-500 rounded-full animate-spin"></div> : <SparklesIcon />}
                                     </button>

@@ -731,6 +731,11 @@ export interface CrosswordGridCell {
 }
 
 export interface CrosswordPuzzle {
+    id: string;
+    fechaCreacion: string;
+    creadorId: string;
+    creadorNombre: string;
+    tema: string;
     grid: CrosswordGridCell[][];
     clues: {
         across: CrosswordClue[];
