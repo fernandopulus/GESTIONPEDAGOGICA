@@ -96,13 +96,27 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
             const response = await result.response;
             const text = response.text();
 
+
             let cleanedText = text.replace(/^```json\s*|```\s*$/g, '').trim();
-            // Si la respuesta tiene texto antes o después del JSON, intentar extraer solo el objeto
+            // Extraer solo el objeto JSON si hay texto antes/después
             const firstBrace = cleanedText.indexOf('{');
             const lastBrace = cleanedText.lastIndexOf('}');
             if (firstBrace !== -1 && lastBrace !== -1) {
                 cleanedText = cleanedText.substring(firstBrace, lastBrace + 1);
             }
+
+            // Solución: limpiar comas extra entre objetos del array
+            cleanedText = cleanedText.replace(/},\s*([\r\n\s]*){/g, '}__SPLIT__{');
+            if (cleanedText.includes('__SPLIT__')) {
+                cleanedText = cleanedText.replace(/("items"\s*:\s*\[)([\s\S]*?)(\])/m, (match, p1, p2, p3) => {
+                    const arr = p2.split('__SPLIT__').map(s => s.trim().replace(/,$/, ''));
+                    return p1 + arr.join(',') + p3;
+                });
+            }
+
+            // Eliminar comas extra antes de cerrar el array
+            cleanedText = cleanedText.replace(/,\s*]/g, ']');
+
             let resultJson;
             try {
                 resultJson = JSON.parse(cleanedText);
@@ -335,9 +349,10 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
             };
 
             // Crear un objeto separado para Firestore, con la grilla aplanada
+            // Firestore no permite arrays anidados, así que guardamos solo los caracteres
             const dataToSave = {
                 ...newPuzzleForState,
-                grid_flat: result.grid.flat(),
+                grid_flat: result.grid.flat().map(cell => cell.char || ''),
                 grid_width: result.grid[0]?.length || 0,
             };
 

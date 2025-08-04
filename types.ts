@@ -788,3 +788,31 @@ export interface AnalisisTaxonomico {
     }[];
     summary: Record<BloomLevel, number>;
 }
+
+// En tu archivo types.ts
+
+// --- GESTIÓN DE EMPRESAS Y PRÁCTICAS TP ---
+
+export interface CalificacionItem {
+  elemento: string; // Ej: "Cumplimiento legal y formalidad"
+  score: 1 | 2 | 3 | null; // 1: Insatisfactorio, 2: Regular, 3: Óptimo
+}
+
+export interface Empresa {
+  id: string;
+  nombre: string;
+  rut: string;
+  direccion: string;
+  contacto: string; // Puede ser un email, teléfono, o nombre de contacto.
+  cupos: number; // Cantidad de vacantes para práctica
+  calificaciones: CalificacionItem[];
+  estudiantesAsignados: string[]; // Se guardará un array de los IDs de los estudiantes
+  puntajeTotal?: number; // Suma de todos los scores de 'calificaciones'
+  createdAt: any; // Se recomienda usar serverTimestamp() de Firestore
+}
+
+// (Opcional) Si necesitas un tipo específico para la data guardada en Firestore
+// que es ligeramente diferente a la del estado de React.
+export interface EmpresaFirestoreData extends Omit<Empresa, 'id' | 'createdAt'> {
+    createdAt: any; // serverTimestamp
+}

@@ -32,6 +32,7 @@ import TareasInterdisciplinariasEstudiante from './modules/TareasInterdisciplina
 import AcompanamientoDocenteProfesor from './modules/AcompanamientoDocenteProfesor';
 import SeguimientoCurricular from './modules/SeguimientoCurricular';
 import AnalisisTaxonomico from './modules/AnalisisTaxonomico';
+import GestionEmpresas from './modules/GestionEmpresas'; // ✅ IMPORTA EL NUEVO MÓDULO
 
 interface DashboardProps {
     currentUser: User;
@@ -171,6 +172,8 @@ const Dashboard: React.FC<DashboardProps> = ({
             if (activeModule.name === 'Seguimiento Dual') return <SeguimientoDual />;
             if (activeModule.name === 'Asistencia Dual') return <AsistenciaDual />;
             if (activeModule.name === 'Pañol') return <Panol />;
+            // ✅ AÑADE ESTA LÍNEA PARA RENDERIZAR TU MÓDULO
+            if (activeModule.name === 'Gestión de Empresas') return <GestionEmpresas />;
         }
 
         if (profile === Profile.ESTUDIANTE) {

@@ -1,3 +1,9 @@
+// Ícono de edificio para módulos relacionados
+export const BuildingIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m-1 4h1m5-4h1m-1 4h1" />
+  </svg>
+);
 import React from 'react';
 import { Profile, Module, NivelPlanificacion, EstadoAccion, EventType, EvaluacionSubtype, TipoReunion, TipoInstrumento, EscalaCalificacion, PruebaItemTipo, NivelLogro, EstadoSeguimientoDual, TipoActividadRemota, DificultadAprendizaje, Insignia } from './types';
 
@@ -135,6 +141,8 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Seguimiento Dual', icon: <TrendingUpIcon /> },
         { name: 'Asistencia Dual', icon: <ClockIcon /> },
         { name: 'Pañol', icon: <WrenchScrewdriverIcon /> },
+        // ✅ AÑADE TU NUEVO MÓDULO AQUÍ
+        { name: 'Gestión de Empresas', icon: <BuildingIcon /> },
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
         { name: 'Muro de Anuncios', icon: <BellIcon /> },
         { name: 'Mensajería Interna', icon: <MessageSquareIcon /> },

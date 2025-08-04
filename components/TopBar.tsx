@@ -124,6 +124,14 @@ const TopBar: React.FC<TopBarProps> = ({
 
                     {/* Right Side */}
                     <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
+                            <img
+                                src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754153206/ChatGPT_Image_2_ago_2025_12_46_35_p.m._qsqj5e.png"
+                                alt="Logo LIR"
+                                className="h-10 w-10 object-contain"
+                            />
+                            {/* ...otros elementos a la izquierda... */}
+                        </div>
                         <Dropdown
                             onOpen={handleOpenAnnouncements}
                             trigger={
