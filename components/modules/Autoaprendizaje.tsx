@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ActividadRemota, RespuestaEstudianteActividad, User, TipoActividadRemota, QuizQuestion, PareadoItem, ComprensionLecturaContent, DesarrolloContent, DetailedFeedback, PuntajesPorSeccion } from '../../types';
-// Se elimina la importación directa de GoogleGenAI
 import { logApiCall } from '../utils/apiLogger';
 import {
     subscribeToActividadesDisponibles,
     subscribeToRespuestasEstudiante,
     saveRespuestaActividad
-} from '../../src/firebaseHelpers/autoaprendizajeHelper'; // AJUSTA la ruta a tu nuevo helper
+} from '../../src/firebaseHelpers/autoaprendizajeHelper';
+
+// ✅ CORRECCIÓN 1: Importar la librería de Google Generative AI
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
 
 const shuffleArray = (array: any[]) => {
     return [...array].sort(() => Math.random() - 0.5);
@@ -40,7 +43,7 @@ const SpinnerIcon = () => (
 // --- Activity Player Component ---
 interface ActivityPlayerProps {
     actividad: ActividadRemota;
-    onComplete: (submission: Omit<RespuestaEstudianteActividad, 'id' | 'actividadId' | 'estudianteId' | 'fechaCompletado'>) => void;
+    onComplete: (submission: Omit<RespuestaEstudianteActividad, 'id' | 'actividadId' | 'estudianteId' | 'fechaCompletado' | 'retroalimentacionDetallada'>, detailedFeedback?: DetailedFeedback) => void;
     currentUser: User;
 }
 
@@ -106,6 +109,16 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
         const feedbackResults: string[] = [];
         const puntajesPorSeccion: PuntajesPorSeccion = {};
 
+        // ✅ CORRECCIÓN 2: Cargar la API Key desde el entorno
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        let ai: GoogleGenerativeAI | null = null;
+        if(apiKey) {
+            // ✅ CORRECCIÓN 3: Instanciar la IA directamente
+            ai = new GoogleGenerativeAI(apiKey);
+        } else {
+            console.error("VITE_GEMINI_API_KEY no está configurada. La evaluación de desarrollo y la retroalimentación detallada no funcionarán.");
+        }
+
 
         for (const tipo of actividad.tipos) {
             const content = actividad.generatedContent[tipo];
@@ -147,12 +160,24 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
                 for(let i = 0; i < devContentArray.length; i++) {
                     const devContent = devContentArray[i];
                     puntajeMaxParcial += 3;
+                    if (!ai) { // Si la IA no se pudo inicializar
+                        feedbackResults.push(`${tipo} #${i+1}: No se pudo evaluar automáticamente.`);
+                        continue;
+                    }
+
                     try {
                         logApiCall('Autoaprendizaje - Evaluar Desarrollo');
-                        const apiKey = "";
-                        const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
-                        const model = ai.getGenerativeModel({ model: "gemini-pro" });
-                        const prompt = `Evalúa la siguiente respuesta de un estudiante a la pregunta de desarrollo, basándote en la rúbrica proporcionada. Asigna un puntaje de 0 a 3. Pregunta: "${devContent.pregunta}". Rúbrica: "${devContent.rubrica}". Respuesta: "${devAnswer[i] || ''}". Proporciona también una frase corta de feedback.`;
+                        const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+                        
+                        // ✅ MEJORA 4: Prompt fortalecido pidiendo JSON explícitamente
+                        const prompt = `Evalúa la siguiente respuesta de un estudiante a la pregunta de desarrollo, basándote en la rúbrica proporcionada.
+                        Pregunta: "${devContent.pregunta}".
+                        Rúbrica: "${devContent.rubrica}".
+                        Respuesta del estudiante: "${devAnswer[i] || ''}".
+                        
+                        Tu respuesta DEBE ser un objeto JSON con dos claves:
+                        1. "puntaje": un número entero de 0 a 3.
+                        2. "feedback": una frase corta y constructiva para el estudiante.`;
                         
                         const result = await model.generateContent(prompt);
                         const response = await result.response;
@@ -160,11 +185,12 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
 
                         const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
                         const resultJson = JSON.parse(cleanedText);
-                        const score = Math.max(0, Math.min(3, resultJson.puntaje || 0));
+                        const score = Math.max(0, Math.min(3, parseInt(resultJson.puntaje, 10) || 0));
+                        
                         puntajeParcial += score;
                         feedbackResults.push(`${tipo} #${i+1}: Puntaje ${score}/3. (${resultJson.feedback})`);
                     } catch(e) {
-                        console.error(e);
+                        console.error("Error evaluating development question:", e);
                         feedbackResults.push(`${tipo} #${i+1}: No se pudo evaluar automáticamente.`);
                     }
                 }
@@ -173,17 +199,48 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
                  puntajesPorSeccion[tipo] = { puntaje: puntajeParcial, puntajeMaximo: puntajeMaxParcial };
             }
         }
-
-        let retroalimentacionFinal = `¡Buen trabajo! Tu puntaje total es ${totalPuntaje} de ${totalPuntajeMaximo}.`;
         
+        let detailedFeedback: DetailedFeedback | undefined = undefined;
+        if(ai) { // Solo intentar generar feedback si la IA está disponible
+             const feedbackPrompt = `
+                Un estudiante ha completado una actividad sobre "${actividad.contenido}".
+                Su puntaje total fue ${totalPuntaje} de ${totalPuntajeMaximo}.
+                Detalle por sección: ${JSON.stringify(puntajesPorSeccion)}
+                Respuestas de desarrollo: ${JSON.stringify(userAnswers['Desarrollo'] || {})}
+                
+                Genera una retroalimentación detallada y constructiva en español. La respuesta DEBE ser un objeto JSON con la siguiente estructura:
+                {
+                  "resumenGeneral": "Un párrafo breve y motivador sobre el desempeño general.",
+                  "areasDeFortaleza": ["Un array de 2 o 3 strings destacando lo que hizo bien."],
+                  "areasDeMejora": ["Un array de 2 o 3 strings con áreas a mejorar."],
+                  "planDeMejora": [{ "paso": "Repasar conceptos clave", "detalle": "Una sugerencia concreta."}],
+                  "feedbackPorSeccion": { "Quiz": "Feedback específico para esta sección." }
+                }
+            `;
+            try {
+                logApiCall('Autoaprendizaje - Retroalimentación Detallada');
+                const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+                const result = await model.generateContent(feedbackPrompt);
+                const response = await result.response;
+                const text = response.text();
+                
+                const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
+                detailedFeedback = JSON.parse(cleanedText);
+            } catch (e) {
+                console.error("Error generating detailed feedback:", e);
+                // No detenemos el flujo, el feedback detallado será opcional
+            }
+        }
+
+
         onComplete({
             respuestas: userAnswers,
             puntaje: totalPuntaje,
             puntajeMaximo: totalPuntajeMaximo,
-            retroalimentacion: retroalimentacionFinal,
+            retroalimentacion: `¡Buen trabajo! Tu puntaje total es ${totalPuntaje} de ${totalPuntajeMaximo}.`,
             calificacion: calculateGrade(totalPuntaje, totalPuntajeMaximo),
             puntajesPorSeccion: puntajesPorSeccion
-        });
+        }, detailedFeedback);
 
         localStorage.removeItem(progressKey);
         setIsLoading(false);
@@ -191,6 +248,7 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
 
     const hasRecursos = actividad.recursos && (actividad.recursos.instrucciones || actividad.recursos.enlaces || actividad.recursos.archivos?.length);
 
+    // El resto del componente ActivityPlayer (la parte JSX) no necesita cambios...
     return (
         <div className="space-y-8">
             <div className="p-4 bg-sky-50 dark:bg-sky-900/30 border-l-4 border-sky-400 rounded-r-lg">
@@ -393,57 +451,35 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
         }
     };
 
-    const handleCompleteActivity = useCallback(async (submission: Omit<RespuestaEstudianteActividad, 'id' | 'actividadId' | 'estudianteId' | 'fechaCompletado'>) => {
+    // Ajustamos la firma para recibir el feedback detallado por separado
+    const handleCompleteActivity = useCallback(async (
+        submission: Omit<RespuestaEstudianteActividad, 'id' | 'actividadId' | 'estudianteId' | 'fechaCompletado' | 'retroalimentacionDetallada'>,
+        detailedFeedback?: DetailedFeedback
+    ) => {
         if (!selectedActividad) return;
-        
-        let detailedFeedback: DetailedFeedback | undefined = undefined;
-        const feedbackPrompt = `
-            Un estudiante ha completado una actividad sobre "${selectedActividad.contenido}".
-            Su puntaje total fue ${submission.puntaje} de ${submission.puntajeMaximo}.
-            Detalle por sección: ${JSON.stringify(submission.puntajesPorSeccion || {})}
-            Respuestas de desarrollo: ${JSON.stringify(submission.respuestas['Desarrollo'] || {})}
-            
-            Genera una retroalimentación detallada y constructiva en español. La respuesta DEBE ser un objeto JSON con la siguiente estructura:
-            - "resumenGeneral": Un párrafo breve y motivador sobre el desempeño general.
-            - "areasDeFortaleza": Un array de 2 o 3 strings destacando lo que hizo bien.
-            - "areasDeMejora": Un array de 2 o 3 strings con áreas a mejorar.
-            - "planDeMejora": Un array de 3 objetos, cada uno con "paso" (string, ej: "Repasar conceptos clave") y "detalle" (string, una sugerencia concreta).
-            - "feedbackPorSeccion": Un objeto donde cada clave es el tipo de actividad (ej: "Quiz") y el valor es un string con feedback específico para esa sección.
-        `;
-        
-        try {
-            logApiCall('Autoaprendizaje - Retroalimentación Detallada');
-            const apiKey = "";
-            const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-pro" });
-            const result = await model.generateContent(feedbackPrompt);
-            const response = await result.response;
-            const text = response.text();
-            
-            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
-            detailedFeedback = JSON.parse(cleanedText);
-        } catch (e) {
-            console.error("Error generating detailed feedback:", e);
-        }
         
         const newRespuesta: Omit<RespuestaEstudianteActividad, 'id'> = {
             actividadId: selectedActividad.id,
             estudianteId: currentUser.nombreCompleto,
+            fechaCompletado: new Date().toISOString(),
             ...submission,
-            retroalimentacionDetallada: detailedFeedback,
+            // Aquí asignamos el feedback, que puede ser undefined si la IA falló
+            retroalimentacionDetallada: detailedFeedback, 
         };
         
         try {
             const newId = await saveRespuestaActividad(newRespuesta);
-            setLastResult({ ...newRespuesta, id: newId, fechaCompletado: new Date().toISOString() });
+            setLastResult({ ...newRespuesta, id: newId });
             setView('result');
         } catch (error) {
+            // Este error ya lo maneja el 'try-catch' interno del helper de Firebase, pero por si acaso.
             console.error("Error saving submission:", error);
-            alert("No se pudo guardar tu respuesta.");
+            alert("No se pudo guardar tu respuesta. El error fue: " + (error as Error).message);
         }
 
     }, [selectedActividad, currentUser.nombreCompleto]);
     
+    // El resto del componente Autoaprendizaje (la parte JSX) no necesita cambios...
     if (loading) {
         return <div className="text-center py-10">Cargando actividades...</div>;
     }

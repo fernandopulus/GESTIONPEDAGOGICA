@@ -7,7 +7,12 @@ import {
     subscribeToRespuestas,
     subscribeToAllUsers,
     createActividad
-} from '../../src/firebaseHelpers/actividadesRemotasHelper'; // AJUSTA la ruta a tu nuevo helper
+} from '../../src/firebaseHelpers/actividadesRemotasHelper';
+
+// Importar el SDK de Gemini (GoogleGenAI)
+// Asegúrate de tener instalado el paquete @google/generative-ai
+// npm install @google/generative-ai
+import { GoogleGenerativeAI as GoogleGenAI } from '@google/generative-ai';
 
 const ITEM_QUANTITIES: Record<TipoActividadRemota, number[]> = {
     'Quiz': [5, 10, 15],
@@ -143,21 +148,152 @@ const ActividadesRemotas: React.FC = () => {
         });
     };
     
+    // ✅ CÓDIGO ACTUALIZADO: Prompt fortalecido
     const buildPrompt = () => {
         const { tipos, contenido, asignatura, nivel, cantidadPreguntas } = formData;
         let prompt = `Eres un experto diseñador de actividades pedagógicas. Genera un objeto JSON que se ajuste al esquema, sin texto adicional.\n\nContenido base: "${contenido}"\nAsignatura: ${asignatura}\nNivel: ${nivel}\n\nGenera los siguientes elementos:\n- **introduccion**: Una breve introducción motivadora para el estudiante sobre el tema: "${contenido}".\n- **actividades**: Un objeto que contiene las actividades. Cada actividad es una propiedad con su nombre como clave:\n`;
         tipos.forEach(tipo => {
             const cantidad = cantidadPreguntas[tipo] || ITEM_QUANTITIES[tipo][0];
             switch (tipo) {
-                case 'Quiz': prompt += `- **Quiz**: Genera un quiz de ${cantidad} preguntas de selección múltiple sobre el contenido. Cada una con 4 opciones.\n`; break;
-                case 'Comprensión de Lectura': prompt += `- **Comprensión de Lectura**: Genera ${cantidad} actividad(es) de comprensión. Cada una con un texto de 150-200 palabras y 4 preguntas de selección múltiple.\n`; break;
-                case 'Términos Pareados': prompt += `- **Términos Pareados**: Genera ${cantidad} pares de términos pareados (concepto y definición).\n`; break;
-                case 'Desarrollo': prompt += `- **Desarrollo**: Genera ${cantidad} pregunta(s) de desarrollo con una rúbrica simple en texto.\n`; break;
+                case 'Quiz': prompt += `- **Quiz**: Un array de ${cantidad} objetos. Cada objeto debe tener: "pregunta" (string), "opciones" (array de 4 strings) y "respuestaCorrecta" (string).\n`; break;
+                case 'Comprensión de Lectura': prompt += `- **Comprensión de Lectura**: Un array de ${cantidad} objetos. Cada objeto debe tener "texto" (string de 150-200 palabras) y "preguntas" (un array de 4 objetos, cada uno con "pregunta", "opciones" y "respuestaCorrecta").\n`; break;
+                case 'Términos Pareados': prompt += `- **Términos Pareados**: Un array de ${cantidad} objetos. Cada objeto debe tener "concepto" (string) y "definicion" (string).\n`; break;
+                case 'Desarrollo': prompt += `- **Desarrollo**: Un array de ${cantidad} objetos. Cada objeto debe tener una clave "pregunta" (string con la pregunta) y una clave "rubrica" (string con la rúbrica de evaluación).\n`; break;
             }
         });
         return prompt;
     };
 
+
+    // Función para adaptar la respuesta de Gemini a los formatos esperados
+    function autoAdaptContent(tipo: TipoActividadRemota, content: any) {
+        if (tipo === 'Desarrollo') {
+            // Esperado: array de objetos { pregunta, rubrica }
+            if (Array.isArray(content)) {
+                return content.map(item => {
+                    if (typeof item === 'string') {
+                        // Buscar patrón "Pregunta... Rúbrica..." o similar
+                        const match = item.match(/^(.*?)(?:R[úu]brica:|RUBRICA:|Rubrica:)(.*)$/is);
+                        if (match) {
+                            return { pregunta: match[1].trim(), rubrica: match[2].trim() };
+                        }
+                        // Si no, separar por salto doble
+                        return { pregunta: item.trim(), rubrica: '' };
+                    }
+                    if (item && typeof item === 'object') {
+                        return {
+                            pregunta: item.pregunta || item.Pregunta || item.texto || '',
+                            rubrica: item.rubrica || item.Rubrica || item.rúbrica || item.Rúbrica || ''
+                        };
+                    }
+                    return { pregunta: String(item), rubrica: '' };
+                });
+            } else if (typeof content === 'string') {
+                // Separar por doble salto de línea o guiones
+                return content.split(/\n\n|\n- |\d+\. /).map(str => {
+                    const match = str.match(/^(.*?)(?:R[úu]brica:|RUBRICA:|Rubrica:)(.*)$/is);
+                    if (match) {
+                        return { pregunta: match[1].trim(), rubrica: match[2].trim() };
+                    }
+                    return { pregunta: str.trim(), rubrica: '' };
+                }).filter(obj => obj.pregunta);
+            }
+        }
+        if (tipo === 'Términos Pareados') {
+            // Esperado: array de objetos { concepto, definicion }
+            if (Array.isArray(content)) {
+                return content.map((item, idx) => {
+                    if (typeof item === 'string') {
+                        // Buscar patrón "concepto: definición" o "concepto - definición"
+                        const match = item.match(/^(.+?)[\s:-–]+(.+)$/);
+                        if (match) {
+                            return { id: idx, concepto: match[1].trim(), definicion: match[2].trim() };
+                        }
+                        return { id: idx, concepto: item.trim(), definicion: '' };
+                    }
+                    if (item && typeof item === 'object') {
+                        return { id: idx, concepto: item.concepto || item.termino || '', definicion: item.definicion || item.significado || '' };
+                    }
+                    return { id: idx, concepto: String(item), definicion: '' };
+                });
+            } else if (typeof content === 'object' && content !== null) {
+                // Si es objeto, convertir a array
+                return Object.entries(content).map(([concepto, definicion], idx) => ({ id: idx, concepto, definicion }));
+            } else if (typeof content === 'string') {
+                // Separar por saltos de línea o punto y coma
+                return content.split(/\n|;/).map((str, idx) => {
+                    const match = str.match(/^(.+?)[\s:-–]+(.+)$/);
+                    if (match) {
+                        return { id: idx, concepto: match[1].trim(), definicion: match[2].trim() };
+                    }
+                    return { id: idx, concepto: str.trim(), definicion: '' };
+                }).filter(obj => obj.concepto);
+            }
+        }
+        if (tipo === 'Comprensión de Lectura') {
+            // Esperado: objeto { texto, preguntas: [...] }
+            if (content && typeof content === 'object' && Array.isArray(content.preguntas)) {
+                // Asegurar que cada pregunta tenga opciones y respuestaCorrecta
+                return {
+                    texto: content.texto || '',
+                    preguntas: content.preguntas.map((q: any) => ({
+                        pregunta: q.pregunta || q.Pregunta || '',
+                        opciones: q.opciones || q.Opciones || [],
+                        respuestaCorrecta: q.respuestaCorrecta || q.respuesta || ''
+                    }))
+                };
+            }
+            if (Array.isArray(content)) {
+                // Si los elementos tienen texto y preguntas
+                const first = content.find(c => c && typeof c === 'object' && 'texto' in c && 'preguntas' in c);
+                if (first) {
+                    return {
+                        texto: first.texto || '',
+                        preguntas: (first.preguntas || []).map((q: any) => ({
+                            pregunta: q.pregunta || q.Pregunta || '',
+                            opciones: q.opciones || q.Opciones || [],
+                            respuestaCorrecta: q.respuestaCorrecta || q.respuesta || ''
+                        }))
+                    };
+                }
+                // Si es array de strings, unir como texto
+                return {
+                    texto: content.map(c => (typeof c === 'string' ? c : JSON.stringify(c))).join('\n'),
+                    preguntas: []
+                };
+            }
+            if (typeof content === 'string') {
+                // Intentar separar texto y preguntas por algún separador
+                const [texto, preguntasStr] = content.split(/Preguntas:|\nPreguntas:/i);
+                let preguntas = [];
+                if (preguntasStr) {
+                    preguntas = preguntasStr.split(/\n- |\n\d+\. /).filter(Boolean).map(q => {
+                        // Buscar opciones dentro de la pregunta
+                        const partes = q.split(/Opciones:|\nOpciones:/i);
+                        const pregunta = partes[0].trim();
+                        let opciones: string[] = [];
+                        let respuestaCorrecta = '';
+                        if (partes[1]) {
+                            // Buscar opciones separadas por punto y coma o salto de línea
+                            opciones = partes[1].split(/;|\n|,/).map(o => o.trim()).filter(Boolean);
+                        }
+                        // Buscar respuesta correcta
+                        const respMatch = q.match(/Respuesta\s*correcta\s*:?\s*(.*)/i);
+                        if (respMatch) {
+                            respuestaCorrecta = respMatch[1].trim();
+                        }
+                        return { pregunta, opciones, respuestaCorrecta };
+                    });
+                }
+                return {
+                    texto: texto?.trim() || content,
+                    preguntas
+                };
+            }
+        }
+        // Por defecto, devolver el contenido tal cual
+        return content;
+    }
 
     const handleGeneratePreview = async (e: FormEvent) => {
         e.preventDefault();
@@ -167,7 +303,7 @@ const ActividadesRemotas: React.FC = () => {
         }
         setIsLoading(true);
         setError(null);
-        
+
         try {
             const processedFiles: ArchivoAdjuntoRecurso[] = await Promise.all(
                 selectedFiles.map(async file => ({
@@ -176,19 +312,29 @@ const ActividadesRemotas: React.FC = () => {
                 }))
             );
 
-            const apiKey = "";
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
-            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            if (!apiKey) {
+                setError("No se encontró la API Key de Gemini. Configura VITE_GEMINI_API_KEY en tu entorno.");
+                setIsLoading(false);
+                return;
+            }
             
+            const ai = new GoogleGenAI(apiKey);
+            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" }); // Usar modelo recomendado
+
             const prompt = buildPrompt();
-            
+
             const result = await model.generateContent(prompt);
             const response = await result.response;
-            const text = response.text();
+            const text = await response.text();
             
-            // Limpiar el texto de la respuesta para asegurar que sea un JSON válido
             const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
             const generatedData = JSON.parse(cleanedText);
+
+            const adaptedContent: Record<string, any> = {};
+            for (const tipo of formData.tipos) {
+                adaptedContent[tipo] = autoAdaptContent(tipo, generatedData.actividades?.[tipo]);
+            }
 
             const newActividad: ActividadRemota = {
                 id: '', // Firestore generará el ID
@@ -199,14 +345,14 @@ const ActividadesRemotas: React.FC = () => {
                     archivos: processedFiles
                 },
                 introduccion: generatedData.introduccion,
-                generatedContent: generatedData.actividades,
+                generatedContent: adaptedContent,
             };
 
             setPreviewData(newActividad);
 
         } catch (e) {
             console.error("Error al generar actividad con IA", e);
-            setError("Error al generar la actividad. Por favor, revise el contenido e inténtelo de nuevo.");
+            setError("Error al generar la actividad. Por favor, revise el contenido e inténtelo de nuevo. Detalle: " + e.message);
         } finally {
             setIsLoading(false);
         }
@@ -376,12 +522,13 @@ const ActividadesRemotas: React.FC = () => {
         </div>
     );
     
+    // ✅ CÓDIGO ACTUALIZADO: Función de renderizado completamente nueva y corregida
     const renderPreview = () => (
         <div className="bg-white p-6 md:p-8 rounded-xl shadow-md">
             <h2 className="text-2xl font-bold text-slate-800">Previsualización de la Actividad</h2>
             <p className="text-slate-500 mt-1 mb-6">Revisa el contenido generado. Si todo está correcto, confirma para asignar la actividad.</p>
             <div className="space-y-6 max-h-[60vh] overflow-y-auto p-4 bg-slate-50 rounded-lg border">
-                 <div className="p-4 bg-sky-50 border-l-4 border-sky-400 rounded-r-lg"><h3 className="font-bold text-sky-800 mb-2">Introducción para el Estudiante</h3><p className="text-slate-700 whitespace-pre-wrap">{previewData?.introduccion}</p></div>
+                <div className="p-4 bg-sky-50 border-l-4 border-sky-400 rounded-r-lg"><h3 className="font-bold text-sky-800 mb-2">Introducción para el Estudiante</h3><p className="text-slate-700 whitespace-pre-wrap">{previewData?.introduccion}</p></div>
                 
                 {previewData?.recursos && (previewData.recursos.instrucciones || previewData.recursos.enlaces || previewData.recursos.archivos?.length) && (
                     <div className="p-4 bg-indigo-50 border-l-4 border-indigo-400 rounded-r-lg">
@@ -403,12 +550,77 @@ const ActividadesRemotas: React.FC = () => {
                 {previewData?.tipos.map(tipo => {
                     const content = previewData.generatedContent[tipo];
                     if (!content) return null;
-                    return (<div key={tipo} className="p-4 border rounded-lg bg-white"><h3 className="text-xl font-bold mb-4">{tipo}</h3><div className="space-y-4 text-sm">
-                        {tipo === 'Quiz' && (content as QuizQuestion[]).map((q, i) => (<div key={i}><p className="font-semibold">{i+1}. {q.pregunta}</p><ul className="list-disc pl-5 mt-1">{q.opciones.map(o => <li key={o}>{o}</li>)}</ul><p className="text-xs text-green-600">R: {q.respuestaCorrecta}</p></div>))}
-                        {tipo === 'Comprensión de Lectura' && <div><p className="whitespace-pre-wrap bg-slate-100 p-2 rounded">{(content as ComprensionLecturaContent).texto}</p>{(content as ComprensionLecturaContent).preguntas.map((q,i) => (<div key={i} className="mt-2"><p className="font-semibold">{i+1}. {q.pregunta}</p><ul className="list-disc pl-5 mt-1">{q.opciones.map(o => <li key={o}>{o}</li>)}</ul><p className="text-xs text-green-600">R: {q.respuestaCorrecta}</p></div>))}</div>}
-                        {tipo === 'Términos Pareados' && <ul className="list-disc pl-5">{(content as PareadoItem[]).map(p => <li key={p.id}><strong>{p.concepto}:</strong> {p.definicion}</li>)}</ul>}
-                        {tipo === 'Desarrollo' && (content as DesarrolloContent[]).map((d,i) => <div key={i}><p className="font-semibold">{d.pregunta}</p><p className="text-xs italic mt-1">Rúbrica: {d.rubrica}</p></div>)}
-                    </div></div>)
+                    return (
+                        <div key={tipo} className="p-4 border rounded-lg bg-white">
+                            <h3 className="text-xl font-bold mb-4">{tipo}</h3>
+                            <div className="space-y-4 text-sm">
+                                {tipo === 'Quiz' && Array.isArray(content) && content.map((q, i) => (
+                                    <div key={i} className="border-t pt-3 first:border-t-0">
+                                        <p className="font-semibold">{i+1}. {q.pregunta}</p>
+                                        <ul className="list-none pl-5 mt-2 space-y-1">
+                                            {q.opciones.map((o, index) => (
+                                                <li key={index}>
+                                                    <strong>{String.fromCharCode(65 + index)}.</strong> {o}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        <p className="text-xs text-green-600 font-semibold mt-2 p-1 bg-green-50 rounded inline-block">R: {q.respuestaCorrecta}</p>
+                                    </div>
+                                ))}
+                                {tipo === 'Comprensión de Lectura' && content && typeof content === 'object' && Array.isArray(content.preguntas) && (
+                                    <div>
+                                        <p className="whitespace-pre-wrap bg-slate-100 p-3 rounded-md mb-4">{content.texto}</p>
+                                        {content.preguntas.map((q,i) => (
+                                            <div key={i} className="border-t pt-3 first:border-t-0">
+                                                <p className="font-semibold">{i+1}. {q.pregunta}</p>
+                                                <ul className="list-none pl-5 mt-2 space-y-1">
+                                                    {q.opciones.map((o, index) => (
+                                                        <li key={index}>
+                                                            <strong>{String.fromCharCode(65 + index)}.</strong> {o}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                                <p className="text-xs text-green-600 font-semibold mt-2 p-1 bg-green-50 rounded inline-block">R: {q.respuestaCorrecta}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {tipo === 'Términos Pareados' && Array.isArray(content) && (
+                                    <div className="overflow-x-auto">
+                                        <table className="min-w-full border border-slate-200">
+                                            <thead className="bg-slate-100">
+                                                <tr>
+                                                    <th className="text-left font-semibold p-2 border-b">Concepto</th>
+                                                    <th className="text-left font-semibold p-2 border-b">Definición</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {content.map(p => (
+                                                    <tr key={p.id} className="border-b last:border-b-0 hover:bg-slate-50">
+                                                        <td className="p-2 align-top font-semibold text-slate-800">{p.concepto}</td>
+                                                        <td className="p-2 align-top text-slate-700">{p.definicion}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                                {tipo === 'Desarrollo' && Array.isArray(content) && content.map((d,i) => (
+                                    <div key={i} className="border-t pt-3 first:border-t-0">
+                                        <p className="font-semibold">{i+1}. {d.pregunta}</p>
+                                        <p className="text-sm text-slate-600 mt-2 p-2 bg-slate-100 rounded-md"><strong className="font-semibold">Rúbrica:</strong> {d.rubrica}</p>
+                                    </div>
+                                ))}
+                                
+                                {((tipo === 'Quiz' || tipo === 'Términos Pareados' || tipo === 'Desarrollo') && !Array.isArray(content)) && (
+                                    <div className="text-red-600 text-sm p-3 bg-red-50 border border-red-200 rounded-md">El contenido generado para "<strong>{tipo}</strong>" no tiene el formato de array esperado. La IA pudo haber devuelto una respuesta en un formato no válido.</div>
+                                )}
+                                {tipo === 'Comprensión de Lectura' && (!content || typeof content !== 'object' || !Array.isArray(content.preguntas)) && (
+                                    <div className="text-red-600 text-sm p-3 bg-red-50 border border-red-200 rounded-md">El contenido generado para "<strong>Comprensión de Lectura</strong>" no tiene el formato de objeto con preguntas esperado.</div>
+                                )}
+                            </div>
+                        </div>
+                    );
                 })}
             </div>
             <div className="pt-6 flex justify-end gap-4">
