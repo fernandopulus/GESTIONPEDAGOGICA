@@ -6,7 +6,7 @@ import {
     createAccion,
     updateAccion,
     deleteAccion,
-} from '../../src/firebaseHelpers/acciones'; // AJUSTA la ruta según dónde guardes los helpers
+} from '../../src/firebaseHelpers/acciones';
 
 const initialAccionState: Omit<AccionPedagogica, 'id'> = {
     fechaRegistro: new Date().toISOString().split('T')[0],
@@ -15,6 +15,7 @@ const initialAccionState: Omit<AccionPedagogica, 'id'> = {
     descripcion: '',
     fechaCumplimiento: '',
     estado: 'Pendiente',
+    enlaceDocumento: '',
 };
 
 const estadoColors: Record<EstadoAccion, string> = {
@@ -33,7 +34,6 @@ const SeguimientoAcciones: React.FC = () => {
     const [filterArea, setFilterArea] = useState('');
     const [filterEstado, setFilterEstado] = useState('');
 
-    // Cargar acciones desde Firestore
     const fetchAcciones = useCallback(async () => {
         setLoading(true);
         try {
@@ -41,8 +41,8 @@ const SeguimientoAcciones: React.FC = () => {
             setAcciones(accionesFS);
             setError(null);
         } catch (e) {
-            console.error("Error al cargar acciones desde Firestore", e);
-            setError("No se pudieron cargar las acciones pedagógicas desde la nube.");
+            console.error("Error al cargar acciones:", e);
+            setError("No se pudieron cargar las acciones pedagógicas.");
         } finally {
             setLoading(false);
         }
@@ -65,44 +65,42 @@ const SeguimientoAcciones: React.FC = () => {
 
     const handleSubmit = useCallback(async (e: FormEvent) => {
         e.preventDefault();
-        const { fechaRegistro, responsable, area, descripcion, fechaCumplimiento, estado } = formData;
-        if (!fechaRegistro || !responsable || !area || !descripcion || !fechaCumplimiento) {
-            setError('Todos los campos son obligatorios.');
+        if (!formData.responsable || !formData.area || !formData.descripcion || !formData.fechaCumplimiento) {
+            setError('Los campos responsables, área, descripción y fecha de cumplimiento son obligatorios.');
             return;
         }
 
         try {
             if (editingId) {
-                // Actualizar acción existente
                 await updateAccion(editingId, formData);
             } else {
-                // Crear nueva acción
                 await createAccion(formData);
             }
-            
-            // Recargar acciones después de la operación
             await fetchAcciones();
             handleResetForm();
         } catch (err) {
             console.error("Error al guardar acción:", err);
-            setError("Error al guardar la acción en la nube.");
+            setError("Error al guardar la acción.");
         }
     }, [formData, editingId, fetchAcciones, handleResetForm]);
 
     const handleEdit = useCallback((accion: AccionPedagogica) => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         setEditingId(accion.id);
-        setFormData(accion);
+        setFormData({
+            ...accion,
+            enlaceDocumento: accion.enlaceDocumento || '' // Asegurar que no sea undefined
+        });
     }, []);
 
     const handleDelete = useCallback(async (id: string) => {
         if (window.confirm('¿Está seguro de que desea eliminar esta acción?')) {
             try {
                 await deleteAccion(id);
-                await fetchAcciones(); // Recargar después de eliminar
+                await fetchAcciones();
             } catch (err) {
                 console.error("Error al eliminar acción:", err);
-                setError("No se pudo eliminar la acción en la nube.");
+                setError("No se pudo eliminar la acción.");
             }
         }
     }, [fetchAcciones]);
@@ -116,11 +114,11 @@ const SeguimientoAcciones: React.FC = () => {
                 const newEstado = ESTADOS_ACCION[nextIndex];
                 
                 await updateAccion(id, { estado: newEstado });
-                await fetchAcciones(); // Recargar después de actualizar
+                await fetchAcciones();
             }
         } catch (err) {
             console.error("Error al cambiar estado:", err);
-            setError("No se pudo cambiar el estado de la acción en la nube.");
+            setError("No se pudo cambiar el estado de la acción.");
         }
     }, [acciones, fetchAcciones]);
 
@@ -143,7 +141,6 @@ const SeguimientoAcciones: React.FC = () => {
                 <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">Seguimiento de Acciones Pedagógicas</h1>
                 <p className="text-slate-500 dark:text-slate-400 mb-6">{editingId ? 'Editando acción existente.' : 'Registre una nueva acción de seguimiento.'}</p>
 
-                {loading && <div className="text-center text-amber-600 py-4">Cargando acciones desde la nube...</div>}
                 {error && <div className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</div>}
 
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -171,16 +168,14 @@ const SeguimientoAcciones: React.FC = () => {
                             <label htmlFor="fechaCumplimiento" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Fecha de Cumplimiento</label>
                             <input type="date" name="fechaCumplimiento" value={formData.fechaCumplimiento} onChange={handleFieldChange} className={inputStyles} />
                         </div>
-                        <div>
-                            <label htmlFor="estado" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Estado de Avance</label>
-                            <select name="estado" value={formData.estado} onChange={handleFieldChange} className={inputStyles}>
-                                {ESTADOS_ACCION.map(e => <option key={e} value={e}>{e}</option>)}
-                            </select>
+                        <div className="lg:col-span-2">
+                            <label htmlFor="enlaceDocumento" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Enlace a Documento (Opcional)</label>
+                            <input type="url" name="enlaceDocumento" value={formData.enlaceDocumento || ''} onChange={handleFieldChange} placeholder="https://ejemplo.com/documento" className={inputStyles} />
                         </div>
                     </div>
                     <div className="pt-4 flex justify-end items-center gap-4">
                         {editingId && <button type="button" onClick={handleResetForm} className="bg-slate-200 text-slate-700 font-bold py-2 px-6 rounded-lg hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500">Cancelar</button>}
-                        <button type="submit" className="bg-slate-800 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600">
+                        <button type="submit" className="bg-slate-800 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-700 dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600">
                             {editingId ? 'Actualizar Acción' : 'Registrar Acción'}
                         </button>
                     </div>
@@ -190,35 +185,17 @@ const SeguimientoAcciones: React.FC = () => {
             <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
                 <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">Tabla de Seguimiento</h2>
                 
-                {!loading && acciones.length === 0 && (
-                    <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 p-4 rounded-lg mb-4">
-                        No hay acciones pedagógicas registradas en la nube.
-                    </div>
-                )}
-
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                    <input
-                        type="text"
-                        placeholder="Buscar por responsable o palabra clave..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className={inputStyles + " md:col-span-1"}
-                    />
-                    <select value={filterArea} onChange={e => setFilterArea(e.target.value)} className={inputStyles}>
-                        <option value="">Filtrar por Área</option>
-                        {AREAS_PEDAGOGICAS.map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
-                     <select value={filterEstado} onChange={e => setFilterEstado(e.target.value)} className={inputStyles}>
-                        <option value="">Filtrar por Estado</option>
-                        {ESTADOS_ACCION.map(e => <option key={e} value={e}>{e}</option>)}
-                    </select>
+                    <input type="text" placeholder="Buscar por responsable o palabra clave..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={inputStyles + " md:col-span-1"}/>
+                    <select value={filterArea} onChange={e => setFilterArea(e.target.value)} className={inputStyles}><option value="">Filtrar por Área</option>{AREAS_PEDAGOGICAS.map(a => <option key={a} value={a}>{a}</option>)}</select>
+                    <select value={filterEstado} onChange={e => setFilterEstado(e.target.value)} className={inputStyles}><option value="">Filtrar por Estado</option>{ESTADOS_ACCION.map(e => <option key={e} value={e}>{e}</option>)}</select>
                 </div>
+
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
                         <thead className="bg-slate-50 dark:bg-slate-700">
                             <tr>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Responsable</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Área</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Descripción</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Fechas</th>
                                 <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Estado</th>
@@ -226,34 +203,36 @@ const SeguimientoAcciones: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
-                            {!loading && filteredAcciones.length > 0 ? filteredAcciones.map(a => (
+                            {loading ? (
+                                <tr><td colSpan={5} className="text-center py-10">Cargando...</td></tr>
+                            ) : filteredAcciones.length > 0 ? filteredAcciones.map(a => (
                                 <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-700">
-                                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-200">{a.responsable}</td>
-                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">{a.area}</td>
+                                    <td className="px-4 py-4 whitespace-nowrap">
+                                        <div className="text-sm font-medium text-slate-800 dark:text-slate-200">{a.responsable}</div>
+                                        <div className="text-sm text-slate-500 dark:text-slate-400">{a.area}</div>
+                                    </td>
                                     <td className="px-4 py-4 text-sm text-slate-600 dark:text-slate-300 max-w-sm whitespace-normal">{a.descripcion}</td>
                                     <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
-                                        <div className="flex flex-col">
-                                           <span>Reg: {a.fechaRegistro}</span>
-                                           <span className="font-semibold">Comp: {a.fechaCumplimiento}</span>
-                                        </div>
+                                        <div>Reg: {a.fechaRegistro}</div>
+                                        <div className="font-semibold">Comp: {a.fechaCumplimiento}</div>
                                     </td>
                                     <td className="px-4 py-4 whitespace-nowrap text-center text-sm">
-                                        <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${estadoColors[a.estado]}`}>
+                                        <button onClick={() => handleChangeEstado(a.id)} className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${estadoColors[a.estado]}`}>
                                             {a.estado}
-                                        </span>
+                                        </button>
                                     </td>
                                     <td className="px-4 py-4 whitespace-nowrap text-sm text-center space-x-2">
-                                        <button onClick={() => handleChangeEstado(a.id)} title="Cambiar Estado" className="text-blue-600 hover:text-blue-800 p-1 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/40">🔁</button>
+                                        {a.enlaceDocumento && (
+                                            <a href={a.enlaceDocumento} target="_blank" rel="noopener noreferrer" title="Ver Documento" className="text-indigo-600 hover:text-indigo-800 p-1 rounded-full hover:bg-indigo-100 dark:hover:bg-indigo-900/40 inline-block align-middle">
+                                                🔗
+                                            </a>
+                                        )}
                                         <button onClick={() => handleEdit(a)} title="Editar" className="text-yellow-600 hover:text-yellow-800 p-1 rounded-full hover:bg-yellow-100 dark:hover:bg-yellow-900/40">✏️</button>
                                         <button onClick={() => handleDelete(a.id)} title="Eliminar" className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/40">🗑️</button>
                                     </td>
                                 </tr>
-                            )) : !loading && (
-                                <tr>
-                                    <td colSpan={6} className="px-6 py-10 text-center text-slate-500 dark:text-slate-400">
-                                        No se encontraron acciones con los filtros actuales.
-                                    </td>
-                                </tr>
+                            )) : (
+                                <tr><td colSpan={5} className="text-center py-10 text-slate-500">No se encontraron acciones.</td></tr>
                             )}
                         </tbody>
                     </table>

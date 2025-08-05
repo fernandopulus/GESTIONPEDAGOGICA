@@ -373,7 +373,7 @@ const TrabajosGrupalesView: React.FC<{
                     if (!groupsMap.has(groupNum)) {
                         groupsMap.set(groupNum, []);
                     }
-                    groupsMap.get(groupNum)!.push({ nombre: student.nombreCompleto, rol: assignment.role || undefined });
+                    groupsMap.get(groupNum)!.push({ nombre: student.nombreCompleto, rol: assignment.role || '' });
                 }
             }
         }

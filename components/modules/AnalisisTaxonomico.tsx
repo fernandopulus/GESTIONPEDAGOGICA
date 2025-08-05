@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback, ChangeEvent } from 'react';
 import { User, AnalisisTaxonomico, BloomLevel } from '../../types';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logApiCall } from '../utils/apiLogger';
 import {
     getAllAnalisis,
+    getUserAnalisis, // Importa la nueva función para obtener análisis por usuario
     createAnalisis,
     deleteAnalisis,
-} from '../../src/firebaseHelpers/analisis'; // AJUSTA la ruta según dónde guardes los helpers
+} from '../../src/firebaseHelpers/analisis';
 
 const BLOOM_LEVELS: BloomLevel[] = ['Recordar', 'Comprender', 'Aplicar', 'Analizar', 'Evaluar', 'Crear'];
 const bloomColors: Record<BloomLevel, string> = {
@@ -19,7 +20,7 @@ const bloomColors: Record<BloomLevel, string> = {
 };
 
 const Spinner: React.FC = () => (
-    <svg className="animate-spin h-5 w-5 text-slate-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
     </svg>
@@ -39,11 +40,20 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [fileData, setFileData] = useState<{ mimeType: string; data: string } | null>(null);
 
-    // Cargar análisis desde Firestore
+    // Cargar análisis desde Firestore según el perfil del usuario
     const fetchAnalisis = useCallback(async () => {
+        if (!currentUser || !currentUser.id) return;
+
         setLoading(true);
         try {
-            const analisisFS = await getAllAnalisis();
+            let analisisFS;
+            if (currentUser.profile === 'SUBDIRECCION') {
+                // El perfil de subdirección ve todos los análisis
+                analisisFS = await getAllAnalisis();
+            } else {
+                // El resto de los usuarios solo ve sus propios análisis
+                analisisFS = await getUserAnalisis(currentUser.id);
+            }
             setHistory(analisisFS);
             setError(null);
         } catch (e) {
@@ -52,7 +62,7 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [currentUser]);
 
     useEffect(() => {
         fetchAnalisis();
@@ -112,26 +122,26 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
         `;
         
         const schema = {
-            type: Type.OBJECT,
+            type: "object",
             properties: {
                 analysisResults: {
-                    type: Type.ARRAY,
+                    type: "array",
                     description: "Un array con cada pregunta identificada y su clasificación de Bloom.",
                     items: {
-                        type: Type.OBJECT,
+                        type: "object",
                         properties: {
-                            question: { type: Type.STRING, description: "El texto exacto de la pregunta." },
-                            habilidadBloom: { type: Type.STRING, description: "El nivel de Bloom correspondiente.", enum: BLOOM_LEVELS }
+                            question: { type: "string", description: "El texto exacto de la pregunta." },
+                            habilidadBloom: { type: "string", description: "El nivel de Bloom correspondiente.", enum: BLOOM_LEVELS }
                         },
                         required: ["question", "habilidadBloom"]
                     }
                 },
                 summary: {
-                    type: Type.OBJECT,
+                    type: "object",
                     description: "Un resumen con el conteo de preguntas por cada nivel de Bloom.",
                     properties: {
-                        Recordar: { type: Type.INTEGER }, Comprender: { type: Type.INTEGER }, Aplicar: { type: Type.INTEGER },
-                        Analizar: { type: Type.INTEGER }, Evaluar: { type: Type.INTEGER }, Crear: { type: Type.INTEGER }
+                        Recordar: { type: "number" }, Comprender: { type: "number" }, Aplicar: { type: "number" },
+                        Analizar: { type: "number" }, Evaluar: { type: "number" }, Crear: { type: "number" }
                     },
                 }
             },
@@ -140,7 +150,21 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
 
         try {
             logApiCall('Análisis Taxonómico');
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyBwOEsVIeAjIhoJ5PKko5DvmJrcQTwJwHE" });
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            if (!apiKey) {
+                setError("La clave de API no está configurada.");
+                setIsLoading(false);
+                return;
+            }
+            
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-1.5-flash-latest",
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: schema,
+                }
+            });
 
             const filePart = {
                 inlineData: {
@@ -149,31 +173,21 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
                 },
             };
 
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: { parts: [{ text: prompt }, filePart] },
-                config: { responseMimeType: "application/json", responseSchema: schema },
-            });
+            const result = await model.generateContent([prompt, filePart]);
+            const responseText = result.response.text();
+            const parsedResult = JSON.parse(responseText);
 
-            const result = JSON.parse(response.text);
             const newAnalysis: Omit<AnalisisTaxonomico, 'id'> = {
                 documentName,
                 uploadDate: new Date().toISOString(),
                 userId: currentUser.id,
-                analysisResults: result.analysisResults,
-                summary: result.summary,
+                analysisResults: parsedResult.analysisResults,
+                summary: parsedResult.summary,
             };
             
-            // Guardar en Firestore
             const savedAnalysis = await createAnalisis(newAnalysis);
-            
-            // Recargar historial
             await fetchAnalisis();
-            
-            // Seleccionar el análisis recién creado
             setSelectedAnalysis(savedAnalysis);
-            
-            // Limpiar formulario
             setDocumentName('');
             setSelectedFile(null);
             setFileData(null);
@@ -190,8 +204,7 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
         if (window.confirm("¿Está seguro de eliminar este análisis?")) {
             try {
                 await deleteAnalisis(id);
-                await fetchAnalisis(); // Recargar después de eliminar
-                
+                await fetchAnalisis();
                 if (selectedAnalysis?.id === id) {
                     setSelectedAnalysis(null);
                 }
@@ -211,7 +224,6 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
         <div className="space-y-8 animate-fade-in">
             <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Análisis Taxonómico de Evaluaciones</h1>
 
-            {loading && <div className="text-center text-amber-600 py-4">Cargando análisis desde la nube...</div>}
             {error && <div className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</div>}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -250,21 +262,20 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
 
                     <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
                          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Historial de Análisis</h2>
-                         
-                         {!loading && history.length === 0 && (
+                         {loading ? <p className="text-sm text-slate-500">Cargando historial...</p> : history.length === 0 ? (
                             <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 p-4 rounded-lg text-sm">
-                                No hay análisis guardados en la nube.
+                                No hay análisis guardados.
                             </div>
+                         ) : (
+                             <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                                {history.map(item => (
+                                    <button key={item.id} onClick={() => setSelectedAnalysis(item)} className={`w-full text-left p-3 rounded-md border ${selectedAnalysis?.id === item.id ? 'bg-amber-100 border-amber-300 dark:bg-amber-900/30 dark:border-amber-700' : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-700/50 dark:hover:bg-slate-700'}`}>
+                                        <p className="font-semibold truncate">{item.documentName}</p>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">{new Date(item.uploadDate).toLocaleString('es-CL')}</p>
+                                    </button>
+                                ))}
+                             </div>
                          )}
-
-                         <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                            {!loading && history.length > 0 && history.map(item => (
-                                <button key={item.id} onClick={() => setSelectedAnalysis(item)} className={`w-full text-left p-3 rounded-md border ${selectedAnalysis?.id === item.id ? 'bg-amber-100 border-amber-300 dark:bg-amber-900/30 dark:border-amber-700' : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-700/50 dark:hover:bg-slate-700'}`}>
-                                    <p className="font-semibold truncate">{item.documentName}</p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">{new Date(item.uploadDate).toLocaleString('es-CL')}</p>
-                                </button>
-                            ))}
-                         </div>
                     </div>
                 </div>
 

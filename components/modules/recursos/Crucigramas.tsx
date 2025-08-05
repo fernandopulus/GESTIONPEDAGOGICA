@@ -31,7 +31,6 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
     const [aiLoadingClueIndex, setAiLoadingClueIndex] = useState<number | null>(null);
     const puzzleRef = useRef<HTMLDivElement>(null);
 
-    // ✅ SOLUCIÓN 2: Reconstruir la grilla al cargar los datos desde Firestore
     useEffect(() => {
         setLoading(p => ({ ...p, data: true }));
         const unsubscribe = subscribeToCrucigramas((dataFromFirestore) => {
@@ -96,16 +95,13 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
             const response = await result.response;
             const text = response.text();
 
-
             let cleanedText = text.replace(/^```json\s*|```\s*$/g, '').trim();
-            // Extraer solo el objeto JSON si hay texto antes/después
             const firstBrace = cleanedText.indexOf('{');
             const lastBrace = cleanedText.lastIndexOf('}');
             if (firstBrace !== -1 && lastBrace !== -1) {
                 cleanedText = cleanedText.substring(firstBrace, lastBrace + 1);
             }
 
-            // Solución: limpiar comas extra entre objetos del array
             cleanedText = cleanedText.replace(/},\s*([\r\n\s]*){/g, '}__SPLIT__{');
             if (cleanedText.includes('__SPLIT__')) {
                 cleanedText = cleanedText.replace(/("items"\s*:\s*\[)([\s\S]*?)(\])/m, (match, p1, p2, p3) => {
@@ -114,7 +110,6 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
                 });
             }
 
-            // Eliminar comas extra antes de cerrar el array
             cleanedText = cleanedText.replace(/,\s*]/g, ']');
 
             let resultJson;
@@ -194,7 +189,6 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
     
             entries.sort((a, b) => b.word.length - a.word.length);
             
-            // ... (resto de la lógica de generación de la grilla sin cambios)
             const longestWordLength = entries[0].word.length;
             const gridSize = Math.max(longestWordLength, entries.length) * 2;
     
@@ -339,7 +333,6 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
         
         const result = generateCrossword();
         if (result) {
-            // Este es el objeto para el estado local, que necesita la grilla 2D para renderizar
             const newPuzzleForState: Omit<CrosswordPuzzle, 'id' | 'fechaCreacion'> = {
                 creadorId: currentUser.id,
                 creadorNombre: currentUser.nombreCompleto,
@@ -348,18 +341,20 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
                 clues: result.clues,
             };
 
-            // Crear un objeto separado para Firestore, con la grilla aplanada
-            // Firestore no permite arrays anidados, así que guardamos solo los caracteres
+            // ✅ CORRECCIÓN: Desestructura para separar la grilla anidada (grid) del resto.
+            const { grid, ...restOfState } = newPuzzleForState;
+
+            // Construye el objeto para Firestore usando solo los datos compatibles.
             const dataToSave = {
-                ...newPuzzleForState,
-                grid_flat: result.grid.flat().map(cell => cell.char || ''),
-                grid_width: result.grid[0]?.length || 0,
+                ...restOfState,
+                grid_flat: grid.flat().map(cell => cell.char || ''),
+                grid_width: grid[0]?.length || 0,
             };
 
             try {
-                // Se envía el objeto aplanado a Firestore
+                // `dataToSave` ya no contiene el campo `grid` anidado, evitando el error.
                 const newId = await saveCrucigrama(dataToSave, currentUser);
-                // Se actualiza el estado local con la grilla 2D y el ID nuevo
+                
                 setPuzzle({
                     ...newPuzzleForState,
                     id: newId,
@@ -387,12 +382,6 @@ const Crucigramas: FC<CrucigramasProps> = ({ onBack, currentUser }) => {
             .catch((err) => console.error('Error generating image', err));
         }, 100);
     };
-
-    const renderPuzzle = () => {
-        // ... (el resto del componente renderPuzzle no necesita cambios)
-    };
-
-    // ... (el resto del componente no necesita cambios)
 
     return (
         <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md space-y-6">

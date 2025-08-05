@@ -1,19 +1,3 @@
-import React, { useState, useEffect, useCallback, ChangeEvent, FormEvent, useRef } from 'react';
-import type { PlanificacionUnidad, PlanificacionClase, DetalleLeccion, ActividadPlanificada, TareaActividad, User, NivelPlanificacion, ActividadFocalizadaEvent, MomentosClase, PlanificacionDocente, ReflexionUnidad } from '../../types';
-import { useMemo } from 'react';
-import { EventType } from '../../types';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-// import { saveCalendarEvent } from '../../src/firebaseHelpers/calendar'; // Función no disponible
-// Firebase helpers
-import {
-  savePlanificacion,
-  updatePlanificacion,
-  deletePlanificacion,
-  subscribeToPlanificaciones,
-  saveActividad,
-  subscribeToActividades
-} from '../../src/firebaseHelpers/planificacionHelper';
-
 // Hook local para planificaciones de unidad y clase
 const usePlanificaciones = (userId: string) => {
   const [planificaciones, setPlanificaciones] = useState<(PlanificacionUnidad | PlanificacionClase)[]>([]);
@@ -62,6 +46,22 @@ const usePlanificaciones = (userId: string) => {
 
   return { planificaciones, loading, error, save, update, remove };
 };
+
+import React, { useState, useEffect, useCallback, ChangeEvent, FormEvent } from 'react';
+import type { PlanificacionUnidad, PlanificacionClase, DetalleLeccion, ActividadPlanificada, TareaActividad, User, NivelPlanificacion, ActividadFocalizadaEvent, MomentosClase, PlanificacionDocente } from '../../types';
+import { useMemo } from 'react';
+import { EventType } from '../../types';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+// import { saveCalendarEvent } from '../../src/firebaseHelpers/calendar'; // Función no disponible
+// Firebase helpers
+import {
+  savePlanificacion,
+  updatePlanificacion,
+  deletePlanificacion,
+  subscribeToPlanificaciones,
+  saveActividad,
+  subscribeToActividades
+} from '../../src/firebaseHelpers/planificacionHelper';
 
 // Función de logging simple
 const logApiCall = (action: string) => {
@@ -147,15 +147,15 @@ const EditLessonModal: React.FC<EditLessonModalProps> = ({ lesson, onClose, onSa
           ))}
         </div>
         <div className="bg-slate-50 dark:bg-slate-700/50 px-6 py-4 rounded-b-xl flex justify-end gap-3 mt-auto">
-          <button
-            onClick={onClose}
+          <button 
+            onClick={onClose} 
             className="bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300 disabled:opacity-50"
             disabled={isLoading}
           >
             Cancelar
           </button>
-          <button
-            onClick={handleSubmit}
+          <button 
+            onClick={handleSubmit} 
             className="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600 disabled:opacity-50 flex items-center gap-2"
             disabled={isLoading}
           >
@@ -180,7 +180,7 @@ interface LessonPlanViewerProps {
 const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson, onUseLesson, isLoading = false, onUpdatePlan }) => {
   const [progreso, setProgreso] = useState<number>(plan.progreso ?? 0);
   const [saving, setSaving] = useState(false);
-
+  
   const handleProgresoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value, 10);
     setProgreso(value);
@@ -191,7 +191,7 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
         await onUpdatePlan(plan.id, { progreso: value });
         console.log('✅ Progreso actualizado exitosamente');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('❌ Error completo:', err);
       alert(`Error al guardar el avance: ${err.message}`);
       // Revertir el progreso en caso de error
@@ -228,15 +228,15 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
               <p><strong>Interdisciplinariedad:</strong> {lesson.asignaturasInterdisciplinariedad}</p>
             </div>
             <div className="flex gap-2 mt-4">
-              <button
-                onClick={() => onEditLesson(index, lesson)}
+              <button 
+                onClick={() => onEditLesson(index, lesson)} 
                 className="text-sm font-semibold bg-slate-200 dark:bg-slate-600 py-1 px-3 rounded-md hover:bg-slate-300 disabled:opacity-50"
                 disabled={isLoading}
               >
                 Editar
               </button>
-              <button
-                onClick={() => onUseLesson(lesson, plan)}
+              <button 
+                onClick={() => onUseLesson(lesson, plan)} 
                 className="text-sm font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 py-1 px-3 rounded-md hover:bg-blue-200 disabled:opacity-50"
                 disabled={isLoading}
               >
@@ -294,8 +294,8 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
     <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">{plan.nombreClase}</h2>
-        <button
-          onClick={onBack}
+        <button 
+          onClick={onBack} 
           className="text-slate-600 hover:text-slate-900 font-semibold disabled:opacity-50"
           disabled={isLoading || saving}
         >
@@ -305,33 +305,33 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
       <div className="space-y-6">
         <div>
           <label className="font-bold text-lg text-slate-700 dark:text-slate-300">Inicio</label>
-          <textarea
-            name="momentosClase.inicio"
-            value={editablePlan.momentosClase.inicio}
-            onChange={handleChange}
-            rows={4}
+          <textarea 
+            name="momentosClase.inicio" 
+            value={editablePlan.momentosClase.inicio} 
+            onChange={handleChange} 
+            rows={4} 
             className="w-full mt-2 p-2 border rounded-md bg-slate-50 dark:bg-slate-700"
             disabled={isLoading || saving}
           />
         </div>
         <div>
           <label className="font-bold text-lg text-slate-700 dark:text-slate-300">Desarrollo</label>
-          <textarea
-            name="momentosClase.desarrollo"
-            value={editablePlan.momentosClase.desarrollo}
-            onChange={handleChange}
-            rows={8}
+          <textarea 
+            name="momentosClase.desarrollo" 
+            value={editablePlan.momentosClase.desarrollo} 
+            onChange={handleChange} 
+            rows={8} 
             className="w-full mt-2 p-2 border rounded-md bg-slate-50 dark:bg-slate-700"
             disabled={isLoading || saving}
           />
         </div>
         <div>
           <label className="font-bold text-lg text-slate-700 dark:text-slate-300">Cierre</label>
-          <textarea
-            name="momentosClase.cierre"
-            value={editablePlan.momentosClase.cierre}
-            onChange={handleChange}
-            rows={4}
+          <textarea 
+            name="momentosClase.cierre" 
+            value={editablePlan.momentosClase.cierre} 
+            onChange={handleChange} 
+            rows={4} 
             className="w-full mt-2 p-2 border rounded-md bg-slate-50 dark:bg-slate-700"
             disabled={isLoading || saving}
           />
@@ -340,15 +340,15 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
       </div>
       <div className="text-right mt-6">
         <div className="flex justify-between items-center">
-          <button
-            onClick={() => onDelete(plan.id)}
+          <button 
+            onClick={() => onDelete(plan.id)} 
             className="bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
             disabled={isLoading || saving}
           >
             🗑️ Eliminar Plan
           </button>
-          <button
-            onClick={handleSave}
+          <button 
+            onClick={handleSave} 
             className="bg-amber-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-amber-600 disabled:opacity-50 flex items-center gap-2"
             disabled={isLoading || saving}
           >
@@ -393,7 +393,7 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
 
   const checkCalendarEvent = async () => {
     if (!currentActividad) return;
-
+    
     try {
       // Función checkEventExists no está disponible, siempre false por ahora
       setIsAddedToCalendar(false);
@@ -406,7 +406,7 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
-
+  
   const handleTareaChange = (id: string, field: keyof Omit<TareaActividad, 'id'>, value: string) => {
     setFormData(prev => ({
       ...prev,
@@ -427,7 +427,7 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
       tareas: prev.tareas.filter(t => t.id !== id),
     }));
   };
-
+  
   const handleSaveActivity = async (e: FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -437,10 +437,10 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
     - Descripción: ${formData.descripcion}
     - Tareas: ${formData.tareas.map(t => t.descripcion).join(', ')}
     El objetivo debe ser breve, empezar con un verbo en infinitivo y enfocarse en el propósito principal de la actividad.`;
-
+    
     try {
       logApiCall('Planificación - Actividad Calendario');
-
+      
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) {
         alert("La API Key de Gemini no está configurada.");
@@ -453,14 +453,14 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const text = response.text();
-
+      
       const newActividad: Omit<ActividadPlanificada, 'id'> = {
         ...formData,
         objetivo: text.replace(/(\*\*|\*)/g, ''),
       };
 
       const actividadId = await saveActividad(newActividad);
-
+      
       // Crear el objeto con ID para mostrar en summary
       const actividadCompleta: ActividadPlanificada = {
         ...newActividad,
@@ -472,19 +472,19 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
     } catch (error) {
       console.error("Error al generar objetivo con IA:", error);
       alert("Hubo un error al generar el objetivo. La actividad se guardará sin él.");
-
+      
       try {
-        const newActividad: Omit<ActividadPlanificada, 'id'> = {
-          ...formData,
-          objetivo: 'No generado'
+        const newActividad: Omit<ActividadPlanificada, 'id'> = { 
+          ...formData, 
+          objetivo: 'No generado' 
         };
         const actividadId = await saveActividad(newActividad);
-
+        
         const actividadCompleta: ActividadPlanificada = {
           ...newActividad,
           id: actividadId,
         };
-
+        
         setCurrentActividad(actividadCompleta);
         setView('summary');
       } catch (saveError) {
@@ -495,16 +495,16 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
       setIsLoading(false);
     }
   };
-
+  
   const handleAddToCalendar = async (actividad: ActividadPlanificada) => {
     if (!actividad) return;
 
     // const newEvent: Omit<ActividadFocalizadaEvent, 'id'> = {
-    //  date: actividad.fecha,
-    //  type: EventType.ACTIVIDAD_FOCALIZADA,
-    //  responsables: actividad.nombre,
-    //  ubicacion: actividad.ubicacion,
-    //  horario: actividad.hora,
+    //   date: actividad.fecha,
+    //   type: EventType.ACTIVIDAD_FOCALIZADA,
+    //   responsables: actividad.nombre,
+    //   ubicacion: actividad.ubicacion,
+    //   horario: actividad.hora,
     // };
 
     try {
@@ -517,7 +517,7 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
       alert("Hubo un error al agregar la actividad al calendario.");
     }
   };
-
+  
   const inputStyles = "w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white";
 
   if (view === 'form') {
@@ -528,84 +528,84 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
           <div className="p-4 border rounded-lg dark:border-slate-700">
             <h3 className="text-lg font-bold mb-4">Información General</h3>
             <div className="space-y-4">
-              <input
-                name="nombre"
-                value={formData.nombre}
-                onChange={handleFormChange}
-                placeholder="Nombre de la Actividad"
-                className={inputStyles}
+              <input 
+                name="nombre" 
+                value={formData.nombre} 
+                onChange={handleFormChange} 
+                placeholder="Nombre de la Actividad" 
+                className={inputStyles} 
                 required
                 disabled={isLoading}
               />
               <div className="grid grid-cols-2 gap-4">
-                <input
-                  name="fecha"
-                  type="date"
-                  value={formData.fecha}
-                  onChange={handleFormChange}
-                  className={inputStyles}
+                <input 
+                  name="fecha" 
+                  type="date" 
+                  value={formData.fecha} 
+                  onChange={handleFormChange} 
+                  className={inputStyles} 
                   required
                   disabled={isLoading}
                 />
-                <input
-                  name="hora"
-                  type="time"
-                  value={formData.hora}
-                  onChange={handleFormChange}
-                  className={inputStyles}
+                <input 
+                  name="hora" 
+                  type="time" 
+                  value={formData.hora} 
+                  onChange={handleFormChange} 
+                  className={inputStyles} 
                   required
                   disabled={isLoading}
                 />
               </div>
-              <textarea
-                name="descripcion"
-                value={formData.descripcion}
-                onChange={handleFormChange}
-                placeholder="Descripción (objetivos, contenidos, metodología)"
-                rows={4}
-                className={inputStyles}
+              <textarea 
+                name="descripcion" 
+                value={formData.descripcion} 
+                onChange={handleFormChange} 
+                placeholder="Descripción (objetivos, contenidos, metodología)" 
+                rows={4} 
+                className={inputStyles} 
                 required
                 disabled={isLoading}
               />
               <div className="grid grid-cols-2 gap-4">
-                <input
-                  name="ubicacion"
-                  value={formData.ubicacion}
-                  onChange={handleFormChange}
-                  placeholder="Ubicación"
-                  className={inputStyles}
+                <input 
+                  name="ubicacion" 
+                  value={formData.ubicacion} 
+                  onChange={handleFormChange} 
+                  placeholder="Ubicación" 
+                  className={inputStyles} 
                   required
                   disabled={isLoading}
                 />
-                <input
-                  name="participantes"
-                  value={formData.participantes}
-                  onChange={handleFormChange}
-                  placeholder="Participantes"
-                  className={inputStyles}
+                <input 
+                  name="participantes" 
+                  value={formData.participantes} 
+                  onChange={handleFormChange} 
+                  placeholder="Participantes" 
+                  className={inputStyles} 
                   required
                   disabled={isLoading}
                 />
               </div>
-              <textarea
-                name="recursosGenerales"
-                value={formData.recursosGenerales}
-                onChange={handleFormChange}
-                placeholder="Recursos Generales Necesarios"
-                rows={2}
+              <textarea 
+                name="recursosGenerales" 
+                value={formData.recursosGenerales} 
+                onChange={handleFormChange} 
+                placeholder="Recursos Generales Necesarios" 
+                rows={2} 
                 className={inputStyles}
                 disabled={isLoading}
               />
             </div>
           </div>
-
+          
           {/* Tareas */}
           <div className="p-4 border rounded-lg dark:border-slate-700">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">Tareas Asociadas</h3>
-              <button
-                type="button"
-                onClick={handleAddTarea}
+              <button 
+                type="button" 
+                onClick={handleAddTarea} 
                 className="bg-slate-200 dark:bg-slate-600 text-sm font-semibold px-3 py-1 rounded-md disabled:opacity-50"
                 disabled={isLoading}
               >
@@ -615,36 +615,36 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
             <div className="space-y-4 max-h-60 overflow-y-auto">
               {formData.tareas.map((tarea, index) => (
                 <div key={tarea.id} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-md relative">
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveTarea(tarea.id)}
+                  <button 
+                    type="button" 
+                    onClick={() => handleRemoveTarea(tarea.id)} 
                     className="absolute top-1 right-1 text-red-500 text-lg disabled:opacity-50"
                     disabled={isLoading}
                   >
                     &times;
                   </button>
-                  <textarea
-                    value={tarea.descripcion}
-                    onChange={e => handleTareaChange(tarea.id, 'descripcion', e.target.value)}
-                    placeholder={`Descripción de la Tarea ${index + 1}`}
-                    rows={2}
-                    className={inputStyles}
+                  <textarea 
+                    value={tarea.descripcion} 
+                    onChange={e => handleTareaChange(tarea.id, 'descripcion', e.target.value)} 
+                    placeholder={`Descripción de la Tarea ${index + 1}`} 
+                    rows={2} 
+                    className={inputStyles} 
                     required
                     disabled={isLoading}
                   />
                   <div className="grid grid-cols-2 gap-2 mt-2">
-                    <input
-                      value={tarea.responsable}
-                      onChange={e => handleTareaChange(tarea.id, 'responsable', e.target.value)}
-                      placeholder="Responsable"
-                      className={inputStyles}
+                    <input 
+                      value={tarea.responsable} 
+                      onChange={e => handleTareaChange(tarea.id, 'responsable', e.target.value)} 
+                      placeholder="Responsable" 
+                      className={inputStyles} 
                       required
                       disabled={isLoading}
                     />
-                    <input
-                      value={tarea.recursos}
-                      onChange={e => handleTareaChange(tarea.id, 'recursos', e.target.value)}
-                      placeholder="Recursos Necesarios"
+                    <input 
+                      value={tarea.recursos} 
+                      onChange={e => handleTareaChange(tarea.id, 'recursos', e.target.value)} 
+                      placeholder="Recursos Necesarios" 
                       className={inputStyles}
                       disabled={isLoading}
                     />
@@ -660,17 +660,17 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
           </div>
 
           <div className="flex justify-end gap-4">
-            <button
-              type="button"
-              onClick={() => setView('list')}
+            <button 
+              type="button" 
+              onClick={() => setView('list')} 
               className="bg-slate-200 dark:bg-slate-600 font-semibold px-6 py-2 rounded-lg disabled:opacity-50"
               disabled={isLoading}
             >
               Cancelar
             </button>
-            <button
-              type="submit"
-              disabled={isLoading}
+            <button 
+              type="submit" 
+              disabled={isLoading} 
               className="bg-blue-600 text-white font-bold px-6 py-2 rounded-lg flex items-center min-w-[150px] justify-center disabled:opacity-50"
             >
               {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : 'Guardar Actividad'}
@@ -695,11 +695,11 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
           <h3 className="text-xl font-bold mb-4">Resumen de la Actividad</h3>
           <div className="space-y-4 text-sm">
             <div className="flex justify-between border-b pb-2 dark:border-slate-600">
-              <strong className="text-slate-500">Nombre:</strong>
+              <strong className="text-slate-500">Nombre:</strong> 
               <span>{currentActividad.nombre}</span>
             </div>
             <div className="flex justify-between border-b pb-2 dark:border-slate-600">
-              <strong className="text-slate-500">Fecha y Hora:</strong>
+              <strong className="text-slate-500">Fecha y Hora:</strong> 
               <span>{new Date(`${currentActividad.fecha}T${currentActividad.hora}`).toLocaleString('es-CL')}</span>
             </div>
             <div className="border-b pb-2 dark:border-slate-600">
@@ -707,11 +707,11 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
               <p>{currentActividad.descripcion}</p>
             </div>
             <div className="flex justify-between border-b pb-2 dark:border-slate-600">
-              <strong className="text-slate-500">Ubicación:</strong>
+              <strong className="text-slate-500">Ubicación:</strong> 
               <span>{currentActividad.ubicacion}</span>
             </div>
             <div className="flex justify-between border-b pb-2 dark:border-slate-600">
-              <strong className="text-slate-500">Participantes:</strong>
+              <strong className="text-slate-500">Participantes:</strong> 
               <span>{currentActividad.participantes}</span>
             </div>
             <div className="border-b pb-2 dark:border-slate-600">
@@ -725,7 +725,7 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
           </div>
           <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg flex justify-between items-center">
             <p className="text-sm">¿Quieres agregar esta actividad a tu calendario para recibir recordatorios?</p>
-            <button
+            <button 
               onClick={() => handleAddToCalendar(currentActividad)}
               disabled={isAddedToCalendar}
               className={`font-bold px-4 py-2 rounded-lg transition-colors ${
@@ -738,8 +738,8 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
             </button>
           </div>
         </div>
-        <button
-          onClick={() => { setView('list'); setCurrentActividad(null); }}
+        <button 
+          onClick={() => { setView('list'); setCurrentActividad(null); }} 
           className="w-full text-center font-semibold text-blue-600 hover:underline"
         >
           Volver al panel de actividades
@@ -752,8 +752,8 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
     <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Actividades del Calendario</h2>
-        <button
-          onClick={() => { setView('form'); setFormData(initialFormState); }}
+        <button 
+          onClick={() => { setView('form'); setFormData(initialFormState); }} 
           className="bg-amber-500 text-white font-bold py-2 px-5 rounded-lg hover:bg-amber-600"
         >
           Planificar Actividad
@@ -765,7 +765,7 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
             <div key={act.id} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-md border dark:border-slate-700">
               <p className="font-bold text-slate-800 dark:text-slate-200">{act.nombre}</p>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                {new Date(act.fecha + 'T12:00:00').toLocaleDateString('es-CL')} - {act.ubicacion}
+                {new Date(act.fecha+'T12:00:00').toLocaleDateString('es-CL')} - {act.ubicacion}
               </p>
             </div>
           ))
@@ -786,7 +786,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   // Usa uid como identificador principal, luego email como fallback
   const userId = currentUser.uid || currentUser.email || currentUser.id || '';
   const { planificaciones, save: savePlan, update: updatePlan, remove: deletePlan, loading: planificacionesLoading } = usePlanificaciones(userId);
-
+  
   const initialUnidadFormState = {
     asignatura: '',
     nivel: '' as NivelPlanificacion,
@@ -825,7 +825,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       asignatura: assignedAsignaturas[0] || '',
       nivel: assignedNiveles[0] || '' as NivelPlanificacion,
     }));
-
+    
     // Debug para entender el problema de permisos
     console.log('🔍 Debug datos usuario y planificaciones:', {
       currentUser: {
@@ -844,13 +844,6 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       }))
     });
   }, [assignedAsignaturas, assignedNiveles, currentUser, userId, planificaciones]);
-  
-  // Sincroniza la planificación editada con la lista actualizada
-  useEffect(() => {
-    if (!editingPlanificacion) return;
-    const actualizada = planificaciones.find(p => p.id === editingPlanificacion.id && p.tipo === 'Unidad') as PlanificacionUnidad | undefined;
-    if (actualizada) setEditingPlanificacion(actualizada);
-  }, [planificaciones, editingPlanificacion?.id]);
 
   const handleUnidadFieldChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -893,7 +886,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     setLoading(true);
     setError(null);
 
-    if (!unidadFormData.contenidos || !unidadFormData.nombreUnidad) {
+    if(!unidadFormData.contenidos || !unidadFormData.nombreUnidad){
       setError("Los campos 'Nombre de Unidad' y 'Contenidos Clave' son obligatorios.");
       setLoading(false);
       return;
@@ -901,7 +894,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
 
     try {
       logApiCall('Planificación - Unidad');
-
+      
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) {
         setError("La API Key de Gemini no está configurada.");
@@ -912,7 +905,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       const ai = new GoogleGenerativeAI(apiKey);
       const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
       const prompt = buildUnidadPrompt();
-
+      
       const responseSchema = {
         type: "object",
         properties: {
@@ -936,15 +929,15 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         },
         required: ["objetivosAprendizaje", "indicadoresEvaluacion", "detallesLeccion"]
       };
-
+      
       const result = await model.generateContent({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema
+        generationConfig: { 
+          responseMimeType: "application/json", 
+          responseSchema 
         }
       });
-
+      
       const response = await result.response;
       const text = response.text();
       const generatedData = JSON.parse(text);
@@ -964,7 +957,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         indicadoresEvaluacion: generatedData.indicadoresEvaluacion,
         detallesLeccion: generatedData.detallesLeccion,
       };
-
+      
       if (editingPlanificacion) {
         // Actualizar planificación existente
         await updatePlan(editingPlanificacion.id, newPlan);
@@ -986,7 +979,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   const handleUseLessonAsClassPlan = async (lessonDetail: DetalleLeccion, unitPlan: PlanificacionUnidad) => {
     setLoading(true);
     setError(null);
-
+    
     const prompt = `A partir de la siguiente información de una clase dentro de una unidad, genera un plan de clase detallado con momentos de inicio, desarrollo y cierre. La clase debe durar 80 minutos.
     
     - Asignatura: ${unitPlan.asignatura}
@@ -999,7 +992,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
 
     try {
       logApiCall('Planificación - Utilizar Clase');
-
+      
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) {
         setError("La API Key de Gemini no está configurada.");
@@ -1009,7 +1002,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
 
       const ai = new GoogleGenerativeAI(apiKey);
       const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-
+      
       const schema = {
         type: "object",
         properties: {
@@ -1070,7 +1063,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
-
+  
   const handleDelete = async (id: string) => {
     if (window.confirm("¿Está seguro de que desea eliminar esta planificación?")) {
       try {
@@ -1113,18 +1106,18 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
 
   const handleSaveEditedLesson = async (updatedLesson: DetalleLeccion) => {
     if (!editingLesson) return;
-
+    
     try {
       const { planId, lessonIndex } = editingLesson;
       const planToUpdate = planificaciones.find(p => p.id === planId && p.tipo === 'Unidad') as PlanificacionUnidad;
-
+      
       if (!planToUpdate) return;
 
       const newDetallesLeccion = [...planToUpdate.detallesLeccion];
       newDetallesLeccion[lessonIndex] = updatedLesson;
-
+      
       const updatedPlan = { ...planToUpdate, detallesLeccion: newDetallesLeccion };
-
+      
       await updatePlan(planId, updatedPlan);
       setEditingPlanificacion(updatedPlan);
       setEditingLesson(null);
@@ -1133,9 +1126,9 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       alert('Error al actualizar la lección. Por favor, intente nuevamente.');
     }
   };
-
+  
   const inputStyles = "w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400";
-
+  
   const renderUnidadTab = () => (
     <div className="space-y-8">
       <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
@@ -1150,10 +1143,10 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <div>
                 <label htmlFor="asignatura" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Asignatura</label>
-                <select
-                  name="asignatura"
-                  value={unidadFormData.asignatura}
-                  onChange={handleUnidadFieldChange}
+                <select 
+                  name="asignatura" 
+                  value={unidadFormData.asignatura} 
+                  onChange={handleUnidadFieldChange} 
                   className={inputStyles}
                   disabled={loading}
                 >
@@ -1166,10 +1159,10 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
               </div>
               <div>
                 <label htmlFor="nivel" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Nivel</label>
-                <select
-                  name="nivel"
-                  value={unidadFormData.nivel}
-                  onChange={handleUnidadFieldChange}
+                <select 
+                  name="nivel" 
+                  value={unidadFormData.nivel} 
+                  onChange={handleUnidadFieldChange} 
                   className={inputStyles}
                   disabled={loading}
                 >
@@ -1184,12 +1177,12 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
                 <label htmlFor="nombreUnidad" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
                   Nombre de Unidad <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  name="nombreUnidad"
-                  value={unidadFormData.nombreUnidad}
-                  onChange={handleUnidadFieldChange}
-                  className={inputStyles}
+                <input 
+                  type="text" 
+                  name="nombreUnidad" 
+                  value={unidadFormData.nombreUnidad} 
+                  onChange={handleUnidadFieldChange} 
+                  className={inputStyles} 
                   placeholder="Ej: La Célula y sus procesos"
                   disabled={loading}
                 />
@@ -1198,49 +1191,49 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
                 <label htmlFor="contenidos" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
                   Contenidos Clave <span className="text-red-500">*</span>
                 </label>
-                <textarea
-                  name="contenidos"
-                  value={unidadFormData.contenidos}
-                  onChange={handleUnidadFieldChange}
-                  rows={3}
-                  placeholder="Ingrese los temas, conceptos clave o unidades que la planificación debe abordar."
+                <textarea 
+                  name="contenidos" 
+                  value={unidadFormData.contenidos} 
+                  onChange={handleUnidadFieldChange} 
+                  rows={3} 
+                  placeholder="Ingrese los temas, conceptos clave o unidades que la planificación debe abordar." 
                   className={inputStyles}
                   disabled={loading}
                 />
               </div>
               <div className="md:col-span-2 lg:col-span-3">
                 <label htmlFor="ideasParaUnidad" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Ideas para la unidad</label>
-                <textarea
-                  name="ideasParaUnidad"
-                  value={unidadFormData.ideasParaUnidad}
-                  onChange={handleUnidadFieldChange}
-                  rows={3}
-                  placeholder="Plantea tus ideas y perspectiva para que la IA construya una mejor planificación (ej: enfocar en trabajo colaborativo, usar casos prácticos, conectar con la actualidad)."
+                <textarea 
+                  name="ideasParaUnidad" 
+                  value={unidadFormData.ideasParaUnidad} 
+                  onChange={handleUnidadFieldChange} 
+                  rows={3} 
+                  placeholder="Plantea tus ideas y perspectiva para que la IA construya una mejor planificación (ej: enfocar en trabajo colaborativo, usar casos prácticos, conectar con la actualidad)." 
                   className={inputStyles}
                   disabled={loading}
                 />
               </div>
               <div>
                 <label htmlFor="cantidadClases" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Cantidad de Clases</label>
-                <input
-                  type="number"
-                  name="cantidadClases"
-                  value={unidadFormData.cantidadClases}
-                  onChange={handleUnidadFieldChange}
-                  className={inputStyles}
-                  min="1"
+                <input 
+                  type="number" 
+                  name="cantidadClases" 
+                  value={unidadFormData.cantidadClases} 
+                  onChange={handleUnidadFieldChange} 
+                  className={inputStyles} 
+                  min="1" 
                   max="20"
                   disabled={loading}
                 />
               </div>
               <div className="md:col-span-2">
                 <label htmlFor="observaciones" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Observaciones (Énfasis)</label>
-                <textarea
-                  name="observaciones"
-                  value={unidadFormData.observaciones}
-                  onChange={handleUnidadFieldChange}
-                  rows={1}
-                  placeholder="Ej: clase práctica, modelo ABP, juego, reforzamiento..."
+                <textarea 
+                  name="observaciones" 
+                  value={unidadFormData.observaciones} 
+                  onChange={handleUnidadFieldChange} 
+                  rows={1} 
+                  placeholder="Ej: clase práctica, modelo ABP, juego, reforzamiento..." 
                   className={inputStyles}
                   disabled={loading}
                 />
@@ -1248,9 +1241,9 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
             </div>
 
             <div className="pt-4 text-right">
-              <button
-                type="submit"
-                disabled={loading || planificacionesLoading}
+              <button 
+                type="submit" 
+                disabled={loading || planificacionesLoading} 
                 className="bg-slate-800 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-700 disabled:bg-slate-400 flex items-center justify-center min-w-[150px] dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600"
               >
                 {loading ? (
@@ -1267,27 +1260,20 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
           </form>
         )}
       </div>
-
+      
       {editingPlanificacion && (
         <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md space-y-8">
           <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">Revisión y Edición</h2>
-          <LessonPlanViewer
-            plan={editingPlanificacion}
+          <LessonPlanViewer 
+            plan={editingPlanificacion} 
             onEditLesson={handleOpenEditModal}
             onUseLesson={handleUseLessonAsClassPlan}
             onUpdatePlan={updatePlan}
             isLoading={loading}
           />
-          {/* Reflexión Docente de la Unidad */}
-          <ReflexionUnidadForm
-            initialReflexion={editingPlanificacion.reflexionUnidad}
-            onSave={async (reflexion) => {
-              await updatePlan(editingPlanificacion.id, { reflexionUnidad: reflexion });
-            }}
-          />
         </div>
       )}
-      
+
       <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
         <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">Historial de Planificaciones de Unidad</h2>
         {planificacionesLoading ? (
@@ -1296,15 +1282,15 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
           </div>
         ) : (
           <div className="space-y-4">
-            {planificaciones.filter(p => p.tipo === 'Unidad').length > 0 ?
+            {planificaciones.filter(p => p.tipo === 'Unidad').length > 0 ? 
               planificaciones.filter((p): p is PlanificacionUnidad => p.tipo === 'Unidad').map(plan => (
-                <div
-                  key={plan.id}
+                <div 
+                  key={plan.id} 
                   className={`p-4 border rounded-lg ${
-                    editingPlanificacion?.id === plan.id
-                      ? 'bg-amber-50 border-amber-300 dark:bg-amber-900/20 dark:border-amber-500/50'
+                    editingPlanificacion?.id === plan.id 
+                      ? 'bg-amber-50 border-amber-300 dark:bg-amber-900/20 dark:border-amber-500/50' 
                       : 'bg-slate-50 dark:bg-slate-700/50 dark:border-slate-700'
-                    }`}
+                  }`}
                 >
                   <div className="flex justify-between items-center">
                     <div>
@@ -1317,16 +1303,16 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleSelectForEdit(plan)}
+                      <button 
+                        onClick={() => handleSelectForEdit(plan)} 
                         className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-semibold text-sm disabled:opacity-50"
                         disabled={loading}
                       >
                         Ver y Editar
                       </button>
-                      <button
-                        onClick={() => handleDelete(plan.id)}
-                        title="Eliminar"
+                      <button 
+                        onClick={() => handleDelete(plan.id)} 
+                        title="Eliminar" 
                         className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-50"
                         disabled={loading}
                       >
@@ -1344,14 +1330,14 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       </div>
     </div>
   );
-
+  
   const renderClaseTab = () => {
     const planesClase = planificaciones.filter((p): p is PlanificacionClase => p.tipo === 'Clase')
-      .sort((a, b) => new Date(b.fechaCreacion).getTime() - new Date(a.fechaCreacion).getTime());
+      .sort((a,b) => new Date(b.fechaCreacion).getTime() - new Date(a.fechaCreacion).getTime());
 
     if (viewingClassPlan) {
       return (
-        <ClassPlanViewer
+        <ClassPlanViewer 
           plan={viewingClassPlan}
           onBack={() => setViewingClassPlan(null)}
           onDelete={handleDeleteClassPlan}
@@ -1390,8 +1376,8 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setViewingClassPlan(plan)}
+                  <button 
+                    onClick={() => setViewingClassPlan(plan)} 
                     className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-semibold text-sm"
                   >
                     Ver Plan de Clase
@@ -1408,7 +1394,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       </div>
     );
   };
-
+  
   // Verificar que el usuario está autenticado
   if (!currentUser || (!currentUser.email && !currentUser.id)) {
     return (
@@ -1420,39 +1406,39 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       </div>
     );
   }
-
+  
   return (
     <div className="space-y-8 animate-fade-in">
       <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Planificación</h1>
       <div className="border-b border-slate-200 dark:border-slate-700">
         <nav className="-mb-px flex space-x-6" aria-label="Tabs">
-          <button
-            onClick={() => setActiveTab('unidad')}
+          <button 
+            onClick={() => setActiveTab('unidad')} 
             className={`${
-              activeTab === 'unidad'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
+              activeTab === 'unidad' 
+                ? 'border-amber-500 text-amber-600 dark:text-amber-400' 
                 : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:border-slate-600'
-              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
           >
             Unidad
           </button>
-          <button
-            onClick={() => setActiveTab('clase')}
+          <button 
+            onClick={() => setActiveTab('clase')} 
             className={`${
-              activeTab === 'clase'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
+              activeTab === 'clase' 
+                ? 'border-amber-500 text-amber-600 dark:text-amber-400' 
                 : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:border-slate-600'
-              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
           >
             Clase
           </button>
-          <button
-            onClick={() => setActiveTab('calendario')}
+          <button 
+            onClick={() => setActiveTab('calendario')} 
             className={`${
-              activeTab === 'calendario'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
+              activeTab === 'calendario' 
+                ? 'border-amber-500 text-amber-600 dark:text-amber-400' 
                 : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:border-slate-600'
-              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
           >
             Actividades Calendario
           </button>
@@ -1476,74 +1462,3 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
 };
 
 export default PlanificacionDocente;
-
-const HABILIDADES_BLOOM = ['Recordar', 'Comprender', 'Aplicar', 'Analizar', 'Evaluar', 'Crear'];
-
-const ReflexionUnidadForm: React.FC<{ initialReflexion?: ReflexionUnidad; onSave: (reflexion: ReflexionUnidad) => Promise<void>; }> = ({ initialReflexion, onSave }) => {
-  const [reflexion, setReflexion] = useState<ReflexionUnidad>(
-    initialReflexion || { fortalezas: '', debilidades: '', mejoras: '', ordenHabilidades: HABILIDADES_BLOOM }
-  );
-  const [saving, setSaving] = useState(false);
-  const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    setReflexion(initialReflexion || { fortalezas: '', debilidades: '', mejoras: '', ordenHabilidades: HABILIDADES_BLOOM });
-  }, [initialReflexion]);
-
-  const triggerSave = useCallback((dataToSave: ReflexionUnidad) => {
-    if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
-    debounceTimeout.current = setTimeout(async () => {
-      setSaving(true);
-      try {
-        await onSave(dataToSave);
-      } catch (error) { console.error("Error al guardar reflexión:", error); }
-      finally { setSaving(false); }
-    }, 1500);
-  }, [onSave]);
-
-  const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setReflexion(prev => {
-      const updated = { ...prev, [name]: value };
-      triggerSave(updated);
-      return updated;
-    });
-  };
-
-  const handleDragStart = (e: React.DragEvent<HTMLLIElement>, index: number) => e.dataTransfer.setData("draggedIndex", index.toString());
-  const handleDrop = (e: React.DragEvent<HTMLLIElement>, dropIndex: number) => {
-    const draggedIndex = parseInt(e.dataTransfer.getData("draggedIndex"), 10);
-    const newOrder = [...(reflexion.ordenHabilidades || HABILIDADES_BLOOM)];
-    const [draggedItem] = newOrder.splice(draggedIndex, 1);
-    newOrder.splice(dropIndex, 0, draggedItem);
-    const updatedReflexion = { ...reflexion, ordenHabilidades: newOrder };
-    setReflexion(updatedReflexion);
-    triggerSave(updatedReflexion);
-  };
-
-  const inputStyles = "w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600";
-
-  return (
-    <div className="p-4 border rounded-lg dark:border-slate-700 space-y-6 bg-slate-50 dark:bg-slate-900/50">
-      <div className="flex justify-between items-center"><h3 className="text-xl font-bold text-slate-800 dark:text-slate-200">Reflexión Docente de la Unidad</h3>{saving && <span className="text-xs text-slate-400">Guardando...</span>}</div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">Habilidades Desarrolladas (Arrastra para ordenar por importancia)</label>
-          <ul className="space-y-2">
-            {(reflexion.ordenHabilidades || HABILIDADES_BLOOM).map((habilidad, index) => (
-              <li key={habilidad} draggable onDragStart={(e) => handleDragStart(e, index)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, index)}
-                className="p-2 bg-white dark:bg-slate-700 rounded-md cursor-grab flex items-center gap-2 shadow-sm">
-                <span className="font-bold text-amber-500">{index + 1}.</span> {habilidad}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="space-y-4">
-          <div><label className="block text-sm font-medium mb-1">Contenidos Relevantes (Fortalezas)</label><textarea name="fortalezas" value={reflexion.fortalezas} onChange={handleChange} rows={3} className={inputStyles} placeholder="¿Qué contenidos funcionaron mejor?" /></div>
-          <div><label className="block text-sm font-medium mb-1">Principales Experiencias (Mejoras)</label><textarea name="mejoras" value={reflexion.mejoras} onChange={handleChange} rows={3} className={inputStyles} placeholder="¿Qué actividades generaron mayor impacto?" /></div>
-          <div><label className="block text-sm font-medium mb-1">Principales Desafíos (Debilidades)</label><textarea name="debilidades" value={reflexion.debilidades} onChange={handleChange} rows={3} className={inputStyles} placeholder="¿Qué aspectos fueron más difíciles?" /></div>
-        </div>
-      </div>
-    </div>
-  );
-};

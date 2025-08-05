@@ -1,7 +1,5 @@
 import React from 'react';
 import type { Position, Node as ReactFlowNode, Edge as ReactFlowEdge } from 'reactflow';
-// Para una mejor seguridad de tipos con Firestore, se recomienda importar estos tipos.
-// Si no usas Firebase, puedes reemplazarlos por `string` y `any` respectivamente.
 import type { Timestamp, FieldValue } from 'firebase/firestore';
 
 // --- General ---
@@ -147,7 +145,7 @@ export interface ReflexionUnidad {
   fortalezas: string;
   debilidades: string;
   mejoras: string;
-  ordenHabilidades?: string[];
+  ordenHabilidades: string[];
 }
 
 export interface PlanificacionUnidad extends PlanificacionBase {
