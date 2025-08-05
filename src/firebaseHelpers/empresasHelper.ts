@@ -10,8 +10,9 @@ import {
   orderBy,
   serverTimestamp,
   where,
+  updateDoc,
 } from 'firebase/firestore';
-import { db } from './config';
+import { db } from './config'; // Asegúrate que la ruta a tu config de Firebase es correcta
 import { Empresa, User, Profile } from '../../types';
 
 const EMPRESAS_COLLECTION = 'empresas_practicas';
@@ -21,6 +22,34 @@ const convertFirestoreDoc = <T>(docSnapshot: any): T => {
   const data = docSnapshot.data();
   return { id: docSnapshot.id, ...data } as T;
 };
+
+// --- FUNCIÓN DE GEOCODIFICACIÓN ---
+
+/**
+ * Convierte una dirección de texto en coordenadas geográficas usando la API de Google Maps.
+ * @param address La dirección a geocodificar.
+ * @returns Un objeto con latitud y longitud, o null si no se encuentra.
+ */
+async function geocodeAddress(address: string): Promise<{lat: number, lng: number} | null> {
+    // IMPORTANTE: Reemplaza 'TU_CLAVE_DE_API_DE_GOOGLE_MAPS' con tu propia clave de API.
+    // Habilita la "Geocoding API" en tu consola de Google Cloud.
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'TU_CLAVE_DE_API_DE_GOOGLE_MAPS';
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}&region=CL`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.status === 'OK' && data.results[0]) {
+            return data.results[0].geometry.location; // Devuelve { lat, lng }
+        }
+        console.warn('Geocodificación no exitosa:', data.status);
+        return null;
+    } catch (error) {
+        console.error("Error en la llamada a la API de Geocodificación:", error);
+        return null;
+    }
+}
+
 
 // --- GESTIÓN DE EMPRESAS ---
 
@@ -33,9 +62,19 @@ export const subscribeToEmpresas = (callback: (data: Empresa[]) => void) => {
 };
 
 export const saveEmpresa = async (empresaData: Omit<Empresa, 'id' | 'createdAt'> | Empresa) => {
-  const { calificaciones } = empresaData;
-  const puntajeTotal = calificaciones.reduce((acc, item) => acc + (item.score || 0), 0);
-  const dataToSave = { ...empresaData, puntajeTotal };
+  // Calcula el puntaje total
+  const puntajeTotal = empresaData.calificaciones.reduce((acc, item) => acc + (item.score || 0), 0);
+  
+  // Prepara los datos para guardar
+  const dataToSave: any = { ...empresaData, puntajeTotal };
+
+  // Geocodifica la dirección si es necesario
+  if (empresaData.direccion) {
+      const coords = await geocodeAddress(empresaData.direccion);
+      if (coords) {
+          dataToSave.coordenadas = coords;
+      }
+  }
 
   if ('id' in empresaData && empresaData.id) {
     // Actualizar empresa existente
