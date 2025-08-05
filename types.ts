@@ -1,5 +1,8 @@
 import React from 'react';
 import type { Position, Node as ReactFlowNode, Edge as ReactFlowEdge } from 'reactflow';
+// Para una mejor seguridad de tipos con Firestore, se recomienda importar estos tipos.
+// Si no usas Firebase, puedes reemplazarlos por `string` y `any` respectivamente.
+import type { Timestamp, FieldValue } from 'firebase/firestore';
 
 // --- General ---
 
@@ -23,9 +26,9 @@ export interface User {
   profile: Profile;
   fotoUrl?: string;
   password?: string;
-  curso?: string; // For students
-  cursos?: string[]; // For teachers
-  asignaturas?: string[]; // For teachers
+  curso?: string; // Para estudiantes
+  cursos?: string[]; // Para profesores
+  asignaturas?: string[]; // Para profesores
   resetPasswordToken?: string;
   resetPasswordExpires?: number; // Timestamp
 }
@@ -115,6 +118,16 @@ export interface AccionPedagogica {
 
 export type NivelPlanificacion = '1º Medio' | '2º Medio' | '3º Medio' | '4º Medio';
 
+interface PlanificacionBase {
+  id: string;
+  fechaCreacion: string; // ISO String
+  asignatura: string;
+  nivel: NivelPlanificacion;
+  contenidos: string;
+  observaciones: string;
+  autor?: string;
+}
+
 export interface DetalleLeccion {
     objetivosAprendizaje: string;
     contenidosConceptuales: string;
@@ -130,14 +143,11 @@ export interface MomentosClase {
     cierre: string;
 }
 
-interface PlanificacionBase {
-  id: string;
-  fechaCreacion: string;
-  asignatura: string;
-  nivel: NivelPlanificacion;
-  contenidos: string;
-  observaciones: string;
-  autor?: string;
+export interface ReflexionUnidad {
+  fortalezas: string;
+  debilidades: string;
+  mejoras: string;
+  ordenHabilidades?: string[];
 }
 
 export interface PlanificacionUnidad extends PlanificacionBase {
@@ -149,6 +159,7 @@ export interface PlanificacionUnidad extends PlanificacionBase {
   detallesLeccion: DetalleLeccion[];
   ideasParaUnidad?: string;
   progreso?: number; // Porcentaje de avance de la unidad (0-100)
+  reflexionUnidad?: ReflexionUnidad;
 }
 
 export interface PlanificacionClase extends PlanificacionBase {
@@ -156,14 +167,14 @@ export interface PlanificacionClase extends PlanificacionBase {
   nombreClase: string;
   duracionClase: number; // en minutos
   momentosClase: MomentosClase;
-  detalleLeccionOrigen?: DetalleLeccion; // Optional link back
+  detalleLeccionOrigen?: DetalleLeccion;
   progreso?: number; // Porcentaje de avance de la clase (0-100)
 }
 
 export type PlanificacionDocente = PlanificacionUnidad | PlanificacionClase;
 
-
 // --- Generador de Actas ---
+
 export type TipoReunion = 'Humanidades' | 'TP' | 'Ciencias' | 'Interdisciplinario' | 'Gestión Pedagógica' | 'Equipo Directivo' | 'Equipo de Gestión' | 'Consejo Escolar';
 
 export interface Acta {
@@ -177,7 +188,6 @@ export interface Acta {
   plazos?: string[];
   responsables?: string[];
 }
-
 
 // --- Calendario Académico ---
 
@@ -232,7 +242,6 @@ export interface SalidaPedagogicaEvent extends BaseEvent {
 
 export type CalendarEvent = EvaluacionEvent | ActoEvent | ActividadFocalizadaEvent | SalidaPedagogicaEvent;
 
-
 // --- Evaluación de Aprendizajes ---
 
 export type TipoInstrumento = 'Prueba' | 'Guía' | 'Rúbrica' | 'Lista de cotejo' | 'Pauta de observación' | 'Otro';
@@ -252,7 +261,7 @@ export interface PruebaItemBase {
 export interface SeleccionMultipleItem extends PruebaItemBase {
   tipo: 'Selección múltiple';
   opciones: string[];
-  respuestaCorrecta: number; // index of the correct option
+  respuestaCorrecta: number; // index de la opción correcta
 }
 
 export interface VerdaderoFalsoItem extends PruebaItemBase {
@@ -287,7 +296,7 @@ export interface PruebaActividad {
 export interface Prueba {
   id: string;
   nombre: string;
-  fechaCreacion: string;
+  fechaCreacion: string; // ISO String
   asignatura: string;
   nivel: string;
   objetivo: string;
@@ -300,7 +309,7 @@ export interface Prueba {
   adaptacionNEE?: DificultadAprendizaje[];
 }
 
-// --- Rúbricas (Estáticas) ---
+// --- Rúbricas (Estáticas y Interactivas) ---
 export interface NivelDescriptor {
   insuficiente: string;
   suficiente: string;
@@ -319,15 +328,12 @@ export interface RubricaEstatica {
   id: string;
   titulo: string;
   descripcion: string;
-  fechaCreacion: string;
+  fechaCreacion: string; // ISO String
   dimensiones: DimensionRubrica[];
 }
 
-
-// --- Rúbricas Interactivas ---
-
 export interface ResultadoInteractivo {
-  puntajes: Record<string, number>; // { [dimensionNombre]: puntaje 1-4 }
+  puntajes: Record<string, number>; // { [nombreDimension]: puntaje 1-4 }
   feedback: string;
 }
 
@@ -336,8 +342,8 @@ export interface RubricaInteractiva {
   nombre: string;
   curso: string;
   asignatura: string;
-  rubricaEstaticaId: string; // Link to the static rubric
-  resultados: Record<string, ResultadoInteractivo>; // { [estudianteNombre]: ResultadoInteractivo }
+  rubricaEstaticaId: string; // Enlace a la rúbrica estática
+  resultados: Record<string, ResultadoInteractivo>; // { [nombreEstudiante]: ResultadoInteractivo }
 }
 
 // --- Seguimiento Dual ---
@@ -357,7 +363,6 @@ export interface SeguimientoDualRecord {
   estado: EstadoSeguimientoDual;
   fechaDesvinculacion?: string;
   motivoDesvinculacion?: string;
-  // Supervision fields
   fecha1raSupervision1erSemestre?: string;
   realizada1raSupervision1erSemestre?: boolean;
   fecha2daSupervision1erSemestre?: string;
@@ -368,7 +373,6 @@ export interface SeguimientoDualRecord {
   realizada2daSupervision2doSemestre?: boolean;
   fechaSupervisionExcepcional?: string;
   realizadaSupervisionExcepcional?: boolean;
-  // Maestro Guía
   nombreMaestroGuia?: string;
   contactoMaestroGuia?: string;
 }
@@ -387,6 +391,23 @@ export interface AsistenciaDual {
     longitud: number;
   };
 }
+
+// --- Archivos y Recursos (Refactorizado para claridad) ---
+
+/** Representa un archivo que se va a subir, típicamente en formato Base64. */
+export interface ArchivoParaSubir {
+    nombre: string;
+    url: string; // Base64 Data URL
+}
+
+/** Representa un archivo ya guardado en el almacenamiento, con su ID y URL de acceso. */
+export interface ArchivoGuardado {
+  id: string;
+  nombre: string;
+  url: string; // URL al archivo en el storage
+  fechaSubida: string; // ISO String
+}
+
 
 // --- Actividades Remotas & Auto-aprendizaje ---
 export type TipoActividadRemota = 'Quiz' | 'Comprensión de Lectura' | 'Términos Pareados' | 'Desarrollo';
@@ -413,14 +434,9 @@ export interface DesarrolloContent {
   rubrica: string;
 }
 
-export interface ArchivoAdjuntoRecurso {
-    nombre: string;
-    url: string; // Base64 Data URL
-}
-
 export interface ActividadRemota {
   id: string;
-  fechaCreacion: string;
+  fechaCreacion: string; // ISO String
   asignatura: string;
   nivel: NivelPlanificacion;
   contenido: string;
@@ -434,12 +450,12 @@ export interface ActividadRemota {
     'Términos Pareados': PareadoItem[];
     'Desarrollo': DesarrolloContent[];
   }>;
-  cursosDestino?: string[]; // Array of course names
-  estudiantesDestino?: string[]; // Array of student full names
+  cursosDestino?: string[];
+  estudiantesDestino?: string[];
   recursos?: {
     instrucciones?: string;
-    enlaces?: string; // separated by newline
-    archivos?: ArchivoAdjuntoRecurso[];
+    enlaces?: string; // Separados por nueva línea
+    archivos?: ArchivoParaSubir[];
   };
 }
 
@@ -461,7 +477,7 @@ export interface DetailedFeedback {
 export interface RespuestaEstudianteActividad {
   id: string;
   actividadId: string;
-  estudianteId: string; // Can be a name or a unique ID
+  estudianteId: string;
   fechaCompletado: string; // ISO String
   respuestas: Partial<Record<TipoActividadRemota, any>>;
   puntaje: number;
@@ -494,13 +510,6 @@ export interface Intervencion {
   participantes?: string;
 }
 
-export interface ArchivoAdjunto {
-  id: string;
-  nombre: string;
-  url: string; // URL to the file in storage
-  fechaSubida: string; // ISO String
-}
-
 export interface ReunionApoderados {
   id: string;
   fecha: string; // ISO String
@@ -529,7 +538,7 @@ export interface EstudianteInclusion {
   nombre: string;
   dificultad: DificultadAprendizaje;
   intervenciones: Intervencion[];
-  archivos: ArchivoAdjunto[];
+  archivos: ArchivoGuardado[]; // Usando el tipo refactorizado
   reuniones: ReunionApoderados[];
   adaptacionesCurriculares?: string;
   apoyosRecibidos?: string;
@@ -538,22 +547,21 @@ export interface EstudianteInclusion {
   alertas?: AlertaInclusion[];
 }
 
-
 // --- Acompañamiento Docente ---
 
 export interface AcompanamientoDocente {
   id: string;
-  fecha: string;
+  fecha: string; // YYYY-MM-DD
   docente: string;
   curso: string;
   asignatura: string;
   bloques: string;
-  rubricaResultados: Record<string, number>; // { [criterionName]: score }
+  rubricaResultados: Record<string, number>; // { [nombreCriterio]: puntaje }
   observacionesGenerales: string;
   retroalimentacionConsolidada: string;
 }
 
-// --- Evaluaciones Formativas ---
+// --- Evaluaciones Formativas y Gamificación ---
 
 export interface EvaluacionFormativa {
     id: string;
@@ -580,7 +588,7 @@ export interface TrabajoGrupal {
     }[];
 }
 
-export type CalificacionesFormativas = Record<string, Record<string, string>>; // { [evaluacionId]: { [estudianteNombre]: calificacion } }
+export type CalificacionesFormativas = Record<string, Record<string, string>>; // { [idEvaluacion]: { [nombreEstudiante]: calificacion } }
 
 export interface Insignia {
     nombre: string;
@@ -631,10 +639,7 @@ export interface EntregaTareaInterdisciplinaria {
     fechaCompletado?: string; // ISO String
     completada: boolean;
     observacionesEstudiante?: string;
-    archivoAdjunto?: {
-        nombre: string;
-        url: string; // Base64 Data URL
-    };
+    archivoAdjunto?: ArchivoParaSubir;
     enlaceUrl?: string;
     feedbackProfesor?: string;
     fechaFeedback?: string; // ISO String
@@ -702,7 +707,7 @@ export interface MindMap {
 // Líneas de Tiempo
 export interface TimelineEvent {
     id: string;
-    date: string; // Puede ser un año "YYYY" o una fecha "YYYY-MM-DD"
+    date: string; // Puede ser "YYYY" o "YYYY-MM-DD"
     description: string;
     icon?: string; // Emoji
 }
@@ -710,7 +715,6 @@ export interface TimelineEvent {
 export interface Timeline {
     id: string;
     tema: string;
-
     fechaInicio?: string;
     fechaFin?: string;
     createdAt: string; // ISO String
@@ -734,7 +738,7 @@ export interface CrosswordGridCell {
 
 export interface CrosswordPuzzle {
     id: string;
-    fechaCreacion: string;
+    fechaCreacion: string; // ISO String
     creadorId: string;
     creadorNombre: string;
     tema: string;
@@ -791,30 +795,28 @@ export interface AnalisisTaxonomico {
     summary: Record<BloomLevel, number>;
 }
 
-// En tu archivo types.ts
-
-// --- GESTIÓN DE EMPRESAS Y PRÁCTICAS TP ---
+// --- Gestión de Empresas y Prácticas TP (Refactorizado) ---
 
 export interface CalificacionItem {
   elemento: string; // Ej: "Cumplimiento legal y formalidad"
   score: 1 | 2 | 3 | null; // 1: Insatisfactorio, 2: Regular, 3: Óptimo
 }
 
+/** Representa una empresa con datos leídos desde Firestore. */
 export interface Empresa {
   id: string;
   nombre: string;
   rut: string;
   direccion: string;
-  contacto: string; // Puede ser un email, teléfono, o nombre de contacto.
-  cupos: number; // Cantidad de vacantes para práctica
+  contacto: string; // Email, teléfono, o nombre de contacto.
+  cupos: number; // Vacantes para práctica
   calificaciones: CalificacionItem[];
-  estudiantesAsignados: string[]; // Se guardará un array de los IDs de los estudiantes
-  puntajeTotal?: number; // Suma de todos los scores de 'calificaciones'
-  createdAt: any; // Se recomienda usar serverTimestamp() de Firestore
+  estudiantesAsignados: string[]; // IDs de los estudiantes
+  puntajeTotal?: number; // Suma de todos los 'scores'
+  createdAt: Timestamp; // Tipo de dato para fechas de Firestore
 }
 
-// (Opcional) Si necesitas un tipo específico para la data guardada en Firestore
-// que es ligeramente diferente a la del estado de React.
-export interface EmpresaFirestoreData extends Omit<Empresa, 'id' | 'createdAt'> {
-    createdAt: any; // serverTimestamp
+/** Representa el objeto de datos para crear/actualizar una empresa en Firestore. */
+export interface EmpresaData extends Omit<Empresa, 'id' | 'createdAt' | 'puntajeTotal'> {
+    createdAt: FieldValue; // Tipo para `serverTimestamp()` de Firestore
 }
