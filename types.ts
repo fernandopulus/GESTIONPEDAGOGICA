@@ -806,12 +806,12 @@ export interface Empresa {
   nombre: string;
   rut: string;
   direccion: string;
-  contacto: string; // Email, teléfono, o nombre de contacto.
-  cupos: number; // Vacantes para práctica
+  contacto: string;
+  cupos: number;
+  coordenadas?: { lat: number; lng: number } | null;
   calificaciones: CalificacionItem[];
-  estudiantesAsignados: string[]; // IDs de los estudiantes
-  puntajeTotal?: number; // Suma de todos los 'scores'
-  createdAt: Timestamp; // Tipo de dato para fechas de Firestore
+  estudiantesAsignados: string[];
+  createdAt: any;
 }
 
 /** Representa el objeto de datos para crear/actualizar una empresa en Firestore. */

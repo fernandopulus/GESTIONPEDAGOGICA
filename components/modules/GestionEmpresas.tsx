@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Empresa, CalificacionItem, User } from '../../types';
 import { 
     subscribeToEmpresas, 
@@ -6,20 +6,9 @@ import {
     deleteEmpresa,
     subscribeToEstudiantes 
 } from '../../src/firebaseHelpers/empresasHelper';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
 import GooglePlacesAutocomplete from 'react-google-places-autocomplete';
 
-// Arreglo para el ícono por defecto de Leaflet
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
-
-// --- HOOK PARA CARGAR EL SCRIPT DE GOOGLE MAPS DE FORMA SEGURA ---
+// Hook para cargar Google Maps
 const useGoogleMapsScript = (apiKey: string) => {
     const [isLoaded, setIsLoaded] = useState(false);
     const [error, setError] = useState<Error | null>(null);
@@ -34,48 +23,181 @@ const useGoogleMapsScript = (apiKey: string) => {
 
         const script = document.createElement('script');
         script.id = scriptId;
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
         script.async = true;
         script.defer = true;
         script.onload = () => setIsLoaded(true);
-        script.onerror = () => setError(new Error('No se pudo cargar el script de Google Maps.'));
+        script.onerror = () => setError(new Error('No se pudo cargar Google Maps.'));
 
         document.head.appendChild(script);
-
     }, [apiKey]);
 
     return { isLoaded, error };
 };
 
-
 const ELEMENTOS_A_EVALUAR: Omit<CalificacionItem, 'score'>[] = [
   { elemento: "Cumplimiento legal y formalidad" },
   { elemento: "Contrato o convenio formal de práctica" },
-  // ... (otros elementos)
+  { elemento: "Ambiente laboral y clima organizacional" },
+  { elemento: "Supervisión y mentoría" },
+  { elemento: "Oportunidades de aprendizaje" },
+  { elemento: "Recursos y herramientas disponibles" },
+  { elemento: "Seguridad y salud ocupacional" },
+  { elemento: "Comunicación interna" },
 ];
 
 const getInitialFormData = (): Omit<Empresa, 'id' | 'createdAt'> => ({
-    nombre: '', rut: '', direccion: '', contacto: '', cupos: 1,
+    nombre: '', 
+    rut: '', 
+    direccion: '', 
+    contacto: '', 
+    cupos: 1,
+    coordenadas: null,
     calificaciones: ELEMENTOS_A_EVALUAR.map(item => ({ ...item, score: null })),
     estudiantesAsignados: [],
 });
 
-const MapView: React.FC<{ empresas: Empresa[] }> = ({ empresas }) => {
+// Componente Google Maps
+const GoogleMapView: React.FC<{ empresas: Empresa[]; isLoaded: boolean }> = ({ empresas, isLoaded }) => {
+    const mapRef = useRef<HTMLDivElement>(null);
+    const mapInstanceRef = useRef<google.maps.Map | null>(null);
+    const markersRef = useRef<google.maps.Marker[]>([]);
+
     const empresasConCoordenadas = empresas.filter(e => e.coordenadas?.lat && e.coordenadas?.lng);
-    const santiagoCoords: [number, number] = [-33.4489, -70.6693];
+
+    useEffect(() => {
+        if (!isLoaded || !mapRef.current || !window.google) return;
+
+        // Crear mapa si no existe
+        if (!mapInstanceRef.current) {
+            mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
+                center: { lat: -33.4489, lng: -70.6693 }, // Santiago
+                zoom: 11,
+                mapTypeControl: true,
+                streetViewControl: true,
+                fullscreenControl: true,
+            });
+        }
+
+        // Limpiar marcadores existentes
+        markersRef.current.forEach(marker => marker.setMap(null));
+        markersRef.current = [];
+
+        // Agregar nuevos marcadores
+        empresasConCoordenadas.forEach(empresa => {
+            const marker = new window.google.maps.Marker({
+                position: { lat: empresa.coordenadas!.lat, lng: empresa.coordenadas!.lng },
+                map: mapInstanceRef.current,
+                title: empresa.nombre,
+            });
+
+            const infoWindow = new window.google.maps.InfoWindow({
+                content: `
+                    <div style="padding: 10px; max-width: 250px;">
+                        <h4 style="margin: 0 0 8px 0; color: #2563eb; font-weight: bold;">${empresa.nombre}</h4>
+                        <p style="margin: 4px 0; font-size: 14px;">📍 ${empresa.direccion}</p>
+                        <p style="margin: 4px 0; font-size: 13px; color: #6b7280;"><strong>RUT:</strong> ${empresa.rut}</p>
+                        <p style="margin: 4px 0; font-size: 13px; color: #059669;"><strong>Cupos:</strong> ${empresa.cupos}</p>
+                        ${empresa.contacto ? `<p style="margin: 4px 0; font-size: 13px; color: #6b7280;"><strong>Contacto:</strong> ${empresa.contacto}</p>` : ''}
+                    </div>
+                `
+            });
+
+            marker.addListener('click', () => {
+                infoWindow.open(mapInstanceRef.current, marker);
+            });
+
+            markersRef.current.push(marker);
+        });
+
+        // Ajustar vista para mostrar todos los marcadores
+        if (empresasConCoordenadas.length > 0) {
+            const bounds = new window.google.maps.LatLngBounds();
+            empresasConCoordenadas.forEach(empresa => {
+                bounds.extend({ lat: empresa.coordenadas!.lat, lng: empresa.coordenadas!.lng });
+            });
+            mapInstanceRef.current.fitBounds(bounds);
+        }
+    }, [empresasConCoordenadas, isLoaded]);
+
+    if (!isLoaded) {
+        return (
+            <div className="h-[600px] w-full rounded-lg border bg-gray-100 flex items-center justify-center">
+                <p className="text-gray-600">Cargando Google Maps...</p>
+            </div>
+        );
+    }
 
     return (
-        <div className="h-[600px] w-full rounded-lg overflow-hidden border dark:border-slate-700">
-            <MapContainer center={santiagoCoords} zoom={11} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
-                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                {empresasConCoordenadas.map(empresa => (
-                    <Marker key={empresa.id} position={[empresa.coordenadas!.lat, empresa.coordenadas!.lng]}>
-                        <Popup><strong>{empresa.nombre}</strong><br/>{empresa.direccion}</Popup>
-                    </Marker>
-                ))}
-            </MapContainer>
+        <div>
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold">
+                    Mapa de Empresas ({empresasConCoordenadas.length} geo-localizadas)
+                </h2>
+            </div>
+            <div 
+                ref={mapRef}
+                className="h-[600px] w-full rounded-lg border"
+                style={{ minHeight: '600px' }}
+            />
+            {empresasConCoordenadas.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90 rounded-lg">
+                    <div className="text-center p-6">
+                        <p className="text-gray-600 text-lg">📍 No hay empresas geo-localizadas</p>
+                        <p className="text-gray-500 text-sm mt-2">Agrega direcciones para verlas en el mapa</p>
+                    </div>
+                </div>
+            )}
         </div>
     );
+};
+
+// Iconos SVG simplificados
+const EvaluationIcon: React.FC<{ elemento: string; className?: string }> = ({ elemento, className = "w-5 h-5" }) => {
+    const getIcon = (elemento: string) => {
+        const elementoLower = elemento.toLowerCase();
+        
+        if (elementoLower.includes('legal')) return '🛡️';
+        if (elementoLower.includes('contrato')) return '📄';
+        if (elementoLower.includes('ambiente')) return '😊';
+        if (elementoLower.includes('supervisión')) return '👥';
+        if (elementoLower.includes('aprendizaje')) return '🎓';
+        if (elementoLower.includes('recursos')) return '🔧';
+        if (elementoLower.includes('seguridad')) return '🔒';
+        if (elementoLower.includes('comunicación')) return '💬';
+        
+        return '📋';
+    };
+    
+    return (
+        <div className="flex-shrink-0 text-2xl">
+            {getIcon(elemento)}
+        </div>
+    );
+};
+
+// Función para obtener coordenadas
+const getPlaceDetails = async (placeId: string, apiKey: string): Promise<{lat: number, lng: number} | null> => {
+    if (!window.google) return null;
+    
+    return new Promise((resolve) => {
+        const service = new window.google.maps.places.PlacesService(document.createElement('div'));
+        
+        service.getDetails({
+            placeId: placeId,
+            fields: ['geometry', 'formatted_address']
+        }, (place, status) => {
+            if (status === window.google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
+                resolve({
+                    lat: place.geometry.location.lat(),
+                    lng: place.geometry.location.lng()
+                });
+            } else {
+                console.error('Error getting place details:', status);
+                resolve(null);
+            }
+        });
+    });
 };
 
 const GestionEmpresas: React.FC = () => {
@@ -86,10 +208,8 @@ const GestionEmpresas: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [addressValue, setAddressValue] = useState(null);
     
-    // Usamos el hook para cargar el script
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
     const { isLoaded: isMapScriptLoaded, error: mapScriptError } = useGoogleMapsScript(apiKey);
-
 
     useEffect(() => {
         const unsubEmpresas = subscribeToEmpresas(setEmpresas);
@@ -123,10 +243,32 @@ const GestionEmpresas: React.FC = () => {
         setCurrentEmpresa(prev => prev ? { ...prev, [field]: value } : null);
     };
 
+    const handleAddressSelect = async (newValue: any) => {
+        setAddressValue(newValue);
+        
+        if (newValue?.value?.place_id && isMapScriptLoaded) {
+            try {
+                const coordenadas = await getPlaceDetails(newValue.value.place_id, apiKey);
+                handleFormChange('direccion', newValue.label || '');
+                handleFormChange('coordenadas', coordenadas);
+                console.log('Coordenadas obtenidas:', coordenadas);
+            } catch (error) {
+                console.error('Error al obtener coordenadas:', error);
+                handleFormChange('direccion', newValue.label || '');
+                handleFormChange('coordenadas', null);
+            }
+        } else {
+            handleFormChange('direccion', newValue?.label || '');
+        }
+    };
+
     const handleEdit = (empresa: Empresa) => {
         setCurrentEmpresa(JSON.parse(JSON.stringify(empresa)));
         if (empresa.direccion) {
-            setAddressValue({ label: empresa.direccion, value: { description: empresa.direccion } } as any);
+            setAddressValue({ 
+                label: empresa.direccion, 
+                value: { description: empresa.direccion } 
+            } as any);
         }
         setView('form');
     };
@@ -141,70 +283,241 @@ const GestionEmpresas: React.FC = () => {
                 <h1 className="text-3xl font-bold">Gestión de Empresas</h1>
                 <div className="flex items-center gap-4">
                     {view !== 'list' && (
-                         <button onClick={() => { setView('list'); setAddressValue(null); }} className="font-semibold">&larr; Volver</button>
+                         <button 
+                            onClick={() => { 
+                                setView('list'); 
+                                setAddressValue(null); 
+                                setCurrentEmpresa(null);
+                            }} 
+                            className="font-semibold hover:text-blue-600"
+                        >
+                            ← Volver
+                        </button>
                     )}
                     {view === 'list' && (
                         <>
-                            <button onClick={() => setView('map')} title="Vista de Mapa" className="bg-slate-200 p-2 rounded-lg">🗺️</button>
-                            <button onClick={() => { setCurrentEmpresa(getInitialFormData()); setView('form'); }} className="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg">Crear Empresa</button>
+                            <button 
+                                onClick={() => setView('map')} 
+                                title="Vista de Mapa" 
+                                className="bg-slate-200 hover:bg-slate-300 p-2 rounded-lg transition-colors"
+                            >
+                                🗺️
+                            </button>
+                            <button 
+                                onClick={() => { 
+                                    setCurrentEmpresa(getInitialFormData()); 
+                                    setView('form'); 
+                                }} 
+                                className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                            >
+                                Crear Empresa
+                            </button>
                         </>
                     )}
                 </div>
             </div>
 
-            {view === 'map' && <MapView empresas={empresas} />}
+            {view === 'map' && (
+                <GoogleMapView empresas={empresas} isLoaded={isMapScriptLoaded} />
+            )}
             
             {view === 'list' && (
                  <div className="space-y-3">
-                    {empresas.map(empresa => (
-                        <div key={empresa.id} className="p-4 border rounded-lg bg-slate-50">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <h3 className="font-bold text-lg">{empresa.nombre}</h3>
-                                    <p className="text-sm text-slate-500">{empresa.rut} | {empresa.direccion}</p>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <button onClick={() => handleEdit(empresa)} className="text-sm font-semibold">Editar</button>
-                                    <button onClick={() => handleDelete(empresa.id)} className="text-sm text-red-500">Eliminar</button>
+                    {empresas.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            No hay empresas registradas
+                        </div>
+                    ) : (
+                        empresas.map(empresa => (
+                            <div key={empresa.id} className="p-4 border rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h3 className="font-bold text-lg">{empresa.nombre}</h3>
+                                        <p className="text-sm text-slate-500">
+                                            {empresa.rut} | {empresa.direccion}
+                                        </p>
+                                        <p className="text-sm text-slate-600">
+                                            Cupos: {empresa.cupos} | 
+                                            {empresa.coordenadas ? ' 📍 Geo-localizada' : ' ⚠️ Sin coordenadas'}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <button 
+                                            onClick={() => handleEdit(empresa)} 
+                                            className="text-sm font-semibold text-blue-600 hover:text-blue-800"
+                                        >
+                                            Editar
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDelete(empresa.id)} 
+                                            className="text-sm text-red-500 hover:text-red-700"
+                                        >
+                                            Eliminar
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        ))
+                    )}
                 </div>
             )}
 
             {view === 'form' && currentEmpresa && (
                  <div className="space-y-6">
-                    <h2 className="text-2xl font-bold">{ 'id' in currentEmpresa ? 'Editando Empresa' : 'Nueva Empresa'}</h2>
+                    <h2 className="text-2xl font-bold">
+                        {'id' in currentEmpresa ? 'Editando Empresa' : 'Nueva Empresa'}
+                    </h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <input value={currentEmpresa.nombre} onChange={e => handleFormChange('nombre', e.target.value)} placeholder="Nombre Empresa" className="input-style" />
-                        <input value={currentEmpresa.rut} onChange={e => handleFormChange('rut', e.target.value)} placeholder="RUT Empresa" className="input-style" />
+                        <input 
+                            value={currentEmpresa.nombre} 
+                            onChange={e => handleFormChange('nombre', e.target.value)} 
+                            placeholder="Nombre Empresa" 
+                            className="input-style" 
+                            required
+                        />
+                        <input 
+                            value={currentEmpresa.rut} 
+                            onChange={e => handleFormChange('rut', e.target.value)} 
+                            placeholder="RUT Empresa" 
+                            className="input-style" 
+                            required
+                        />
                         <div className="md:col-span-2">
                              {mapScriptError ? (
-                                <p className="text-red-500">Error al cargar la API de Google Maps.</p>
+                                <div className="p-3 bg-red-100 border border-red-300 rounded-lg">
+                                    <p className="text-red-700">Error al cargar Google Places.</p>
+                                    <input 
+                                        value={currentEmpresa.direccion}
+                                        onChange={e => handleFormChange('direccion', e.target.value)}
+                                        placeholder="Ingrese dirección manualmente..." 
+                                        className="input-style w-full mt-2" 
+                                    />
+                                </div>
                              ) : isMapScriptLoaded ? (
-                                <GooglePlacesAutocomplete
-                                    apiKey={apiKey}
-                                    selectProps={{
-                                        value: addressValue,
-                                        onChange: (newValue: any) => {
-                                            setAddressValue(newValue);
-                                            handleFormChange('direccion', newValue?.label || '');
-                                        },
-                                        placeholder: 'Buscar dirección...',
-                                    }}
-                                    autocompletionRequest={{
-                                        componentRestrictions: { country: ['cl'] }
-                                    }}
-                                />
+                                <div>
+                                    <GooglePlacesAutocomplete
+                                        apiKey={apiKey}
+                                        selectProps={{
+                                            value: addressValue,
+                                            onChange: handleAddressSelect,
+                                            placeholder: 'Buscar dirección en Chile...',
+                                            className: 'w-full',
+                                        }}
+                                        autocompletionRequest={{
+                                            componentRestrictions: { country: ['cl'] }
+                                        }}
+                                    />
+                                    {currentEmpresa.coordenadas && (
+                                        <p className="text-sm text-green-600 mt-1">
+                                            ✓ Coordenadas: {currentEmpresa.coordenadas.lat.toFixed(4)}, {currentEmpresa.coordenadas.lng.toFixed(4)}
+                                        </p>
+                                    )}
+                                </div>
                              ) : (
-                                <input disabled className="input-style w-full" placeholder="Cargando autocompletado..." />
+                                <input 
+                                    disabled 
+                                    className="input-style w-full opacity-50" 
+                                    placeholder="Cargando Google Places..." 
+                                />
                              )}
                         </div>
-                        <input value={currentEmpresa.contacto} onChange={e => handleFormChange('contacto', e.target.value)} placeholder="Contacto" className="input-style" />
+                        <input 
+                            value={currentEmpresa.contacto} 
+                            onChange={e => handleFormChange('contacto', e.target.value)} 
+                            placeholder="Contacto" 
+                            className="input-style" 
+                        />
+                        <input 
+                            type="number"
+                            value={currentEmpresa.cupos} 
+                            onChange={e => handleFormChange('cupos', parseInt(e.target.value) || 1)} 
+                            placeholder="Número de cupos" 
+                            className="input-style"
+                            min="1"
+                        />
                     </div>
-                    {/* ... resto del formulario ... */}
-                    <button onClick={handleSave} className="w-full bg-amber-500 text-white font-bold py-2 rounded-lg">Guardar Empresa</button>
+                    
+                    {/* Sección de calificaciones */}
+                    {currentEmpresa.calificaciones && currentEmpresa.calificaciones.length > 0 && (
+                        <div className="space-y-4">
+                            <h3 className="text-lg font-semibold">Evaluación de la Empresa</h3>
+                            <div className="grid gap-3">
+                                {currentEmpresa.calificaciones.map((cal, index) => (
+                                    <div key={index} className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
+                                        <EvaluationIcon elemento={cal.elemento} />
+                                        <span className="flex-1 text-sm font-medium text-gray-700">
+                                            {cal.elemento}
+                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <select 
+                                                value={cal.score || ''} 
+                                                onChange={e => {
+                                                    const newCals = [...currentEmpresa.calificaciones!];
+                                                    newCals[index].score = e.target.value ? parseInt(e.target.value) : null;
+                                                    handleFormChange('calificaciones', newCals);
+                                                }}
+                                                className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            >
+                                                <option value="">Sin calificar</option>
+                                                <option value="1">1 - Muy deficiente</option>
+                                                <option value="2">2 - Deficiente</option>
+                                                <option value="3">3 - Regular</option>
+                                                <option value="4">4 - Bueno</option>
+                                                <option value="5">5 - Excelente</option>
+                                            </select>
+                                            {cal.score && (
+                                                <div className="flex items-center">
+                                                    {[1, 2, 3, 4, 5].map(star => (
+                                                        <span 
+                                                            key={star}
+                                                            className={`text-lg ${
+                                                                star <= cal.score! ? 'text-yellow-400' : 'text-gray-300'
+                                                            }`}
+                                                        >
+                                                            ⭐
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            
+                            {/* Resumen de calificaciones */}
+                            {currentEmpresa.calificaciones.some(cal => cal.score) && (
+                                <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                    <h4 className="font-semibold text-blue-800 mb-2">Resumen de Evaluación</h4>
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <div>
+                                            <span className="text-blue-600">Aspectos evaluados:</span>
+                                            <span className="ml-2 font-semibold">
+                                                {currentEmpresa.calificaciones.filter(cal => cal.score).length} / {currentEmpresa.calificaciones.length}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <span className="text-blue-600">Promedio:</span>
+                                            <span className="ml-2 font-semibold">
+                                                {(currentEmpresa.calificaciones
+                                                    .filter(cal => cal.score)
+                                                    .reduce((sum, cal) => sum + cal.score!, 0) / 
+                                                  currentEmpresa.calificaciones.filter(cal => cal.score).length
+                                                ).toFixed(1)} / 5.0
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    
+                    <button 
+                        onClick={handleSave} 
+                        className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-lg transition-colors"
+                        disabled={!currentEmpresa.nombre || !currentEmpresa.rut}
+                    >
+                        Guardar Empresa
+                    </button>
                 </div>
             )}
         </div>
