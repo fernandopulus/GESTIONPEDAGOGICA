@@ -176,9 +176,17 @@ const CalificacionesView: React.FC<{
         }
     };
 
+    // Opciones: 'trabajado' (7.0), 'no trabajado' (2.0), 'ausente' (A)
     const handleCalificacionChange = (evaluacionId: string, nombreEstudiante: string) => {
         const currentStatus = calificaciones[evaluacionId]?.[nombreEstudiante] || 'trabajado';
-        const newStatus = currentStatus === 'trabajado' ? 'no trabajado' : 'trabajado';
+        let newStatus: string;
+        if (currentStatus === 'trabajado') {
+            newStatus = 'no trabajado';
+        } else if (currentStatus === 'no trabajado') {
+            newStatus = 'ausente';
+        } else {
+            newStatus = 'trabajado';
+        }
         const updatedCalificaciones = {
             ...calificaciones,
             [evaluacionId]: { ...(calificaciones[evaluacionId] || {}), [nombreEstudiante]: newStatus },
@@ -219,6 +227,7 @@ const CalificacionesView: React.FC<{
             const calificacion = calificaciones[ev.id]?.[nombreEstudiante];
             if (calificacion === 'trabajado') { suma += 7.0; count++; }
             else if (calificacion === 'no trabajado') { suma += 2.0; count++; }
+            // Si es 'ausente', no suma ni cuenta
         });
         if (count === 0) return '-';
         return (suma / count).toFixed(1);
@@ -285,11 +294,20 @@ const CalificacionesView: React.FC<{
                                 <td className="sticky left-0 bg-white dark:bg-slate-900 px-4 py-2 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-200 w-48">{nombre}</td>
                                 {evaluaciones.map(ev => {
                                     const calificacion = calificaciones[ev.id]?.[nombre];
-                                    const worked = calificacion === 'trabajado';
+                                    let display;
+                                    if (calificacion === 'trabajado') {
+                                        display = asignaturaEmojis[asignatura] || asignaturaEmojis['Default'];
+                                    } else if (calificacion === 'no trabajado') {
+                                        display = '❌';
+                                    } else if (calificacion === 'ausente') {
+                                        display = 'A';
+                                    } else {
+                                        display = asignaturaEmojis[asignatura] || asignaturaEmojis['Default'];
+                                    }
                                     return (
                                         <td key={ev.id} className="px-2 py-1 whitespace-nowrap w-36 text-center">
-                                            <button onClick={() => handleCalificacionChange(ev.id, nombre)} className={`text-3xl transition-opacity duration-200 ${worked ? 'opacity-100' : 'opacity-20'}`}>
-                                                {asignaturaEmojis[asignatura] || asignaturaEmojis['Default']}
+                                            <button onClick={() => handleCalificacionChange(ev.id, nombre)} className={`text-3xl transition-opacity duration-200 ${calificacion === 'trabajado' ? 'opacity-100' : calificacion === 'no trabajado' ? 'opacity-40' : calificacion === 'ausente' ? 'opacity-100 text-red-500 font-bold' : 'opacity-100'}`}> 
+                                                {display}
                                             </button>
                                         </td>
                                     )

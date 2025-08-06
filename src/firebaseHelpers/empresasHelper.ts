@@ -107,3 +107,15 @@ export const subscribeToEstudiantes = (callback: (data: User[]) => void) => {
     callback(estudiantes);
   }, (error) => console.error("Error al suscribirse a estudiantes:", error));
 };
+
+// --- GESTIÓN DE PROFESORES (para la asignación) ---
+
+export const subscribeToProfesores = (callback: (data: User[]) => void) => {
+  // Asumiendo que el campo para el rol es 'profile' y el valor es 'PROFESORADO'
+  const q = query(collection(db, USERS_COLLECTION), where('profile', '==', 'PROFESORADO'), orderBy('nombreCompleto', 'asc'));
+  
+  return onSnapshot(q, (snapshot) => {
+    const profesores = snapshot.docs.map(doc => convertFirestoreDoc<User>(doc));
+    callback(profesores);
+  }, (error) => console.error("Error al suscribirse a profesores:", error));
+};
