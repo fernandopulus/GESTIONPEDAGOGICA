@@ -9,13 +9,16 @@ import {
   orderBy,
   Timestamp,
   where,
+  getDocs,
 } from 'firebase/firestore';
 import { db } from './config'; // Asegúrate de que la ruta a tu config sea correcta
-import { ActividadRemota, RespuestaEstudianteActividad, User } from '../../types';
+import { ActividadRemota, RespuestaEstudianteActividad, User, PruebaEstandarizada, RespuestaPruebaEstandarizada } from '../../types';
 
 // --- CONSTANTES DE COLECCIONES ---
 const ACTIVIDADES_COLLECTION = 'actividades_remotas';
 const RESPUESTAS_COLLECTION = 'respuestas_actividades';
+const PRUEBAS_ESTANDARIZADAS_COLLECTION = 'pruebas_estandarizadas';
+const RESPUESTAS_PRUEBAS_COLLECTION = 'respuestas_pruebas_estandarizadas';
 const USERS_COLLECTION = 'usuarios';
 
 // --- HELPERS DE CONVERSIÓN ---
@@ -30,7 +33,27 @@ const convertFirestoreDoc = <T>(docSnapshot: any): T => {
   } as T;
 };
 
-// --- GESTIÓN DE ACTIVIDADES ---
+const convertPruebaFirestoreDoc = (docSnapshot: any): PruebaEstandarizada => {
+  const data = docSnapshot.data();
+  return {
+    id: docSnapshot.id,
+    ...data,
+    fechaCreacion: data.fechaCreacion?.toDate?.().toISOString() || data.fechaCreacion,
+    plazoEntrega: data.plazoEntrega?.toDate?.().toISOString().split('T')[0] || data.plazoEntrega,
+  } as PruebaEstandarizada;
+};
+
+const convertRespuestaPruebaFirestoreDoc = (docSnapshot: any): RespuestaPruebaEstandarizada => {
+  const data = docSnapshot.data();
+  return {
+    id: docSnapshot.id,
+    ...data,
+    fechaInicio: data.fechaInicio?.toDate?.().toISOString() || data.fechaInicio,
+    fechaCompletado: data.fechaCompletado?.toDate?.().toISOString() || data.fechaCompletado,
+  } as RespuestaPruebaEstandarizada;
+};
+
+// --- GESTIÓN DE ACTIVIDADES REMOTAS ---
 
 /**
  * Se suscribe en tiempo real a la lista de actividades remotas.
@@ -67,6 +90,104 @@ export const createActividad = async (actividadData: Omit<ActividadRemota, 'id'>
   }
 };
 
+// --- GESTIÓN DE PRUEBAS ESTANDARIZADAS ---
+
+/**
+ * Se suscribe en tiempo real a la lista de pruebas estandarizadas.
+ */
+export const subscribeToPruebasEstandarizadas = (callback: (data: PruebaEstandarizada[]) => void) => {
+  const q = query(collection(db, PRUEBAS_ESTANDARIZADAS_COLLECTION), orderBy('fechaCreacion', 'desc'));
+  
+  const unsubscribe = onSnapshot(q, (querySnapshot) => {
+    const pruebas = querySnapshot.docs.map(doc => convertPruebaFirestoreDoc(doc));
+    callback(pruebas);
+  }, (error) => {
+    console.error("Error al suscribirse a las pruebas estandarizadas:", error);
+    callback([]);
+  });
+
+  return unsubscribe;
+};
+
+/**
+ * Crea una nueva prueba estandarizada en Firestore.
+ */
+export const createPruebaEstandarizada = async (pruebaData: Omit<PruebaEstandarizada, 'id'>): Promise<string> => {
+  try {
+    const dataToSend = {
+        ...pruebaData,
+        fechaCreacion: Timestamp.fromDate(new Date()),
+        plazoEntrega: Timestamp.fromDate(new Date(pruebaData.plazoEntrega + 'T00:00:00')),
+    };
+    const docRef = await addDoc(collection(db, PRUEBAS_ESTANDARIZADAS_COLLECTION), dataToSend);
+    return docRef.id;
+  } catch (error) {
+    console.error("Error al crear la prueba estandarizada:", error);
+    throw new Error("No se pudo crear la prueba estandarizada.");
+  }
+};
+
+/**
+ * Obtiene las pruebas estandarizadas disponibles para un estudiante específico.
+ */
+export const getPruebasParaEstudiante = async (
+  estudianteNombre: string,
+  estudianteCurso: string,
+  estudianteNivel: string
+): Promise<PruebaEstandarizada[]> => {
+  try {
+    const querySnapshot = await getDocs(
+      query(collection(db, PRUEBAS_ESTANDARIZADAS_COLLECTION), orderBy('fechaCreacion', 'desc'))
+    );
+    
+    const pruebas: PruebaEstandarizada[] = [];
+    querySnapshot.forEach((doc) => {
+      const prueba = convertPruebaFirestoreDoc(doc);
+      
+      // Verificar si el estudiante puede acceder a esta prueba
+      const puedeAcceder = 
+        // Si no hay destinatarios específicos, disponible para todo el nivel
+        (!prueba.cursosDestino?.length && !prueba.estudiantesDestino?.length && 
+         prueba.nivel.charAt(0) === estudianteNivel.charAt(0)) ||
+        // Si está en los cursos destino
+        prueba.cursosDestino?.includes(estudianteCurso) ||
+        // Si está en los estudiantes destino
+        prueba.estudiantesDestino?.includes(estudianteNombre);
+      
+      if (puedeAcceder) {
+        pruebas.push(prueba);
+      }
+    });
+    
+    return pruebas;
+  } catch (error) {
+    console.error('Error al obtener pruebas para estudiante:', error);
+    throw error;
+  }
+};
+
+/**
+ * Verifica si un estudiante ya completó una prueba estandarizada.
+ */
+export const checkPruebaCompletada = async (
+  pruebaId: string,
+  estudianteId: string
+): Promise<boolean> => {
+  try {
+    const q = query(
+      collection(db, RESPUESTAS_PRUEBAS_COLLECTION),
+      where('pruebaId', '==', pruebaId),
+      where('estudianteId', '==', estudianteId)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    return !querySnapshot.empty;
+  } catch (error) {
+    console.error('Error al verificar prueba completada:', error);
+    return false;
+  }
+};
+
 // --- GESTIÓN DE RESPUESTAS ---
 
 /**
@@ -86,6 +207,70 @@ export const subscribeToRespuestas = (callback: (data: RespuestaEstudianteActivi
     return unsubscribe;
 };
 
+/**
+ * Se suscribe a las respuestas de pruebas estandarizadas.
+ */
+export const subscribeToRespuestasPruebas = (callback: (data: RespuestaPruebaEstandarizada[]) => void) => {
+    const q = query(collection(db, RESPUESTAS_PRUEBAS_COLLECTION), orderBy('fechaCompletado', 'desc'));
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const respuestas = querySnapshot.docs.map(doc => convertRespuestaPruebaFirestoreDoc(doc));
+        callback(respuestas);
+    }, (error) => {
+        console.error("Error al suscribirse a las respuestas de pruebas:", error);
+        callback([]);
+    });
+
+    return unsubscribe;
+};
+
+/**
+ * Guarda la respuesta de una prueba estandarizada.
+ */
+export const saveRespuestaPrueba = async (
+  respuestaData: Omit<RespuestaPruebaEstandarizada, 'id'>
+): Promise<string> => {
+  try {
+    const dataToSend = {
+      ...respuestaData,
+      fechaInicio: Timestamp.fromDate(new Date(respuestaData.fechaInicio)),
+      fechaCompletado: Timestamp.fromDate(new Date(respuestaData.fechaCompletado))
+    };
+    const docRef = await addDoc(collection(db, RESPUESTAS_PRUEBAS_COLLECTION), dataToSend);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error al guardar respuesta de prueba:', error);
+    throw error;
+  }
+};
+
+/**
+ * Obtiene las respuestas de un estudiante para una prueba específica.
+ */
+export const getRespuestaPrueba = async (
+  pruebaId: string,
+  estudianteId: string
+): Promise<RespuestaPruebaEstandarizada | null> => {
+  try {
+    const q = query(
+      collection(db, RESPUESTAS_PRUEBAS_COLLECTION),
+      where('pruebaId', '==', pruebaId),
+      where('estudianteId', '==', estudianteId)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      return null;
+    }
+    
+    const doc = querySnapshot.docs[0];
+    return convertRespuestaPruebaFirestoreDoc(doc);
+  } catch (error) {
+    console.error('Error al obtener respuesta de prueba:', error);
+    return null;
+  }
+};
 
 // --- GESTIÓN DE USUARIOS ---
 

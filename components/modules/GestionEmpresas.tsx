@@ -16,7 +16,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 
-// Hook para cargar Google Maps, ahora incluyendo la librería de 'directions'
+// Hook para cargar Google Maps, asegurando que se incluye la librería 'directions'
 const useGoogleMapsScript = (apiKey: string) => {
     const [isLoaded, setIsLoaded] = useState(false);
     const [error, setError] = useState<Error | null>(null);
@@ -70,7 +70,7 @@ const getInitialFormData = (): Omit<Empresa, 'id' | 'createdAt'> => ({
     docenteSupervisor: undefined,
 });
 
-// Componente Google Maps, ahora con capacidad para renderizar rutas
+// Componente Google Maps corregido para mostrar marcadores y rutas
 const GoogleMapView: React.FC<{ 
     empresas: Empresa[]; 
     isLoaded: boolean;
@@ -90,50 +90,48 @@ const GoogleMapView: React.FC<{
             mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
                 center: { lat: -33.4489, lng: -70.6693 },
                 zoom: 11,
-                mapTypeControl: true,
-                streetViewControl: true,
-                fullscreenControl: true,
             });
         }
         
         if (!directionsRendererRef.current) {
             directionsRendererRef.current = new window.google.maps.DirectionsRenderer();
-            directionsRendererRef.current.setMap(mapInstanceRef.current);
         }
-
+        
+        // Limpiar estado anterior
         markersRef.current.forEach(marker => marker.setMap(null));
         markersRef.current = [];
-        
+        directionsRendererRef.current.setMap(null);
+
         if (route) {
+            directionsRendererRef.current.setMap(mapInstanceRef.current);
             directionsRendererRef.current.setDirections(route);
         } else {
-            directionsRendererRef.current.setDirections(null);
             empresasConCoordenadas.forEach(empresa => {
                 const marker = new window.google.maps.Marker({
                     position: { lat: empresa.coordenadas!.lat, lng: empresa.coordenadas!.lng },
                     map: mapInstanceRef.current,
                     title: empresa.nombre,
                 });
+
+                const infoWindow = new window.google.maps.InfoWindow({
+                    content: `<div style="font-weight: bold;">${empresa.nombre}</div><div>${empresa.direccion}</div>`
+                });
+
+                marker.addListener('click', () => {
+                    infoWindow.open(mapInstanceRef.current, marker);
+                });
+
                 markersRef.current.push(marker);
             });
         }
 
     }, [empresasConCoordenadas, isLoaded, route]);
 
-    if (!isLoaded) {
-        return (
-            <div className="h-[600px] w-full rounded-lg border bg-gray-100 flex items-center justify-center">
-                <p className="text-gray-600">Cargando Google Maps...</p>
-            </div>
-        );
-    }
-
     return (
         <div className="relative" id="map-container-for-pdf">
             <div 
                 ref={mapRef}
                 className="h-[600px] w-full rounded-lg border"
-                style={{ minHeight: '600px' }}
             />
             {!route && empresasConCoordenadas.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90 rounded-lg">
@@ -146,70 +144,10 @@ const GoogleMapView: React.FC<{
     );
 };
 
-// --- NUEVOS COMPONENTES DE RUTA MEJORADOS ---
-
-const TransitStepDetails: React.FC<{ step: google.maps.DirectionsStep }> = ({ step }) => {
-    if (!step.transit) return null;
-    const { transit } = step;
-    const line = transit.line;
-    const vehicle = line?.vehicle;
-    
-    const getVehicleEmoji = (vehicleType: string) => {
-        switch (vehicleType) {
-            case 'BUS': return '🚌';
-            case 'SUBWAY': return '🚇';
-            case 'TRAIN': return '🚊';
-            default: return '🚌';
-        }
-    };
-
-    const getLineColor = (line: google.maps.TransitLine) => line.color || '#2563eb';
-
-    return (
-        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-3 shadow-sm">
-            <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 text-2xl">{getVehicleEmoji(vehicle?.type || 'BUS')}</div>
-                <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-2">
-                        <div className="px-2 py-1 rounded text-white text-sm font-bold" style={{ backgroundColor: getLineColor(line!) }}>
-                            {line?.short_name || line?.name || 'Línea'}
-                        </div>
-                        <span className="text-sm text-gray-600">({vehicle?.name})</span>
-                    </div>
-                    <div className="text-sm">
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="font-medium">Desde:</span>
-                            <span className="text-green-600">📍 {transit.departure_stop?.name}</span>
-                        </div>
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="font-medium">Hasta:</span>
-                            <span className="text-red-600">📍 {transit.arrival_stop?.name}</span>
-                        </div>
-                        <div className="flex items-center gap-4 text-xs text-gray-500">
-                            <span>⏱️ {step.duration?.text}</span>
-                            <span>📏 {step.distance?.text}</span>
-                            {transit.num_stops && <span>🚏 {transit.num_stops} paradas</span>}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const WalkingStepDetails: React.FC<{ step: google.maps.DirectionsStep }> = ({ step }) => (
-    <div className="flex items-center gap-2 text-sm text-gray-600 py-1">
-        <span className="text-lg">🚶‍♂️</span>
-        <span dangerouslySetInnerHTML={{ __html: step.instructions }} />
-        <span className="text-xs">({step.duration?.text}, {step.distance?.text})</span>
-    </div>
-);
-
-const EnhancedRouteDetails: React.FC<{ route: google.maps.DirectionsResult; travelMode: 'DRIVING' | 'TRANSIT' }> = ({ route, travelMode }) => {
+// Componente de detalles de ruta
+const RouteDetails: React.FC<{ route: google.maps.DirectionsResult; travelMode: 'DRIVING' | 'TRANSIT' }> = ({ route, travelMode }) => {
     const PRECIO_BENCINA_POR_LITRO = 1300;
     const CONSUMO_PROMEDIO_KM_POR_LITRO = 12;
-    const TARIFA_BUS_URBANO = 760;
-    
     const tiempoPorParada = travelMode === 'TRANSIT' ? 45 : 30;
     
     const travelDuration = route.routes[0].legs.reduce((acc, leg) => acc + (leg.duration?.value || 0), 0);
@@ -217,32 +155,11 @@ const EnhancedRouteDetails: React.FC<{ route: google.maps.DirectionsResult; trav
     const stopDuration = numberOfStops * tiempoPorParada * 60;
     const totalDuration = travelDuration + stopDuration;
     const totalDistance = route.routes[0].legs.reduce((acc, leg) => acc + (leg.distance?.value || 0), 0);
-    
     const costoBencina = travelMode === 'DRIVING' ? ((totalDistance / 1000) / CONSUMO_PROMEDIO_KM_POR_LITRO) * PRECIO_BENCINA_POR_LITRO : 0;
-    const costoTransportePublico = travelMode === 'TRANSIT' ? route.routes[0].legs.reduce((acc, leg) => acc + ((leg.steps?.filter(step => step.transit) || []).length * TARIFA_BUS_URBANO), 0) : 0;
 
     return (
         <div className="mt-6 p-4 border rounded-lg bg-slate-50" id="route-details-for-pdf">
             <h3 className="text-xl font-bold mb-3">Detalles de la Ruta</h3>
-            <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                    <div>
-                        <span className="font-medium">Duración Total:</span>
-                        <div className="text-lg font-bold text-blue-600">{Math.round(totalDuration / 60)} min</div>
-                        <div className="text-xs">Viaje: {Math.round(travelDuration / 60)} min + Paradas: {Math.round(stopDuration / 60)} min</div>
-                    </div>
-                    <div>
-                        <span className="font-medium">Distancia:</span>
-                        <div className="text-lg font-bold text-blue-600">{(totalDistance / 1000).toFixed(1)} km</div>
-                    </div>
-                    <div>
-                        <span className="font-medium">Costo aprox:</span>
-                        <div className="text-lg font-bold text-green-600">
-                            ${(travelMode === 'DRIVING' ? costoBencina : costoTransportePublico).toLocaleString('es-CL', { maximumFractionDigits: 0 })}
-                        </div>
-                    </div>
-                </div>
-            </div>
             <div className="space-y-4">
                 {route.routes[0].legs.map((leg, legIndex) => (
                     <div key={legIndex} className="border rounded-lg p-4 bg-white">
@@ -250,28 +167,59 @@ const EnhancedRouteDetails: React.FC<{ route: google.maps.DirectionsResult; trav
                             <h4 className="font-bold text-lg">Tramo {legIndex + 1}: {leg.start_address.split(',')[0]} → {leg.end_address.split(',')[0]}</h4>
                             <div className="text-sm text-gray-600">{leg.duration?.text} • {leg.distance?.text}</div>
                         </div>
-                        {travelMode !== 'DRIVING' && (
-                          <div className="space-y-3">
-                              {leg.steps?.map((step, stepIndex) => (
-                                  <div key={stepIndex}>
-                                      {step.transit ? <TransitStepDetails step={step} /> : step.travel_mode === 'WALKING' ? <WalkingStepDetails step={step} /> : null}
-                                  </div>
-                              ))}
-                          </div>
+                        {travelMode === 'TRANSIT' && (
+                            <div className="space-y-3">
+                                {leg.steps?.map((step, stepIndex) => (
+                                    step.transit && (
+                                        <div key={stepIndex} className="flex items-start gap-2 text-sm py-1">
+                                            <span className="text-lg">🚌</span>
+                                            <span dangerouslySetInnerHTML={{ __html: step.instructions }}/>
+                                        </div>
+                                    )
+                                ))}
+                            </div>
                         )}
                     </div>
                 ))}
+            </div>
+             <div className="mt-4 pt-4 border-t font-bold text-right">
+                <p>Tiempo de viaje: {Math.round(travelDuration / 60)} min</p>
+                <p>Tiempo en paradas: {Math.round(stopDuration / 60)} min</p>
+                <p className="text-lg">Duración Total Estimada: {Math.round(totalDuration / 60)} min</p>
+                <p>Distancia Total: {(totalDistance / 1000).toFixed(1)} km</p>
+                {travelMode === 'DRIVING' && (
+                    <p className="text-green-600">Costo Bencina Aprox: ${costoBencina.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</p>
+                )}
             </div>
         </div>
     );
 };
 
-
-// --- FIN DE COMPONENTES DE RUTA ---
+// Función para obtener coordenadas
+const getPlaceDetails = async (placeId: string): Promise<{lat: number, lng: number} | null> => {
+    if (!window.google) return null;
+    
+    return new Promise((resolve) => {
+        const service = new window.google.maps.places.PlacesService(document.createElement('div'));
+        
+        service.getDetails({
+            placeId: placeId,
+            fields: ['geometry']
+        }, (place, status) => {
+            if (status === window.google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
+                resolve({
+                    lat: place.geometry.location.lat(),
+                    lng: place.geometry.location.lng()
+                });
+            } else {
+                resolve(null);
+            }
+        });
+    });
+};
 
 const GestionEmpresas: React.FC = () => {
     const [empresas, setEmpresas] = useState<Empresa[]>([]);
-    const [estudiantes, setEstudiantes] = useState<User[]>([]);
     const [profesores, setProfesores] = useState<User[]>([]);
     const [view, setView] = useState<'list' | 'form' | 'map' | 'route' | 'saved-routes'>('list');
     const [currentEmpresa, setCurrentEmpresa] = useState<Omit<Empresa, 'id' | 'createdAt'> | Empresa | null>(null);
@@ -291,14 +239,13 @@ const GestionEmpresas: React.FC = () => {
     const { isLoaded: isMapScriptLoaded } = useGoogleMapsScript(apiKey);
 
     useEffect(() => {
+        setLoading(true);
         const unsubEmpresas = subscribeToEmpresas(setEmpresas);
-        const unsubEstudiantes = subscribeToEstudiantes(setEstudiantes);
         const unsubProfesores = subscribeToProfesores(setProfesores);
         const unsubSavedRoutes = subscribeToSavedRoutes(setSavedRoutes);
         setLoading(false);
         return () => { 
             unsubEmpresas(); 
-            unsubEstudiantes(); 
             unsubProfesores();
             unsubSavedRoutes();
         };
@@ -615,7 +562,7 @@ const GestionEmpresas: React.FC = () => {
                            <GoogleMapView empresas={selectedRouteCompanies} isLoaded={isMapScriptLoaded} route={calculatedRoute} />
                         </div>
                     </div>
-                    {calculatedRoute && <EnhancedRouteDetails route={calculatedRoute} travelMode={travelMode} />}
+                    {calculatedRoute && <RouteDetails route={calculatedRoute} travelMode={travelMode} />}
                 </div>
             )}
 
@@ -624,15 +571,145 @@ const GestionEmpresas: React.FC = () => {
             )}
             
             {view === 'list' && (
-                 <>
-                    {/* ... (código del listado y gráfico sin cambios) ... */}
-                 </>
+                 <div className="space-y-3">
+                    {empresas.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            No hay empresas registradas.
+                        </div>
+                    ) : (
+                        empresas.map(empresa => (
+                            <div key={empresa.id} className="p-4 border rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h3 className="font-bold text-lg">{empresa.nombre}</h3>
+                                        <p className="text-sm text-slate-500">
+                                            {empresa.rut} | {empresa.direccion}
+                                        </p>
+                                        <p className="text-sm text-slate-600">
+                                            Área: {empresa.area || 'No especificada'} | Cupos: {empresa.cupos} | Supervisor: {empresa.docenteSupervisor?.nombreCompleto || 'Ninguno'}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <button 
+                                            onClick={() => handleEdit(empresa)} 
+                                            className="text-sm font-semibold text-blue-600 hover:text-blue-800"
+                                        >
+                                            Editar
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDelete(empresa.id)} 
+                                            className="text-sm text-red-500 hover:text-red-700"
+                                        >
+                                            Eliminar
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
             )}
 
             {view === 'form' && currentEmpresa && (
-                 <>
-                    {/* ... (código del formulario sin cambios) ... */}
-                 </>
+                 <div className="space-y-6">
+                    <h2 className="text-2xl font-bold">
+                        {'id' in currentEmpresa ? 'Editando Empresa' : 'Nueva Empresa'}
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <input 
+                            value={currentEmpresa.nombre} 
+                            onChange={e => handleFormChange('nombre', e.target.value)} 
+                            placeholder="Nombre Empresa" 
+                            className="input-style" 
+                            required
+                        />
+                        <input 
+                            value={currentEmpresa.rut} 
+                            onChange={e => handleFormChange('rut', e.target.value)} 
+                            placeholder="RUT Empresa" 
+                            className="input-style" 
+                            required
+                        />
+                        <div className="md:col-span-2">
+                             {isMapScriptLoaded ? (
+                                <div>
+                                    <GooglePlacesAutocomplete
+                                        apiKey={apiKey}
+                                        selectProps={{
+                                            value: addressValue,
+                                            onChange: handleAddressSelect,
+                                            placeholder: 'Buscar dirección en Chile...',
+                                            className: 'w-full',
+                                        }}
+                                        autocompletionRequest={{
+                                            componentRestrictions: { country: ['cl'] }
+                                        }}
+                                    />
+                                    {currentEmpresa.coordenadas && (
+                                        <p className="text-sm text-green-600 mt-1">
+                                            ✓ Coordenadas: {currentEmpresa.coordenadas.lat.toFixed(4)}, {currentEmpresa.coordenadas.lng.toFixed(4)}
+                                        </p>
+                                    )}
+                                </div>
+                             ) : (
+                                <input 
+                                    disabled 
+                                    className="input-style w-full opacity-50" 
+                                    placeholder="Cargando Google Places..." 
+                                />
+                             )}
+                        </div>
+                        <input 
+                            value={currentEmpresa.contacto} 
+                            onChange={e => handleFormChange('contacto', e.target.value)} 
+                            placeholder="Contacto" 
+                            className="input-style" 
+                        />
+                        <input 
+                            type="email"
+                            value={currentEmpresa.email || ''} 
+                            onChange={e => handleFormChange('email', e.target.value)} 
+                            placeholder="Correo electrónico (opcional)" 
+                            className="input-style" 
+                        />
+                        <input 
+                            type="number"
+                            value={currentEmpresa.cupos} 
+                            onChange={e => handleFormChange('cupos', parseInt(e.target.value) || 1)} 
+                            placeholder="Número de cupos" 
+                            className="input-style"
+                            min="1"
+                        />
+                        <select
+                            value={currentEmpresa.area || ''}
+                            onChange={e => handleFormChange('area', e.target.value)}
+                            className="input-style w-full"
+                        >
+                            <option value="" disabled>Seleccione un área</option>
+                            {AREAS_EMPRESA.map(area => (
+                                <option key={area} value={area}>{area}</option>
+                            ))}
+                        </select>
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Docente Supervisor</label>
+                            <select
+                                value={currentEmpresa.docenteSupervisor ? JSON.stringify(currentEmpresa.docenteSupervisor) : ''}
+                                onChange={e => {
+                                    const value = e.target.value;
+                                    handleFormChange('docenteSupervisor', value ? JSON.parse(value) : undefined);
+                                }}
+                                className="input-style w-full"
+                            >
+                                <option value="">Sin supervisor asignado</option>
+                                {profesores.map(profesor => (
+                                    <option key={profesor.id} value={JSON.stringify({ id: profesor.id, nombre: profesor.nombreCompleto })}>
+                                        {profesor.nombreCompleto}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

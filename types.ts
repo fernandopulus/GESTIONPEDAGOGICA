@@ -17,7 +17,7 @@ export interface Module {
 }
 
 export interface User {
-  id: string;
+  id: string;       
   nombreCompleto: string;
   email: string;
   rut?: string;
@@ -343,6 +343,61 @@ export interface RubricaInteractiva {
   rubricaEstaticaId: string; // Enlace a la rúbrica estática
   resultados: Record<string, ResultadoInteractivo>; // { [nombreEstudiante]: ResultadoInteractivo }
 }
+
+// --- Pruebas Estandarizadas (Tipo SIMCE) ---  NUEVA SECCIÓN
+
+export interface TextoLectura {
+  id: number;
+  titulo: string;
+  contenido: string;
+  tipo: 'narrativo' | 'informativo' | 'argumentativo' | 'poetico';
+  palabras: number;
+}
+
+export interface PreguntaEstandarizada {
+  numero: number;
+  pregunta: string;
+  opciones: string[]; // Array de 4 opciones
+  respuestaCorrecta: string; // A, B, C, o D
+  habilidad: string; // Una de las habilidades SIMCE
+  justificacion: string; // Explicación de la respuesta correcta
+  textoId?: number; // ID del texto al que hace referencia (opcional)
+}
+
+export interface PruebaEstandarizada {
+  id: string;
+  fechaCreacion: string; // ISO String
+  asignatura: string;
+  nivel: string;
+  contenido: string;
+  objetivosAprendizaje: string;
+  plazoEntrega: string; // YYYY-MM-DD
+  cursosDestino?: string[];
+  estudiantesDestino?: string[];
+  duracionMinutos: number;
+  titulo: string;
+  instrucciones: string;
+  textos: TextoLectura[]; // Textos de lectura para comprensión
+  preguntas: PreguntaEstandarizada[];
+}
+
+export interface RespuestaPruebaEstandarizada {
+  id: string;
+  pruebaId: string;
+  estudianteId: string;
+  respuestas: Record<number, string>; // numero de pregunta -> respuesta seleccionada
+  puntaje: number;
+  puntajeMaximo: number;
+  fechaInicio: string; // ISO String
+  fechaCompletado: string; // ISO String
+  tiempoUtilizado: number; // en minutos
+  estadisticasPorHabilidad: Record<string, {
+    correctas: number;
+    total: number;
+    porcentaje: number;
+  }>;
+}
+
 
 // --- Seguimiento Dual ---
 
