@@ -61,7 +61,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
             Ver video cargado
           </a>
           <button type="button" onClick={onRemove} className="text-red-500 hover:text-red-700 ml-auto">
-            ✖
+            
           </button>
         </div>
       ) : (
@@ -332,7 +332,7 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
 
       {/* Mejora de redacción OPR (no genera contenido) */}
       <div className="mb-6 p-4 border rounded-lg bg-blue-50 dark:bg-blue-900/30">{/* Rest of the component remains the same */}
-        <h4 className="text-lg font-semibold mb-2 text-blue-700 dark:text-blue-300">🔧 Ciclo OPR - Mejorar Redacción</h4>
+        <h4 className="text-lg font-semibold mb-2 text-blue-700 dark:text-blue-300"> Ciclo OPR - Mejorar Redacción</h4>
         <button
           type="button"
           onClick={handleImproveOPRText}
@@ -452,7 +452,7 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
                     <td>
                       {(formData as any).detallesObservacion.length > 1 && (
                         <button type="button" onClick={() => removeDetalleRow(row.id)} className="text-red-500 p-1">
-                          ✖
+                          
                         </button>
                       )}
                     </td>
@@ -1003,7 +1003,7 @@ const AcompanamientoDocente: React.FC = () => {
       
       {/* Sección de Acompañamientos Generales (con icono BarChart3) */}
       <div className="mb-8">
-        <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">📊 <BarChart3 className="w-5 h-5 text-amber-500" /> {/* Ícono agregado */}Acompañamientos Generales</h3>
+        <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3"> <BarChart3 className="w-5 h-5 text-amber-500" /> {/* Ícono agregado */}Acompañamientos Generales</h3>
         <div className="space-y-3">
           {loading && <p>Cargando...</p>}
           {!loading && acompanamientos.filter(a => a.id).length > 0 ? (
@@ -1045,7 +1045,7 @@ const AcompanamientoDocente: React.FC = () => {
                     title="Eliminar"
                     className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/40"
                   >
-                    🗑️
+                    ️
                   </button>
                 </div>
               </div>
@@ -1058,7 +1058,7 @@ const AcompanamientoDocente: React.FC = () => {
 
       {/* Sección de Ciclos OPR Independientes (con icono Wrench) */}
       <div>
-        <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">🔧 <Wrench className="w-5 h-5 text-blue-500" /> {/* Ícono agregado */}Ciclos OPR</h3>
+        <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3"> <Wrench className="w-5 h-5 text-blue-500" /> {/* Ícono agregado */}Ciclos OPR</h3>
         <div className="space-y-3">
           <p className="text-sm text-slate-500 dark:text-slate-400 italic">
             Los ciclos OPR se pueden crear de forma independiente o asociados a un acompañamiento general.
@@ -1132,7 +1132,7 @@ const AcompanamientoDocente: React.FC = () => {
           <form onSubmit={handleSave} className="space-y-8">
             {/* Sección de IA para Acompañamiento General */}
             <div className="p-4 border rounded-lg bg-green-50 dark:bg-green-900/30">
-              <h4 className="text-lg font-semibold mb-2 text-green-700 dark:text-green-300">📊 Acompañamiento General - Generar Informe con IA</h4>
+              <h4 className="text-lg font-semibold mb-2 text-green-700 dark:text-green-300"> Acompañamiento General - Generar Informe con IA</h4>
               <button
                 type="button"
                 onClick={generateGeneralFeedbackAndPDF}
