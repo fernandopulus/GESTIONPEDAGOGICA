@@ -1,3 +1,5 @@
+import { FileText, Users, Video, ClipboardList, MessageSquare, CalendarCheck, BarChart3, Wrench, Pencil, PlusSquare, Trash2 } from 'lucide-react';
+// Ícono agregado
 import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { AcompanamientoDocente as AcompanamientoDocenteType, CicloOPR, DetalleObservacionRow } from '../../types';
@@ -348,8 +350,8 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
         <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200">{cicloToEdit ? 'Editando' : 'Nuevo'} Ciclo OPR</h3>
 
         {/* Datos Generales */}
-        <fieldset className="p-4 border rounded-lg dark:border-slate-700 space-y-4">
-          <legend className="text-lg font-semibold px-2 text-slate-700 dark:text-slate-300">Datos Generales</legend>
+        <fieldset className="shadow-md rounded-lg p-4 mb-6 p-4 border rounded-lg dark:border-slate-700 space-y-4">
+          <legend className="flex items-center gap-2 text-lg font-semibold px-2 text-slate-700 dark:text-slate-300">{/* icon */} <Video className="w-5 h-5 text-amber-500" /> Datos Generales</legend>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <input
               type="text"
@@ -399,8 +401,8 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
         </fieldset>
 
         {/* Registro Detallado de Observación */}
-        <fieldset className="p-4 border rounded-lg dark:border-slate-700 space-y-4">
-          <legend className="text-lg font-semibold px-2 text-slate-700 dark:text-slate-300">Registro Detallado de Observación</legend>
+        <fieldset className="shadow-md rounded-lg p-4 mb-6 p-4 border rounded-lg dark:border-slate-700 space-y-4">
+          <legend className="flex items-center gap-2 text-lg font-semibold px-2 text-slate-700 dark:text-slate-300">{/* icon */} <ClipboardList className="w-5 h-5 text-blue-500" /> Registro Detallado de Observación</legend>
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead>
@@ -469,8 +471,8 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
         </fieldset>
 
         {/* Retroalimentación */}
-        <fieldset className="p-4 border rounded-lg dark:border-slate-700 space-y-4">
-          <legend className="text-lg font-semibold px-2 text-slate-700 dark:text-slate-300">Retroalimentación Docente</legend>
+        <fieldset className="shadow-md rounded-lg p-4 mb-6 p-4 border rounded-lg dark:border-slate-700 space-y-4">
+          <legend className="flex items-center gap-2 text-lg font-semibold px-2 text-slate-700 dark:text-slate-300">{/* icon */} <MessageSquare className="w-5 h-5 text-green-600" /> Retroalimentación Docente</legend>
           <textarea
             name="retroalimentacion.exito"
             value={(formData as any).retroalimentacion.exito}
@@ -486,13 +488,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
             placeholder="Modelo"
             rows={3}
             className="w-full border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600"
-          />
-          <FileUpload
-            label="Subir video para 'Modelo'"
-            onFileChange={(file) => handleFileUpload('retroalimentacion.videoModeloUrl', file)}
-            uploadedUrl={(formData as any).retroalimentacion.videoModeloUrl}
-            onRemove={() => handleFileRemove('retroalimentacion.videoModeloUrl')}
-            isUploading={!!(uploading as any)['retroalimentacion.videoModeloUrl']}
           />
           <textarea
             name="retroalimentacion.foco"
@@ -513,13 +508,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
 
           <div className="p-3 border rounded-md dark:border-slate-600 space-y-3">
             <p className="font-semibold text-slate-700 dark:text-slate-300">Brecha</p>
-            <FileUpload
-              label="Subir video para 'Brecha'"
-              onFileChange={(file) => handleFileUpload('retroalimentacion.brecha.videoUrl', file)}
-              uploadedUrl={(formData as any).retroalimentacion.brecha.videoUrl}
-              onRemove={() => handleFileRemove('retroalimentacion.brecha.videoUrl')}
-              isUploading={!!(uploading as any)['retroalimentacion.brecha.videoUrl']}
-            />
             <div className="flex gap-4">
               <input
                 type="text"
@@ -558,8 +546,8 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
         </fieldset>
 
         {/* Planificación y seguimiento */}
-        <fieldset className="p-4 border rounded-lg dark:border-slate-700 space-y-4">
-          <legend className="text-lg font-semibold px-2 text-slate-700 dark:text-slate-300">Planificación de Práctica y Seguimiento</legend>
+        <fieldset className="shadow-md rounded-lg p-4 mb-6 p-4 border rounded-lg dark:border-slate-700 space-y-4">
+          <legend className="flex items-center gap-2 text-lg font-semibold px-2 text-slate-700 dark:text-slate-300">{/* icon */} <CalendarCheck className="w-5 h-5 text-purple-600" /> Planificación de Práctica y Seguimiento</legend>
           <textarea
             name="planificacion.preparacion"
             value={(formData as any).planificacion.preparacion}
@@ -946,7 +934,7 @@ const AcompanamientoDocente: React.FC = () => {
         const newRecord = await createAcompanamiento(formData);
         setEditingId(newRecord.id);
         setFormData((prev) => ({ ...prev, id: newRecord.id } as any));
-        alert('¡Guardado correctamente! Ahora puedes agregar Ciclos OPR.');
+        alert('¡Guardado correctamente! Ahora puedes agregar <Wrench className="w-5 h-5 text-blue-500" /> {/* Ícono agregado */}Ciclos OPR.');
       }
       await fetchAcompanamientos();
     } catch (err) {
@@ -1013,9 +1001,9 @@ const AcompanamientoDocente: React.FC = () => {
         </div>
       </div>
       
-      {/* Sección de Acompañamientos Generales */}
+      {/* Sección de Acompañamientos Generales (con icono BarChart3) */}
       <div className="mb-8">
-        <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">📊 Acompañamientos Generales</h3>
+        <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">📊 <BarChart3 className="w-5 h-5 text-amber-500" /> {/* Ícono agregado */}Acompañamientos Generales</h3>
         <div className="space-y-3">
           {loading && <p>Cargando...</p>}
           {!loading && acompanamientos.filter(a => a.id).length > 0 ? (
@@ -1068,9 +1056,9 @@ const AcompanamientoDocente: React.FC = () => {
         </div>
       </div>
 
-      {/* Sección de Ciclos OPR Independientes */}
+      {/* Sección de Ciclos OPR Independientes (con icono Wrench) */}
       <div>
-        <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">🔧 Ciclos OPR</h3>
+        <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">🔧 <Wrench className="w-5 h-5 text-blue-500" /> {/* Ícono agregado */}Ciclos OPR</h3>
         <div className="space-y-3">
           <p className="text-sm text-slate-500 dark:text-slate-400 italic">
             Los ciclos OPR se pueden crear de forma independiente o asociados a un acompañamiento general.
