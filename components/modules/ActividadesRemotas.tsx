@@ -1,12 +1,25 @@
 import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
-import { ActividadRemota, RespuestaEstudianteActividad, TipoActividadRemota, QuizQuestion, PareadoItem, ComprensionLecturaContent, DesarrolloContent, User, Profile, ArchivoAdjuntoRecurso, PruebaEstandarizada } from '../../types';
+import { 
+    ActividadRemota, 
+    RespuestaEstudianteActividad, 
+    TipoActividadRemota, 
+    QuizQuestion, 
+    PareadoItem, 
+    ComprensionLecturaContent, 
+    DesarrolloContent, 
+    User, 
+    Profile, 
+    ArchivoAdjuntoRecurso, 
+    PruebaEstandarizada 
+} from '../../types';
 import { ASIGNATURAS, NIVELES, TIPOS_ACTIVIDAD_REMOTA, CURSOS } from '../../constants';
 import { 
     subscribeToActividades,
     subscribeToRespuestas,
     subscribeToAllUsers,
     createActividad,
-    createPruebaEstandarizada
+    createPruebaEstandarizada,
+    subscribeToPruebasEstandarizadas // Asegúrate de que esta función exista en tus helpers
 } from '../../src/firebaseHelpers/actividadesRemotasHelper';
 import { GoogleGenerativeAI as GoogleGenAI } from '@google/generative-ai';
 
@@ -17,7 +30,6 @@ const ITEM_QUANTITIES: Record<TipoActividadRemota, number[]> = {
     'Comprensión de Lectura': [1, 2, 3],
 };
 
-// Nuevas constantes para pruebas estandarizadas
 const HABILIDADES_SIMCE = [
     'Localizar información',
     'Interpretar y relacionar',
@@ -71,7 +83,7 @@ const ActividadesRemotas: React.FC = () => {
         }
     };
 
-    const initialPruebaState: Omit<PruebaEstandarizada, 'id' | 'fechaCreacion' | 'preguntas'> = {
+    const initialPruebaState: Omit<PruebaEstandarizada, 'id' | 'fechaCreacion' | 'preguntas' | 'titulo' | 'instrucciones' | 'textos'> = {
         asignatura: ASIGNATURAS[0],
         nivel: NIVELES[0],
         contenido: '',
@@ -88,9 +100,8 @@ const ActividadesRemotas: React.FC = () => {
     useEffect(() => {
         setDataLoading(true);
         const unsubActividades = subscribeToActividades(setActividades);
+        const unsubPruebas = subscribeToPruebasEstandarizadas(setPruebasEstandarizadas);
         const unsubRespuestas = subscribeToRespuestas(setRespuestas);
-        // Aquí necesitarías agregar el listener para pruebas estandarizadas
-        // const unsubPruebas = subscribeToPruebasEstandarizadas(setPruebasEstandarizadas);
         const unsubUsers = subscribeToAllUsers((users) => {
             setAllUsers(users);
             setDataLoading(false);
@@ -98,9 +109,9 @@ const ActividadesRemotas: React.FC = () => {
 
         return () => {
             unsubActividades();
+            unsubPruebas();
             unsubRespuestas();
             unsubUsers();
-            // unsubPruebas();
         };
     }, []);
 
@@ -158,39 +169,25 @@ const ActividadesRemotas: React.FC = () => {
     };
 
     const handleCursoDestinoChange = (curso: string, isPrueba = false) => {
-        if (isPrueba) {
-            setPruebaFormData(prev => {
-                const newCursos = prev.cursosDestino?.includes(curso)
-                    ? prev.cursosDestino.filter(c => c !== curso)
-                    : [...(prev.cursosDestino || []), curso];
-                return { ...prev, cursosDestino: newCursos };
-            });
-        } else {
-            setFormData(prev => {
-                const newCursos = prev.cursosDestino?.includes(curso)
-                    ? prev.cursosDestino.filter(c => c !== curso)
-                    : [...(prev.cursosDestino || []), curso];
-                return { ...prev, cursosDestino: newCursos };
-            });
-        }
+        const updater = isPrueba ? setPruebaFormData : setFormData;
+        updater(prev => {
+            const currentCursos = prev.cursosDestino || [];
+            const newCursos = currentCursos.includes(curso)
+                ? currentCursos.filter(c => c !== curso)
+                : [...currentCursos, curso];
+            return { ...prev, cursosDestino: newCursos };
+        });
     };
 
     const handleEstudianteDestinoChange = (nombre: string, isPrueba = false) => {
-        if (isPrueba) {
-            setPruebaFormData(prev => {
-                const newEstudiantes = prev.estudiantesDestino?.includes(nombre)
-                    ? prev.estudiantesDestino.filter(e => e !== nombre)
-                    : [...(prev.estudiantesDestino || []), nombre];
-                return { ...prev, estudiantesDestino: newEstudiantes };
-            });
-        } else {
-            setFormData(prev => {
-                const newEstudiantes = prev.estudiantesDestino?.includes(nombre)
-                    ? prev.estudiantesDestino.filter(e => e !== nombre)
-                    : [...(prev.estudiantesDestino || []), nombre];
-                return { ...prev, estudiantesDestino: newEstudiantes };
-            });
-        }
+        const updater = isPrueba ? setPruebaFormData : setFormData;
+        updater(prev => {
+            const currentEstudiantes = prev.estudiantesDestino || [];
+            const newEstudiantes = currentEstudiantes.includes(nombre)
+                ? currentEstudiantes.filter(e => e !== nombre)
+                : [...currentEstudiantes, nombre];
+            return { ...prev, estudiantesDestino: newEstudiantes };
+        });
     };
     
     const buildPrompt = () => {
@@ -199,8 +196,8 @@ const ActividadesRemotas: React.FC = () => {
         tipos.forEach(tipo => {
             const cantidad = cantidadPreguntas[tipo] || ITEM_QUANTITIES[tipo][0];
             switch (tipo) {
-                case 'Quiz': prompt += `- **Quiz**: Un array de ${cantidad} objetos. Cada objeto debe tener: "pregunta" (string), "opciones" (array de 4 strings) y "respuestaCorrecta" (string).\n`; break;
-                case 'Comprensión de Lectura': prompt += `- **Comprensión de Lectura**: Un array de ${cantidad} objetos. Cada objeto debe tener "texto" (string de 150-200 palabras) y "preguntas" (un array de 4 objetos, cada uno con "pregunta", "opciones" y "respuestaCorrecta").\n`; break;
+                case 'Quiz': prompt += `- **Quiz**: Un array de ${cantidad} objetos. Cada objeto debe tener: "pregunta" (string), "opciones" (array de 4 strings), "respuestaCorrecta" (string), y "puntaje" (number, usualmente 1).\n`; break;
+                case 'Comprensión de Lectura': prompt += `- **Comprensión de Lectura**: Un objeto que debe tener "texto" (string de 150-200 palabras) y "preguntas" (un array de ${cantidad} objetos, cada uno con "pregunta", "opciones", "respuestaCorrecta" y "puntaje").\n`; break;
                 case 'Términos Pareados': prompt += `- **Términos Pareados**: Un array de ${cantidad} objetos. Cada objeto debe tener "concepto" (string) y "definicion" (string).\n`; break;
                 case 'Desarrollo': prompt += `- **Desarrollo**: Un array de ${cantidad} objetos. Cada objeto debe tener una clave "pregunta" (string con la pregunta) y una clave "rubrica" (string con la rúbrica de evaluación).\n`; break;
             }
@@ -259,7 +256,6 @@ REGLAS OBLIGATORIAS:
 JSON válido sin comentarios:`;
     };
 
-    // Funciones de adaptación de contenido (mantener las existentes)
     function autoAdaptContent(tipo: TipoActividadRemota, content: any) {
         if (tipo === 'Desarrollo') {
             if (Array.isArray(content)) {
@@ -305,7 +301,7 @@ JSON válido sin comentarios:`;
                     return { id: idx, concepto: String(item), definicion: '' };
                 });
             } else if (typeof content === 'object' && content !== null) {
-                return Object.entries(content).map(([concepto, definicion], idx) => ({ id: idx, concepto, definicion }));
+                return Object.entries(content).map(([concepto, definicion], idx) => ({ id: idx, concepto, definicion: String(definicion) }));
             } else if (typeof content === 'string') {
                 return content.split(/\n|;/).map((str, idx) => {
                     const match = str.match(/^(.+?)[\s:-–]+(.+)$/);
@@ -323,7 +319,8 @@ JSON válido sin comentarios:`;
                     preguntas: content.preguntas.map((q: any) => ({
                         pregunta: q.pregunta || q.Pregunta || '',
                         opciones: q.opciones || q.Opciones || [],
-                        respuestaCorrecta: q.respuestaCorrecta || q.respuesta || ''
+                        respuestaCorrecta: q.respuestaCorrecta || q.respuesta || '',
+                        puntaje: q.puntaje || 1
                     }))
                 };
             }
@@ -335,7 +332,8 @@ JSON válido sin comentarios:`;
                         preguntas: (first.preguntas || []).map((q: any) => ({
                             pregunta: q.pregunta || q.Pregunta || '',
                             opciones: q.opciones || q.Opciones || [],
-                            respuestaCorrecta: q.respuestaCorrecta || q.respuesta || ''
+                            respuestaCorrecta: q.respuestaCorrecta || q.respuesta || '',
+                            puntaje: q.puntaje || 1
                         }))
                     };
                 }
@@ -360,7 +358,7 @@ JSON válido sin comentarios:`;
                         if (respMatch) {
                             respuestaCorrecta = respMatch[1].trim();
                         }
-                        return { pregunta, opciones, respuestaCorrecta };
+                        return { pregunta, opciones, respuestaCorrecta, puntaje: 1 };
                     });
                 }
                 return {
@@ -368,6 +366,10 @@ JSON válido sin comentarios:`;
                     preguntas
                 };
             }
+        }
+        // Para Quiz, si es un array, asegurarse de que tenga puntaje
+        if (tipo === 'Quiz' && Array.isArray(content)) {
+            return content.map(q => ({ ...q, puntaje: q.puntaje || 1 }));
         }
         return content;
     }
@@ -391,9 +393,7 @@ JSON válido sin comentarios:`;
 
             const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
             if (!apiKey) {
-                setError("No se encontró la API Key de Gemini. Configura VITE_GEMINI_API_KEY en tu entorno.");
-                setIsLoading(false);
-                return;
+                throw new Error("No se encontró la API Key de Gemini. Configura VITE_GEMINI_API_KEY en tu entorno.");
             }
             
             const ai = new GoogleGenAI(apiKey);
@@ -405,19 +405,17 @@ JSON válido sin comentarios:`;
             const response = await result.response;
             let text = await response.text();
             
-            console.log("Respuesta cruda de la IA (actividad):", text); // Para debugging
+            console.log("Respuesta cruda de la IA (actividad):", text); 
             
-            // Limpieza más robusta del texto
             text = text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '');
             
-            // Buscar el JSON entre llaves
             const jsonMatch = text.match(/\{[\s\S]*\}/);
             if (!jsonMatch) {
                 throw new Error("No se encontró un objeto JSON válido en la respuesta de la IA");
             }
             
             const jsonText = jsonMatch[0];
-            console.log("JSON extraído (actividad):", jsonText); // Para debugging
+            console.log("JSON extraído (actividad):", jsonText);
             
             const generatedData = JSON.parse(jsonText);
 
@@ -461,9 +459,7 @@ JSON válido sin comentarios:`;
         try {
             const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
             if (!apiKey) {
-                setError("No se encontró la API Key de Gemini. Configura VITE_GEMINI_API_KEY en tu entorno.");
-                setIsLoading(false);
-                return;
+                throw new Error("No se encontró la API Key de Gemini. Configura VITE_GEMINI_API_KEY en tu entorno.");
             }
             
             const ai = new GoogleGenAI(apiKey);
@@ -475,38 +471,27 @@ JSON válido sin comentarios:`;
             const response = await result.response;
             let text = await response.text();
             
-            console.log("Respuesta cruda de la IA:", text); // Para debugging
+            console.log("Respuesta cruda de la IA:", text);
             
-            // Limpieza más robusta del texto
-            // Remover bloques de código markdown
             text = text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '');
-            
-            // Remover comentarios de JavaScript (// comentarios)
             text = text.replace(/\/\/.*$/gm, '');
-            
-            // Remover comentarios de bloque (/* comentarios */)
             text = text.replace(/\/\*[\s\S]*?\*\//g, '');
-            
-            // Limpiar espacios extra y saltos de línea
             text = text.trim();
             
-            // Buscar el JSON entre llaves
             const jsonMatch = text.match(/\{[\s\S]*\}/);
             if (!jsonMatch) {
                 throw new Error("No se encontró un objeto JSON válido en la respuesta de la IA");
             }
             
             let jsonText = jsonMatch[0];
-            console.log("JSON extraído:", jsonText); // Para debugging
+            console.log("JSON extraído:", jsonText);
             
-            // Limpiar comas colgantes antes de } o ]
             jsonText = jsonText.replace(/,(\s*[}\]])/g, '$1');
             
-            console.log("JSON limpio:", jsonText); // Para debugging
+            console.log("JSON limpio:", jsonText);
             
             const generatedData = JSON.parse(jsonText);
 
-            // Validar que tenga la estructura esperada
             if (!generatedData.preguntas || !Array.isArray(generatedData.preguntas)) {
                 throw new Error("La respuesta de la IA no contiene un array de preguntas válido");
             }
@@ -515,7 +500,6 @@ JSON válido sin comentarios:`;
                 console.warn(`Se esperaban 30 preguntas, pero se recibieron ${generatedData.preguntas.length}`);
             }
 
-            // Validar y procesar textos
             const textosValidos = (generatedData.textos || []).map((texto: any, index: number) => ({
                 id: texto.id || (index + 1),
                 titulo: texto.titulo || `Texto ${index + 1}`,
@@ -525,7 +509,6 @@ JSON válido sin comentarios:`;
                 palabras: texto.palabras || texto.contenido?.split(' ').length || 0
             }));
 
-            // Validar y limpiar cada pregunta
             const preguntasValidas = generatedData.preguntas.slice(0, 30).map((pregunta: any, index: number) => {
                 return {
                     numero: pregunta.numero || (index + 1),
@@ -540,13 +523,12 @@ JSON válido sin comentarios:`;
                         ? pregunta.habilidad 
                         : HABILIDADES_SIMCE[0],
                     justificacion: pregunta.justificacion || 'Justificación no disponible',
-                    // Solo incluir textoId si existe y es válido
                     ...(pregunta.textoId && typeof pregunta.textoId === 'number' ? { textoId: pregunta.textoId } : {})
                 };
             });
 
             console.log("Textos procesados:", textosValidos);
-            console.log("Preguntas procesadas:", preguntasValidas.slice(0, 2)); // Ver las primeras 2
+            console.log("Preguntas procesadas:", preguntasValidas.slice(0, 2));
 
             const newPrueba: PruebaEstandarizada = {
                 id: '',
@@ -564,7 +546,6 @@ JSON válido sin comentarios:`;
             console.error("Error al generar prueba con IA", e);
             const errorMessage = e instanceof Error ? e.message : "Error desconocido";
             
-            // Mensaje de error más específico
             if (errorMessage.includes('JSON')) {
                 setError(`Error al procesar la respuesta de la IA. El formato de respuesta no es válido. Inténtalo de nuevo.`);
             } else {
@@ -592,16 +573,14 @@ JSON válido sin comentarios:`;
     const handleConfirmAndSavePrueba = async () => {
         if (!previewPrueba) return;
         try {
-            // Limpiar datos para evitar valores undefined
             const pruebaToSave: PruebaEstandarizada = {
                 ...previewPrueba,
-                // Asegurar que no haya valores undefined
                 cursosDestino: previewPrueba.cursosDestino || [],
                 estudiantesDestino: previewPrueba.estudiantesDestino || [],
                 textos: previewPrueba.textos || [],
                 preguntas: previewPrueba.preguntas.map(pregunta => ({
                     ...pregunta,
-                    textoId: pregunta.textoId || null // Convertir undefined a null
+                    textoId: pregunta.textoId || null 
                 }))
             };
 
@@ -615,16 +594,38 @@ JSON válido sin comentarios:`;
         }
     };
 
-    const estudiantesAsignados = useMemo(() => {
+    // ✅ HOOK CORREGIDO: Devuelve un array de objetos User completos.
+    const estudiantesAsignados = useMemo((): User[] => {
         const actividad = selectedActividad || selectedPrueba;
-        if (!actividad || !allUsers) return [];
-        const estudiantesPorCurso = allUsers.filter(u => u.profile === Profile.ESTUDIANTE && actividad.cursosDestino?.includes(u.curso || '')).map(u => u.nombreCompleto);
-        const estudiantesIndividuales = actividad.estudiantesDestino || [];
+        if (!actividad || !allUsers.length) return [];
+    
+        const estudiantesPotenciales = new Map<string, User>();
+    
+        // Si no hay destino, se asigna a todo el nivel
         if (!actividad.cursosDestino?.length && !actividad.estudiantesDestino?.length) {
             const nivelNum = actividad.nivel.charAt(0);
-            return allUsers.filter(u => u.profile === Profile.ESTUDIANTE && u.curso?.startsWith(nivelNum)).map(u => u.nombreCompleto).sort();
+            allUsers
+                .filter(u => u.profile === Profile.ESTUDIANTE && u.curso?.startsWith(nivelNum))
+                .forEach(u => estudiantesPotenciales.set(u.id, u));
+        } else {
+            // Estudiantes por cursos seleccionados
+            if (actividad.cursosDestino?.length) {
+                const estudiantesPorCurso = allUsers.filter(u =>
+                    u.profile === Profile.ESTUDIANTE && actividad.cursosDestino.includes(u.curso || '')
+                );
+                estudiantesPorCurso.forEach(u => estudiantesPotenciales.set(u.id, u));
+            }
+    
+            // Estudiantes individuales seleccionados (por nombre completo)
+            if (actividad.estudiantesDestino?.length) {
+                const estudiantesIndividuales = allUsers.filter(u =>
+                    u.profile === Profile.ESTUDIANTE && actividad.estudiantesDestino.includes(u.nombreCompleto)
+                );
+                estudiantesIndividuales.forEach(u => estudiantesPotenciales.set(u.id, u));
+            }
         }
-        return Array.from(new Set([...estudiantesPorCurso, ...estudiantesIndividuales])).sort();
+    
+        return Array.from(estudiantesPotenciales.values()).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
     }, [selectedActividad, selectedPrueba, allUsers]);
 
     const resultadosDeActividad = useMemo(() => {
@@ -641,7 +642,6 @@ JSON válido sin comentarios:`;
         return students.filter(s => s.nombreCompleto.toLowerCase().includes(studentSearch.toLowerCase()));
     }, [students, studentSearch]);
 
-    // Renderizadores existentes (mantener los existentes y agregar nuevos)
     const renderTabs = () => (
         <div className="flex space-x-1 mb-6">
             <button
@@ -805,12 +805,11 @@ JSON válido sin comentarios:`;
                     <p className="text-slate-700 whitespace-pre-wrap">{previewPrueba?.instrucciones}</p>
                 </div>
 
-                {/* Textos de lectura */}
                 {previewPrueba?.textos && previewPrueba.textos.length > 0 && (
                     <div className="p-4 bg-emerald-50 border-l-4 border-emerald-400 rounded-r-lg">
                         <h3 className="font-bold text-emerald-800 mb-4">Textos de Lectura ({previewPrueba.textos.length})</h3>
                         <div className="space-y-4">
-                            {previewPrueba.textos.map((texto, index) => (
+                            {previewPrueba.textos.map((texto) => (
                                 <div key={texto.id} className="bg-white p-4 rounded-lg border border-emerald-200">
                                     <div className="flex justify-between items-start mb-2">
                                         <h4 className="font-semibold text-slate-800">Texto {texto.id}: {texto.titulo}</h4>
@@ -874,63 +873,9 @@ JSON válido sin comentarios:`;
                                         <strong>Justificación:</strong> {pregunta.justificacion}
                                     </p>
                                 )}
-                                
-                                {/* Debug info - remover después */}
-                                {process.env.NODE_ENV === 'development' && (
-                                    <div className="text-xs text-red-600 mt-1 p-1 bg-red-50 rounded">
-                                        Debug: Opciones = {JSON.stringify(pregunta.opciones)} | 
-                                        Respuesta = {pregunta.respuestaCorrecta} |
-                                        TextoId = {pregunta.textoId}
-                                    </div>
-                                )}
                             </div>
                         ))}
                     </div>
-
-                    {/* Resumen de habilidades */}
-                    <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                        <h4 className="font-bold text-gray-800 mb-3">Distribución de Habilidades SIMCE</h4>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-                            {HABILIDADES_SIMCE.map(habilidad => {
-                                const count = previewPrueba?.preguntas?.filter(p => p.habilidad === habilidad).length || 0;
-                                return (
-                                    <div key={habilidad} className="text-sm">
-                                        <span className="font-medium">{habilidad}:</span> {count} preguntas
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        
-                        {/* Estadísticas de textos */}
-                        {previewPrueba?.textos && previewPrueba.textos.length > 0 && (
-                            <div className="border-t pt-3">
-                                <h5 className="font-semibold text-gray-700 mb-2">Preguntas por Texto:</h5>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {previewPrueba.textos.map(texto => {
-                                        const count = previewPrueba.preguntas?.filter(p => p.textoId === texto.id).length || 0;
-                                        return (
-                                            <div key={texto.id} className="text-sm">
-                                                <span className="font-medium">Texto {texto.id}:</span> {count} preguntas
-                                            </div>
-                                        );
-                                    })}
-                                    <div className="text-sm">
-                                        <span className="font-medium">Sin texto base:</span> {previewPrueba.preguntas?.filter(p => !p.textoId).length || 0} preguntas
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                    
-                    {/* Debug completo - remover después */}
-                    {process.env.NODE_ENV === 'development' && (
-                        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-xs">
-                            <strong>Debug completo primera pregunta:</strong>
-                            <pre className="mt-2 whitespace-pre-wrap">
-                                {JSON.stringify(previewPrueba?.preguntas?.[0], null, 2)}
-                            </pre>
-                        </div>
-                    )}
                 </div>
             </div>
             
@@ -988,6 +933,7 @@ JSON válido sin comentarios:`;
         </div>
     );
 
+    // ✅ VISTA DE RESULTADOS CORREGIDA
     const renderActivityView = () => (
         <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
             <div className="flex justify-between items-start">
@@ -1023,15 +969,16 @@ JSON válido sin comentarios:`;
                                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Estudiante</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Estado</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Puntaje</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Nota</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Fecha Completado</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
-                            {estudiantesAsignados.map(nombre => {
-                                const resultado = resultadosDeActividad.find(r => r.estudianteId === nombre);
+                            {estudiantesAsignados.map(estudiante => {
+                                const resultado = resultadosDeActividad.find(r => r.estudianteId === estudiante.id);
                                 return (
-                                    <tr key={nombre}>
-                                        <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-200">{nombre}</td>
+                                    <tr key={estudiante.id}>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-200">{estudiante.nombreCompleto}</td>
                                         <td className="px-4 py-4 whitespace-nowrap text-sm">
                                             {resultado ? (
                                                 <span className="px-2 py-1 font-semibold text-xs rounded-full bg-green-100 text-green-800">Completado</span>
@@ -1041,6 +988,13 @@ JSON válido sin comentarios:`;
                                         </td>
                                         <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-600">
                                             {resultado ? `${resultado.puntaje}/${resultado.puntajeMaximo}` : '-'}
+                                        </td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-slate-600">
+                                            {resultado ? (
+                                                <span className={parseFloat(resultado.nota) >= 4.0 ? 'text-green-600' : 'text-red-600'}>
+                                                    {resultado.nota}
+                                                </span>
+                                            ) : '-'}
                                         </td>
                                         <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-600">
                                             {resultado ? new Date(resultado.fechaCompletado).toLocaleString('es-CL') : '-'}
@@ -1173,7 +1127,7 @@ JSON válido sin comentarios:`;
                                     <div key={i} className="border-t pt-3 first:border-t-0">
                                         <p className="font-semibold">{i+1}. {q.pregunta}</p>
                                         <ul className="list-none pl-5 mt-2 space-y-1">
-                                            {q.opciones.map((o, index) => (
+                                            {q.opciones.map((o: string, index: number) => (
                                                 <li key={index}>
                                                     <strong>{String.fromCharCode(65 + index)}.</strong> {o}
                                                 </li>
@@ -1182,10 +1136,10 @@ JSON válido sin comentarios:`;
                                         <p className="text-xs text-green-600 font-semibold mt-2 p-1 bg-green-50 rounded inline-block">R: {q.respuestaCorrecta}</p>
                                     </div>
                                 ))}
-                                {tipo === 'Comprensión de Lectura' && content && typeof content === 'object' && Array.isArray(content.preguntas) && (
+                                {tipo === 'Comprensión de Lectura' && content && typeof content === 'object' && 'preguntas' in content && Array.isArray(content.preguntas) && (
                                     <div>
                                         <p className="whitespace-pre-wrap bg-slate-100 p-3 rounded-md mb-4">{content.texto}</p>
-                                        {content.preguntas.map((q,i) => (
+                                        {content.preguntas.map((q: QuizQuestion, i: number) => (
                                             <div key={i} className="border-t pt-3 first:border-t-0">
                                                 <p className="font-semibold">{i+1}. {q.pregunta}</p>
                                                 <ul className="list-none pl-5 mt-2 space-y-1">
@@ -1210,7 +1164,7 @@ JSON válido sin comentarios:`;
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {content.map(p => (
+                                                {content.map((p: PareadoItem) => (
                                                     <tr key={p.id} className="border-b last:border-b-0 hover:bg-slate-50">
                                                         <td className="p-2 align-top font-semibold text-slate-800">{p.concepto}</td>
                                                         <td className="p-2 align-top text-slate-700">{p.definicion}</td>
@@ -1230,7 +1184,7 @@ JSON válido sin comentarios:`;
                                 {((tipo === 'Quiz' || tipo === 'Términos Pareados' || tipo === 'Desarrollo') && !Array.isArray(content)) && (
                                     <div className="text-red-600 text-sm p-3 bg-red-50 border border-red-200 rounded-md">El contenido generado para "<strong>{tipo}</strong>" no tiene el formato de array esperado. La IA pudo haber devuelto una respuesta en un formato no válido.</div>
                                 )}
-                                {tipo === 'Comprensión de Lectura' && (!content || typeof content !== 'object' || !Array.isArray(content.preguntas)) && (
+                                {tipo === 'Comprensión de Lectura' && (!content || typeof content !== 'object' || !Array.isArray((content as any).preguntas)) && (
                                     <div className="text-red-600 text-sm p-3 bg-red-50 border border-red-200 rounded-md">El contenido generado para "<strong>Comprensión de Lectura</strong>" no tiene el formato de objeto con preguntas esperado.</div>
                                 )}
                             </div>
@@ -1246,7 +1200,7 @@ JSON válido sin comentarios:`;
     );
 
     const renderActivityList = () => (
-         <div className="bg-white p-6 md:p-8 rounded-xl shadow-md">
+       <div className="bg-white p-6 md:p-8 rounded-xl shadow-md">
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold text-slate-800">Actividades Remotas</h1>
                 <button onClick={() => setIsCreating(true)} className="bg-amber-500 text-white font-bold py-2 px-5 rounded-lg hover:bg-amber-600">Crear Nueva</button>

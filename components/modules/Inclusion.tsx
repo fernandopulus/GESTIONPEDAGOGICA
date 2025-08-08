@@ -10,7 +10,309 @@ import {
     addEstudianteToInclusion,
     updateEstudianteInclusion,
     deleteEstudianteInclusion
-} from '../../src/firebaseHelpers/inclusionHelper'; // AJUSTA la ruta a tu nuevo helper
+} from '../../src/firebaseHelpers/inclusionHelper';
+
+// Componente Dashboard con gráficos
+const DashboardInclusion: React.FC<{
+    estudiantes: EstudianteInclusion[];
+}> = ({ estudiantes }) => {
+    // Distribución por curso
+    const distribucionCurso = useMemo(() => {
+        const cursos = estudiantes.reduce((acc, est) => {
+            acc[est.curso] = (acc[est.curso] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+        
+        return Object.entries(cursos)
+            .map(([curso, cantidad]) => ({ curso, cantidad }))
+            .sort((a, b) => a.curso.localeCompare(b.curso));
+    }, [estudiantes]);
+
+    // Distribución por nivel (extrayendo el número del curso)
+    const distribucionNivel = useMemo(() => {
+        const niveles = estudiantes.reduce((acc, est) => {
+            const nivel = est.curso.match(/\d+/)?.[0] || 'Sin nivel';
+            acc[nivel] = (acc[nivel] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+        
+        return Object.entries(niveles)
+            .map(([nivel, cantidad]) => ({ nivel, cantidad }))
+            .sort((a, b) => {
+                if (a.nivel === 'Sin nivel') return 1;
+                if (b.nivel === 'Sin nivel') return -1;
+                return parseInt(a.nivel) - parseInt(b.nivel);
+            });
+    }, [estudiantes]);
+
+    // Distribución por diagnóstico
+    const distribucionDiagnostico = useMemo(() => {
+        const diagnosticos = estudiantes.reduce((acc, est) => {
+            acc[est.dificultad] = (acc[est.dificultad] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+        
+        return Object.entries(diagnosticos)
+            .map(([diagnostico, cantidad]) => ({ diagnostico, cantidad }))
+            .sort((a, b) => b.cantidad - a.cantidad);
+    }, [estudiantes]);
+
+    // Estadísticas de intervenciones
+    const estadisticasIntervenciones = useMemo(() => {
+        const totalIntervenciones = estudiantes.reduce((acc, est) => acc + (est.intervenciones?.length || 0), 0);
+        const estudiantesConIntervenciones = estudiantes.filter(est => (est.intervenciones?.length || 0) > 0).length;
+        const promedioIntervenciones = estudiantes.length > 0 ? (totalIntervenciones / estudiantes.length).toFixed(1) : '0';
+        
+        return {
+            total: totalIntervenciones,
+            conIntervenciones: estudiantesConIntervenciones,
+            promedio: promedioIntervenciones
+        };
+    }, [estudiantes]);
+
+    // Alertas pendientes
+    const alertasPendientes = useMemo(() => {
+        return estudiantes.reduce((acc, est) => {
+            const pendientes = (est.alertas || []).filter(a => !a.resuelta).length;
+            return acc + pendientes;
+        }, 0);
+    }, [estudiantes]);
+
+    const maxValue = Math.max(...distribucionCurso.map(d => d.cantidad), ...distribucionNivel.map(d => d.cantidad), ...distribucionDiagnostico.map(d => d.cantidad));
+
+    return (
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
+            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-6">Dashboard PIE</h2>
+            
+            {/* Estadísticas generales */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{estudiantes.length}</div>
+                    <div className="text-sm text-blue-800 dark:text-blue-300">Total Estudiantes</div>
+                </div>
+                <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600 dark:text-green-400">{estadisticasIntervenciones.total}</div>
+                    <div className="text-sm text-green-800 dark:text-green-300">Intervenciones</div>
+                </div>
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg">
+                    <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{alertasPendientes}</div>
+                    <div className="text-sm text-yellow-800 dark:text-yellow-300">Alertas Pendientes</div>
+                </div>
+                <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
+                    <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{estadisticasIntervenciones.promedio}</div>
+                    <div className="text-sm text-purple-800 dark:text-purple-300">Promedio Intervenciones</div>
+                </div>
+            </div>
+
+            {/* Gráficos de distribución */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Distribución por Curso */}
+                <div>
+                    <h3 className="font-semibold text-slate-800 dark:text-slate-200 mb-3">Por Curso</h3>
+                    <div className="space-y-2">
+                        {distribucionCurso.map(({ curso, cantidad }) => (
+                            <div key={curso} className="flex items-center gap-2">
+                                <div className="text-sm text-slate-600 dark:text-slate-300 w-12">{curso}</div>
+                                <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-4 overflow-hidden">
+                                    <div 
+                                        className="bg-blue-500 h-full transition-all duration-500"
+                                        style={{ width: `${(cantidad / maxValue) * 100}%` }}
+                                    ></div>
+                                </div>
+                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 w-6">{cantidad}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Distribución por Nivel */}
+                <div>
+                    <h3 className="font-semibold text-slate-800 dark:text-slate-200 mb-3">Por Nivel</h3>
+                    <div className="space-y-2">
+                        {distribucionNivel.map(({ nivel, cantidad }) => (
+                            <div key={nivel} className="flex items-center gap-2">
+                                <div className="text-sm text-slate-600 dark:text-slate-300 w-12">{nivel}°</div>
+                                <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-4 overflow-hidden">
+                                    <div 
+                                        className="bg-green-500 h-full transition-all duration-500"
+                                        style={{ width: `${(cantidad / maxValue) * 100}%` }}
+                                    ></div>
+                                </div>
+                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 w-6">{cantidad}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Distribución por Diagnóstico */}
+                <div>
+                    <h3 className="font-semibold text-slate-800 dark:text-slate-200 mb-3">Por Diagnóstico</h3>
+                    <div className="space-y-2">
+                        {distribucionDiagnostico.map(({ diagnostico, cantidad }) => (
+                            <div key={diagnostico} className="flex items-center gap-2">
+                                <div className="text-sm text-slate-600 dark:text-slate-300 w-16 text-right truncate" title={diagnostico}>
+                                    {diagnostico.substring(0, 10)}...
+                                </div>
+                                <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-4 overflow-hidden">
+                                    <div 
+                                        className="bg-purple-500 h-full transition-all duration-500"
+                                        style={{ width: `${(cantidad / maxValue) * 100}%` }}
+                                    ></div>
+                                </div>
+                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 w-6">{cantidad}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Componente Buscador Mejorado
+const BuscadorEstudiantes: React.FC<{
+    estudiantesDisponibles: User[];
+    onSelect: (student: User) => void;
+}> = ({ estudiantesDisponibles, onSelect }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedCourse, setSelectedCourse] = useState('');
+    const [isOpen, setIsOpen] = useState(false);
+
+    const filteredStudents = useMemo(() => {
+        return estudiantesDisponibles
+            .filter(student => {
+                const matchesName = student.nombreCompleto.toLowerCase().includes(searchTerm.toLowerCase());
+                const matchesCourse = selectedCourse === '' || student.curso === selectedCourse;
+                return matchesName && matchesCourse;
+            })
+            .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+    }, [estudiantesDisponibles, searchTerm, selectedCourse]);
+
+    const availableCourses = useMemo(() => {
+        const courses = [...new Set(estudiantesDisponibles.map(s => s.curso).filter(Boolean))];
+        return courses.sort();
+    }, [estudiantesDisponibles]);
+
+    const handleSelectStudent = (student: User) => {
+        onSelect(student);
+        setSearchTerm('');
+        setSelectedCourse('');
+        setIsOpen(false);
+    };
+
+    return (
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
+            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">
+                Agregar Estudiante al PIE
+            </h2>
+            
+            {/* Controles de búsqueda */}
+            <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Buscar por nombre
+                        </label>
+                        <input
+                            type="text"
+                            placeholder="Escriba el nombre del estudiante..."
+                            value={searchTerm}
+                            onChange={(e) => {
+                                setSearchTerm(e.target.value);
+                                setIsOpen(e.target.value.length > 0 || selectedCourse !== '');
+                            }}
+                            onFocus={() => setIsOpen(searchTerm.length > 0 || selectedCourse !== '')}
+                            className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                        />
+                    </div>
+                    
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Filtrar por curso
+                        </label>
+                        <select
+                            value={selectedCourse}
+                            onChange={(e) => {
+                                setSelectedCourse(e.target.value);
+                                setIsOpen(searchTerm.length > 0 || e.target.value !== '');
+                            }}
+                            className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                        >
+                            <option value="">Todos los cursos</option>
+                            {availableCourses.map(course => (
+                                <option key={course} value={course}>{course}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                {/* Estadísticas de búsqueda */}
+                <div className="flex justify-between items-center text-sm text-slate-600 dark:text-slate-400">
+                    <span>Estudiantes disponibles: {estudiantesDisponibles.length}</span>
+                    <span>Resultados filtrados: {filteredStudents.length}</span>
+                </div>
+
+                {/* Botón para mostrar/ocultar resultados */}
+                <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="w-full bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 py-2 px-4 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                >
+                    {isOpen ? 'Ocultar resultados' : `Ver ${filteredStudents.length} estudiantes disponibles`}
+                </button>
+
+                {/* Lista de resultados */}
+                {isOpen && (
+                    <div className="border dark:border-slate-600 rounded-lg max-h-80 overflow-y-auto">
+                        {filteredStudents.length === 0 ? (
+                            <div className="p-4 text-center text-slate-500 dark:text-slate-400">
+                                {searchTerm || selectedCourse ? 'No se encontraron estudiantes con los criterios de búsqueda.' : 'No hay estudiantes disponibles.'}
+                            </div>
+                        ) : (
+                            <div className="divide-y dark:divide-slate-600">
+                                {filteredStudents.map(student => (
+                                    <div
+                                        key={student.id}
+                                        className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
+                                        onClick={() => handleSelectStudent(student)}
+                                    >
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <p className="font-medium text-slate-800 dark:text-slate-200">
+                                                    {student.nombreCompleto}
+                                                </p>
+                                                <p className="text-sm text-slate-500 dark:text-slate-400">
+                                                    {student.curso}
+                                                </p>
+                                            </div>
+                                            <button className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 text-xl">
+                                                ➕
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Acciones rápidas */}
+                {searchTerm && filteredStudents.length === 1 && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
+                        <p className="text-sm text-blue-800 dark:text-blue-200 mb-2">
+                            💡 ¡Solo hay un resultado! Haga clic para agregarlo directamente:
+                        </p>
+                        <button
+                            onClick={() => handleSelectStudent(filteredStudents[0])}
+                            className="text-sm bg-blue-500 text-white px-3 py-1.5 rounded-md hover:bg-blue-600 transition-colors"
+                        >
+                            Agregar a {filteredStudents[0].nombreCompleto}
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
 
 // --- MODAL FICHA ESTUDIANTE ---
 const FichaEstudianteModal: React.FC<{
@@ -35,7 +337,6 @@ const FichaEstudianteModal: React.FC<{
     const [isUploading, setIsUploading] = useState(false);
     const initialReunionState: Omit<ReunionApoderados, 'id' | 'fecha'> = { motivo: '', acuerdos: '', asistentes: '' };
     const [newReunion, setNewReunion] = useState(initialReunionState);
-
 
     const handleSaveAndClose = () => {
         onSave(localStudentData);
@@ -152,10 +453,6 @@ const FichaEstudianteModal: React.FC<{
 
     const handleUploadFile = () => {
         if (!selectedFile) return;
-        // NOTA: Esta implementación usa Base64, lo cual NO es recomendado para producción
-        // con Firestore debido al límite de tamaño de 1MB por documento.
-        // La solución ideal es usar Firebase Storage para subir el archivo y guardar
-        // solo la URL de descarga en este documento.
         setIsUploading(true);
         const reader = new FileReader();
         reader.readAsDataURL(selectedFile);
@@ -163,7 +460,7 @@ const FichaEstudianteModal: React.FC<{
             const newFile: ArchivoAdjunto = {
                 id: crypto.randomUUID(),
                 nombre: selectedFile.name,
-                url: reader.result as string, // Guardado como Base64 Data URL
+                url: reader.result as string,
                 fechaSubida: new Date().toISOString(),
             };
             setLocalStudentData(prev => ({
@@ -545,6 +842,7 @@ const Inclusion: React.FC<InclusionProps> = ({ currentUser }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCurso, setFilterCurso] = useState('');
     const [filterDificultad, setFilterDificultad] = useState('');
+    const [activeView, setActiveView] = useState<'dashboard' | 'lista'>('dashboard');
 
     // Suscripción a los datos de Firestore
     useEffect(() => {
@@ -587,7 +885,6 @@ const Inclusion: React.FC<InclusionProps> = ({ currentUser }) => {
 
         try {
             await addEstudianteToInclusion(newStudent);
-            // No es necesario llamar a setSelectedStudent aquí, la UI se actualizará por el listener
         } catch (error) {
             console.error("Error al agregar estudiante:", error);
             alert("Hubo un error al agregar al estudiante al programa.");
@@ -607,7 +904,6 @@ const Inclusion: React.FC<InclusionProps> = ({ currentUser }) => {
         if (window.confirm("¿Está seguro de que desea eliminar a este estudiante del programa de inclusión? Esta acción es irreversible.")) {
             try {
                 await deleteEstudianteInclusion(id);
-                // Cierra el modal si el estudiante eliminado estaba seleccionado
                 if (selectedStudent?.id === id) {
                     setSelectedStudent(null);
                 }
@@ -668,60 +964,257 @@ const Inclusion: React.FC<InclusionProps> = ({ currentUser }) => {
 
     return (
         <div className="space-y-8 animate-fade-in">
-            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Programa de Inclusión Escolar (PIE)</h1>
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Programa de Inclusión Escolar (PIE)</h1>
+                
+                {/* Toggle de vista */}
+                <div className="flex gap-2 bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
+                    <button
+                        onClick={() => setActiveView('dashboard')}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                            activeView === 'dashboard' 
+                                ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-200 shadow-sm' 
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                        }`}
+                    >
+                        📊 Dashboard
+                    </button>
+                    <button
+                        onClick={() => setActiveView('lista')}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                            activeView === 'lista' 
+                                ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-200 shadow-sm' 
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                        }`}
+                    >
+                        📋 Lista de Estudiantes
+                    </button>
+                </div>
+            </div>
 
             {loading ? (
-                <div className="text-center py-10">Cargando datos del programa...</div>
+                <div className="text-center py-10">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500"></div>
+                    <p className="mt-4 text-slate-600 dark:text-slate-400">Cargando datos del programa...</p>
+                </div>
             ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Main List */}
-                    <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
-                        <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
-                            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200">Estudiantes en PIE ({filteredEstudiantes.length})</h2>
-                            <div className="flex gap-2">
-                                <button onClick={() => handleExport('xlsx')} className="text-sm bg-green-100 text-green-700 font-semibold py-1 px-3 rounded-lg">Excel</button>
-                                <button onClick={() => handleExport('pdf')} className="text-sm bg-red-100 text-red-700 font-semibold py-1 px-3 rounded-lg">PDF</button>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                            <input type="text" placeholder="Buscar por nombre..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"/>
-                            <select value={filterCurso} onChange={e => setFilterCurso(e.target.value)} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"><option value="">Todos los Cursos</option>{CURSOS.map(c => <option key={c}>{c}</option>)}</select>
-                            <select value={filterDificultad} onChange={e => setFilterDificultad(e.target.value)} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"><option value="">Todas las Dificultades</option>{DIFICULTADES_APRENDIZAJE.map(d => <option key={d}>{d}</option>)}</select>
-                        </div>
-                        <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-                            {filteredEstudiantes.map(s => (
-                                <div key={s.id} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-md border dark:border-slate-700 flex justify-between items-center">
-                                    <div>
-                                        <p className="font-bold text-slate-800 dark:text-slate-200">{s.nombre}</p>
-                                        <p className="text-sm text-slate-500 dark:text-slate-400">{s.curso} - {s.dificultad}</p>
+                <>
+                    {/* Vista Dashboard */}
+                    {activeView === 'dashboard' && (
+                        <div className="space-y-8">
+                            <DashboardInclusion estudiantes={estudiantes} />
+                            
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                {/* Lista resumida de estudiantes */}
+                                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200">
+                                            Estudiantes Recientes ({Math.min(5, estudiantes.length)})
+                                        </h2>
+                                        <button 
+                                            onClick={() => setActiveView('lista')}
+                                            className="text-sm text-blue-600 hover:text-blue-800 font-semibold"
+                                        >
+                                            Ver todos →
+                                        </button>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <button onClick={() => setSelectedStudent(s)} className="text-blue-600 hover:text-blue-800 font-semibold text-sm">Ver Ficha</button>
-                                        <button onClick={() => handleDeleteStudent(s.id)} title="Eliminar" className="text-red-600 hover:text-red-800 p-1 rounded-full text-lg">🗑️</button>
+                                    <div className="space-y-3">
+                                        {estudiantes.slice(0, 5).map(s => (
+                                            <div key={s.id} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-md border dark:border-slate-700 flex justify-between items-center">
+                                                <div>
+                                                    <p className="font-medium text-slate-800 dark:text-slate-200">{s.nombre}</p>
+                                                    <p className="text-sm text-slate-500 dark:text-slate-400">{s.curso} - {s.dificultad}</p>
+                                                </div>
+                                                <button 
+                                                    onClick={() => setSelectedStudent(s)} 
+                                                    className="text-blue-600 hover:text-blue-800 font-semibold text-sm"
+                                                >
+                                                    Ver Ficha
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {estudiantes.length === 0 && (
+                                            <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+                                                No hay estudiantes en el programa PIE
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                            ))}
-                        </div>
-                    </div>
 
-                    {/* Add from Nomina */}
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
-                        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Agregar Estudiante desde Nómina</h2>
-                        <ul className="space-y-2 max-h-[60vh] overflow-y-auto">
-                            {estudiantesEnNomina.map(user => (
-                                <li key={user.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-700 p-2 rounded">
-                                    <div>
-                                        <p className="font-medium text-sm text-slate-800 dark:text-slate-200">{user.nombreCompleto}</p>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">{user.curso}</p>
+                                {/* Buscador mejorado */}
+                                <BuscadorEstudiantes 
+                                    estudiantesDisponibles={estudiantesEnNomina}
+                                    onSelect={(student) => setStudentToAdd(student)}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Vista Lista */}
+                    {activeView === 'lista' && (
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            {/* Lista completa */}
+                            <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
+                                <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+                                    <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200">
+                                        Estudiantes en PIE ({filteredEstudiantes.length})
+                                    </h2>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleExport('xlsx')} className="text-sm bg-green-100 text-green-700 font-semibold py-1 px-3 rounded-lg hover:bg-green-200 transition-colors">
+                                            📊 Excel
+                                        </button>
+                                        <button onClick={() => handleExport('pdf')} className="text-sm bg-red-100 text-red-700 font-semibold py-1 px-3 rounded-lg hover:bg-red-200 transition-colors">
+                                            📄 PDF
+                                        </button>
                                     </div>
-                                    <button onClick={() => setStudentToAdd(user)} className="text-2xl text-green-500 hover:text-green-700">+</button>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                </div>
+                                </div>
+
+                                {/* Filtros mejorados */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                                            Buscar estudiante
+                                        </label>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Nombre del estudiante..." 
+                                            value={searchTerm} 
+                                            onChange={e => setSearchTerm(e.target.value)} 
+                                            className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                                            Filtrar por curso
+                                        </label>
+                                        <select 
+                                            value={filterCurso} 
+                                            onChange={e => setFilterCurso(e.target.value)} 
+                                            className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                                        >
+                                            <option value="">Todos los Cursos</option>
+                                            {CURSOS.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                                            Filtrar por diagnóstico
+                                        </label>
+                                        <select 
+                                            value={filterDificultad} 
+                                            onChange={e => setFilterDificultad(e.target.value)} 
+                                            className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                                        >
+                                            <option value="">Todas las Dificultades</option>
+                                            {DIFICULTADES_APRENDIZAJE.map(d => <option key={d} value={d}>{d}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Estadísticas rápidas */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-xs">
+                                    <div className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded text-center">
+                                        <div className="font-bold text-blue-600">{filteredEstudiantes.length}</div>
+                                        <div className="text-blue-800 dark:text-blue-300">Mostrando</div>
+                                    </div>
+                                    <div className="bg-green-50 dark:bg-green-900/20 p-2 rounded text-center">
+                                        <div className="font-bold text-green-600">{estudiantes.length}</div>
+                                        <div className="text-green-800 dark:text-green-300">Total</div>
+                                    </div>
+                                    <div className="bg-yellow-50 dark:bg-yellow-900/20 p-2 rounded text-center">
+                                        <div className="font-bold text-yellow-600">
+                                            {estudiantes.reduce((acc, s) => acc + (s.alertas || []).filter(a => !a.resuelta).length, 0)}
+                                        </div>
+                                        <div className="text-yellow-800 dark:text-yellow-300">Alertas</div>
+                                    </div>
+                                    <div className="bg-purple-50 dark:bg-purple-900/20 p-2 rounded text-center">
+                                        <div className="font-bold text-purple-600">
+                                            {new Set(estudiantes.map(s => s.curso)).size}
+                                        </div>
+                                        <div className="text-purple-800 dark:text-purple-300">Cursos</div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                                    {filteredEstudiantes.map(s => (
+                                        <div key={s.id} className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-md border dark:border-slate-700 hover:shadow-md transition-shadow">
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-grow">
+                                                    <div className="flex items-center gap-3">
+                                                        <p className="font-bold text-slate-800 dark:text-slate-200">{s.nombre}</p>
+                                                        {(s.alertas || []).filter(a => !a.resuelta).length > 0 && (
+                                                            <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full">
+                                                                {(s.alertas || []).filter(a => !a.resuelta).length} alertas
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">{s.curso} - {s.dificultad}</p>
+                                                    <div className="flex items-center gap-4 text-xs text-slate-600 dark:text-slate-300">
+                                                        <span>{s.intervenciones?.length || 0} intervenciones</span>
+                                                        <span>{(s.metasProgreso || []).filter(m => m.cumplida).length} metas cumplidas</span>
+                                                        {s.fechaActualizacionApoyos && (
+                                                            <span>
+                                                                Últ. actualización: {new Date(s.fechaActualizacionApoyos).toLocaleDateString('es-CL')}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 flex-shrink-0">
+                                                    <button 
+                                                        onClick={() => setSelectedStudent(s)} 
+                                                        className="text-blue-600 hover:text-blue-800 font-semibold text-sm px-3 py-1 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                                                    >
+                                                        Ver Ficha
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleDeleteStudent(s.id)} 
+                                                        title="Eliminar del programa"
+                                                        className="text-red-600 hover:text-red-800 p-2 rounded-lg hover:bg-red-50 transition-colors"
+                                                    >
+                                                        🗑️
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    
+                                    {filteredEstudiantes.length === 0 && (
+                                        <div className="text-center py-12">
+                                            <div className="text-6xl mb-4">🔍</div>
+                                            <p className="text-lg font-medium text-slate-600 dark:text-slate-400 mb-2">
+                                                {searchTerm || filterCurso || filterDificultad ? 
+                                                    'No se encontraron estudiantes con esos criterios' : 
+                                                    'No hay estudiantes en el programa PIE'
+                                                }
+                                            </p>
+                                            {(searchTerm || filterCurso || filterDificultad) && (
+                                                <button 
+                                                    onClick={() => {
+                                                        setSearchTerm('');
+                                                        setFilterCurso('');
+                                                        setFilterDificultad('');
+                                                    }}
+                                                    className="text-blue-600 hover:text-blue-800 font-semibold"
+                                                >
+                                                    Limpiar filtros
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Buscador en vista lista */}
+                            <BuscadorEstudiantes 
+                                estudiantesDisponibles={estudiantesEnNomina}
+                                onSelect={(student) => setStudentToAdd(student)}
+                            />
+                        </div>
+                    )}
+                </>
             )}
             
+            {/* Modales */}
             {studentToAdd && (
                 <AddStudentInclusionModal 
                     student={studentToAdd} 
