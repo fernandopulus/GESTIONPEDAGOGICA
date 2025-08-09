@@ -600,6 +600,22 @@ export interface EstudianteInclusion {
   alertas?: AlertaInclusion[];
 }
 
+// --- Notificaciones PIE ---
+export interface NotificacionDocente {
+  id: string;
+  docenteNombre: string;
+  docenteEmail?: string;
+  docenteEmailLower?: string; // para filtrar en minúsculas
+  tipo: 'nueva_intervencion' | 'recordatorio' | 'alerta' | string;
+  titulo: string;
+  mensaje: string;
+  estudianteNombre?: string;
+  estudianteId?: string;
+  accionRequerida?: string;
+  leida: boolean;
+  createdAt?: Timestamp; // viene de serverTimestamp()
+}
+
 // --- Acompañamiento Docente ---
 
 export interface AcompanamientoDocente {
