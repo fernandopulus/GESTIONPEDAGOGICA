@@ -336,8 +336,6 @@ const GestionEmpresas: React.FC = () => {
 
         const porComuna = empresas.reduce((acc, emp) => {
             const parts = emp.direccion.split(',').map(p => p.trim());
-            // Asumimos que la comuna es la segunda parte de la dirección.
-            // Ej: "Calle Falsa 123, Providencia, Santiago, Chile"
             const comuna = parts.length > 1 ? parts[1] : 'Desconocida';
             acc[comuna] = (acc[comuna] || 0) + 1;
             return acc;
@@ -590,14 +588,103 @@ const GestionEmpresas: React.FC = () => {
             {view === 'saved-routes' && (
                 <div>
                     <h2 className="text-2xl font-bold mb-4">Rutas de Supervisión Guardadas</h2>
-                    {/* ... (código de rutas guardadas) ... */}
+                    <div className="space-y-3">
+                        {savedRoutes.length === 0 ? (
+                            <p className="text-gray-500">No tienes rutas guardadas.</p>
+                        ) : (
+                            savedRoutes.map(route => (
+                                <div key={route.id} className="p-4 border rounded-lg flex justify-between items-center">
+                                    <div>
+                                        <p className="font-bold">{route.nombre}</p>
+                                        <p className="text-sm text-slate-500">{route.empresas.length} paradas</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => loadSavedRoute(route)} className="bg-blue-500 text-white px-3 py-1 rounded-md text-sm">Cargar</button>
+                                        <button onClick={() => handleDeleteRoute(route.id!)} className="bg-red-500 text-white px-3 py-1 rounded-md text-sm">Eliminar</button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
             )}
 
             {view === 'route' && (
                 <div>
                     <h2 className="text-2xl font-bold mb-4">Planificador de Ruta de Supervisión</h2>
-                    {/* ... (código del planificador de rutas) ... */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">1. Ingresa un nombre para la ruta</label>
+                                <input type="text" value={routeName} onChange={e => setRouteName(e.target.value)} placeholder="Ej: Supervisión Zona Norte" className="input-style w-full" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">2. Ingresa el punto de partida</label>
+                                <GooglePlacesAutocomplete
+                                    apiKey={apiKey}
+                                    selectProps={{
+                                        value: startPoint,
+                                        onChange: handleStartPointSelect,
+                                        placeholder: 'Buscar dirección de partida...',
+                                    }}
+                                    autocompletionRequest={{ componentRestrictions: { country: ['cl'] } }}
+                                />
+                            </div>
+                             <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">3. Elige el modo de transporte</label>
+                                <div className="flex gap-4 rounded-lg bg-slate-100 p-1">
+                                    <button onClick={() => setTravelMode('DRIVING')} className={`w-full py-2 rounded-md transition ${travelMode === 'DRIVING' ? 'bg-blue-500 text-white' : 'hover:bg-slate-200'}`}>Automóvil</button>
+                                    <button onClick={() => setTravelMode('TRANSIT')} className={`w-full py-2 rounded-md transition ${travelMode === 'TRANSIT' ? 'bg-blue-500 text-white' : 'hover:bg-slate-200'}`}>Transporte Público</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">4. Selecciona las empresas a visitar</label>
+                                <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-2">
+                                    {empresas.filter(e => e.coordenadas).map(empresa => (
+                                        <div key={empresa.id} className="flex items-center">
+                                            <input 
+                                                type="checkbox"
+                                                id={`route-${empresa.id}`}
+                                                checked={selectedRouteCompanies.some(e => e.id === empresa.id)}
+                                                onChange={() => handleRouteCompanyToggle(empresa)}
+                                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <label htmlFor={`route-${empresa.id}`} className="ml-3 text-sm text-gray-700">{empresa.nombre}</label>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <button 
+                                    onClick={handleGenerateRoute}
+                                    disabled={!startPointCoords || selectedRouteCompanies.length === 0 || isCalculatingRoute}
+                                    className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                    {isCalculatingRoute ? 'Calculando...' : 'Visualizar Ruta'}
+                                </button>
+                                <button 
+                                    onClick={handleSaveRoute}
+                                    disabled={!routeName || !startPointCoords || selectedRouteCompanies.length === 0}
+                                    className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                    Guardar Ruta
+                                </button>
+                                <button 
+                                    onClick={handleExportPDF}
+                                    disabled={!calculatedRoute}
+                                    className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                    Exportar PDF
+                                </button>
+                                <button onClick={clearRoute} className="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 rounded-lg transition-colors">
+                                    Limpiar
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                           <GoogleMapView empresas={selectedRouteCompanies} isLoaded={isMapScriptLoaded} route={calculatedRoute} />
+                        </div>
+                    </div>
                     {calculatedRoute && <RouteDetails route={calculatedRoute} travelMode={travelMode} />}
                 </div>
             )}
