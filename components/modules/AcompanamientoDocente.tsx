@@ -1,12 +1,12 @@
+import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent, FC, useRef } from 'react';
 import { FileText, Users, Video, ClipboardList, MessageSquare, CalendarCheck, BarChart3, Wrench, Pencil, PlusSquare, Trash2, Download } from 'lucide-react';
-import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { AcompanamientoDocente as AcompanamientoDocenteType, CicloOPR, DetalleObservacionRow } from '../../types';
+import { AcompanamientoDocente as AcompanamientoDocenteType, CicloOPR, DetalleObservacionRow, User } from '../../types';
 import { ASIGNATURAS, CURSOS, RUBRICA_ACOMPANAMIENTO_DOCENTE as defaultRubric } from '../../constants';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logApiCall } from '../utils/apiLogger';
-
+// ✅ IA: Se importa la librería de Google AI
+import { GoogleGenerativeAI } from '@google/generative-ai';
 // Firebase helpers
 import {
   getAllAcompanamientos,
@@ -86,20 +86,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
     asignatura: acompanamiento.asignatura || ''
   });
 
-  const improveText = async (label: string, text: string): Promise<string> => {
-    if (!text || !text.trim()) return text;
-    const functions = getFunctions();
-    const callGeminiAI = httpsCallable(functions, 'callGeminiAI');
-    const prompt = `Mejora la redacción del siguiente texto con un tono técnico-pedagógico propio de informes educativos. Mantén el sentido original y NO agregues información nueva ni ejemplos inventados. Devélvelo como un texto breve, claro y directo. Texto (${label}):\n\n"""${text}"""`;
-    try {
-      const result: any = await callGeminiAI({ prompt, module: 'CicloOPR' });
-      return result?.data?.response || text;
-    } catch (error) {
-      console.error(`Error improving text for ${label}:`, error);
-      return text;
-    }
-  };
-
   const initialCicloState: Omit<CicloOPR, 'id'> = useMemo(() => ({
     registroN: 1,
     nombreCiclo: '',
@@ -111,7 +97,7 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
     retroalimentacion: { exito: '', modelo: '', videoModeloUrl: '', foco: '', elementosIdentificar: '', brecha: { videoUrl: '', minutoInicial: '', minutoFinal: '', preguntas: '', indicadores: '' } },
     planificacion: { preparacion: '', objetivo: '', actividad: '', tiempo: '' },
     seguimiento: { fecha: '', curso: basicData.curso || '', profesor: basicData.docente || '', firma: '' },
-    acompanamientoId: (acompanamiento.id && !acompanamiento.id.startsWith('temp-')) ? acompanamiento.id : null,
+    acompanamientoId: (acompanamiento.id && !acompanamiento.id.startsWith('temp-')) ? acompanamiento.id : '',
   }), [acompanamiento, basicData]);
 
   const [formData, setFormData] = useState<Omit<CicloOPR, 'id'> | CicloOPR>(cicloToEdit || initialCicloState);
@@ -166,7 +152,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
       const cicloId = (formData as CicloOPR).id || 'temp';
       const path = `videos_opr/${acompId}/${cicloId}/${uniqueFileName}`;
       const url = await uploadFile(file, path);
-
       const keys = fieldName.split('.');
       if (keys.length > 1) {
         setFormData((prev) => {
@@ -181,7 +166,7 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
       }
     } catch (error) {
       console.error('Error al subir archivo:', error);
-      alert('No se pudo subir el archivo. Inténtelo de nuevo.');
+      alert('No se pudo subir el archivo. Revise los permisos de Storage.');
     } finally {
       setUploading((prev) => ({ ...prev, [fieldName]: false }));
     }
@@ -202,35 +187,57 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
     }
   };
   
+  const improveText = async (model: any, label: string, text: string): Promise<string> => {
+    if (!text || !text.trim()) return text;
+    const prompt = `Mejora la redacción del siguiente texto con un tono técnico-pedagógico propio de informes educativos. Mantén el sentido original y NO agregues información nueva ni ejemplos inventados. Devuélvelo como un texto breve, claro y directo. Texto (${label}):\n\n"""${text}"""`;
+    try {
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    } catch (error) {
+      console.error(`Error improving text for ${label}:`, error);
+      return text;
+    }
+  };
+
   const handleImproveOPRText = async () => {
     setIaImproving(true);
     try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) {
+        alert("La API Key de Gemini no está configurada.");
+        return;
+      }
+      await logApiCall('Acompañamiento - Mejorar Ciclo OPR');
+      const ai = new GoogleGenerativeAI(apiKey);
+      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+
       const retro = formData.retroalimentacion;
       const plan = formData.planificacion;
 
-      const [exito, modelo, foco, elementosIdentificar, preguntas, indicadores, preparacion, objetivo, actividad, tiempo] = await Promise.all([
-        improveText('Éxito', retro.exito),
-        improveText('Modelo', retro.modelo),
-        improveText('Foco', retro.foco),
-        improveText('Elementos a identificar', retro.elementosIdentificar),
-        improveText('Brecha - Preguntas', retro.brecha?.preguntas || ''),
-        improveText('Brecha - Indicadores', retro.brecha?.indicadores || ''),
-        improveText('Planificación - Preparación', plan.preparacion),
-        improveText('Planificación - Objetivo', plan.objetivo),
-        improveText('Planificación - Actividad', plan.actividad),
-        improveText('Planificación - Tiempo', plan.tiempo),
+      const results = await Promise.all([
+        improveText(model, 'Éxito', retro.exito),
+        improveText(model, 'Modelo', retro.modelo),
+        improveText(model, 'Foco', retro.foco),
+        improveText(model, 'Elementos a identificar', retro.elementosIdentificar),
+        improveText(model, 'Brecha - Preguntas', retro.brecha?.preguntas || ''),
+        improveText(model, 'Brecha - Indicadores', retro.brecha?.indicadores || ''),
+        improveText(model, 'Planificación - Preparación', plan.preparacion),
+        improveText(model, 'Planificación - Objetivo', plan.objetivo),
+        improveText(model, 'Planificación - Actividad', plan.actividad),
+        improveText(model, 'Planificación - Tiempo', plan.tiempo),
       ]);
 
       setFormData((prev) => ({
         ...prev,
-        retroalimentacion: { ...prev.retroalimentacion, exito, modelo, foco, elementosIdentificar, brecha: { ...prev.retroalimentacion.brecha, preguntas, indicadores } },
-        planificacion: { ...prev.planificacion, preparacion, objetivo, actividad, tiempo },
+        retroalimentacion: { ...prev.retroalimentacion, exito: results[0], modelo: results[1], foco: results[2], elementosIdentificar: results[3], brecha: { ...prev.retroalimentacion.brecha, preguntas: results[4], indicadores: results[5] } },
+        planificacion: { ...prev.planificacion, preparacion: results[6], objetivo: results[7], actividad: results[8], tiempo: results[9] },
       }));
     } catch (e) {
       console.error(e);
       alert('No se pudo mejorar la redacción. Intenta nuevamente.');
+    } finally {
+      setIaImproving(false);
     }
-    setIaImproving(false);
   };
 
   const generateOPRPDF = () => {
@@ -267,18 +274,12 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
 
     addSectionTitle("1. Datos Generales");
     const infoData = [
-        ['Docente:', basicData.docente],
-        ['Curso:', basicData.curso],
-        ['Asignatura:', basicData.asignatura],
+        ['Docente:', basicData.docente], ['Curso:', basicData.curso], ['Asignatura:', basicData.asignatura],
         ['Fecha:', new Date(formData.fecha).toLocaleDateString('es-CL')],
-        ['Hora:', `${formData.horaInicio} - ${formData.horaTermino}`],
-        ['Ciclo:', formData.nombreCiclo],
+        ['Hora:', `${formData.horaInicio} - ${formData.horaTermino}`], ['Ciclo:', formData.nombreCiclo],
     ];
     autoTable(doc, {
-        body: infoData,
-        startY: yPosition,
-        theme: 'plain',
-        styles: { fontSize: 10 },
+        body: infoData, startY: yPosition, theme: 'plain', styles: { fontSize: 10 },
         columnStyles: { 0: { fontStyle: 'bold' } }
     });
     yPosition = (doc as any).lastAutoTable.finalY + 10;
@@ -287,15 +288,13 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
     const tableData = formData.detallesObservacion.map(d => [d.minuto, d.accionesDocente, d.accionesEstudiantes, d.actividades]);
     autoTable(doc, {
         head: [['Minuto', 'Acciones del Docente', 'Acciones de Estudiantes', 'Actividades']],
-        body: tableData,
-        startY: yPosition,
-        theme: 'grid',
+        body: tableData, startY: yPosition, theme: 'grid',
         headStyles: { fillColor: [41, 128, 185], textColor: 255 },
         styles: { fontSize: 9, cellPadding: 2 },
         didDrawPage: (data) => { yPosition = data.cursor?.y || 20; }
     });
     yPosition = (doc as any).lastAutoTable.finalY + 10;
-
+    
     addSectionTitle("3. Retroalimentación Docente");
     addText(formData.retroalimentacion.exito, 'Éxito:');
     addText(formData.retroalimentacion.modelo, 'Modelo:');
@@ -348,33 +347,21 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Docente</label>
-              <select
-                value={basicData.docente}
-                onChange={(e) => setBasicData(prev => ({ ...prev, docente: e.target.value }))}
-                className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
-              >
+              <select value={basicData.docente} onChange={(e) => setBasicData(prev => ({ ...prev, docente: e.target.value }))} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600">
                 <option value="">Seleccione un docente</option>
                 {profesores.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Curso</label>
-              <select
-                value={basicData.curso}
-                onChange={(e) => setBasicData(prev => ({ ...prev, curso: e.target.value }))}
-                className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
-              >
+              <select value={basicData.curso} onChange={(e) => setBasicData(prev => ({ ...prev, curso: e.target.value }))} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600">
                 <option value="">Seleccione un curso</option>
                 {CURSOS.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Asignatura</label>
-              <select
-                value={basicData.asignatura}
-                onChange={(e) => setBasicData(prev => ({ ...prev, asignatura: e.target.value }))}
-                className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
-              >
+              <select value={basicData.asignatura} onChange={(e) => setBasicData(prev => ({ ...prev, asignatura: e.target.value }))} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600">
                 <option value="">Seleccione una asignatura</option>
                 {ASIGNATURAS.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
@@ -386,20 +373,11 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
       <div className="mb-6 p-4 border rounded-lg bg-blue-50 dark:bg-blue-900/30">
         <h4 className="text-lg font-semibold mb-2 text-blue-700 dark:text-blue-300">Asistente IA del Ciclo OPR</h4>
         <div className="flex flex-wrap gap-4 items-center">
-            <button
-              type="button"
-              onClick={handleImproveOPRText}
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md flex items-center gap-2"
-              disabled={iaImproving}
-            >
+            <button type="button" onClick={handleImproveOPRText} className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md flex items-center gap-2" disabled={iaImproving}>
               <Pencil className="w-4 h-4" />
               {iaImproving ? 'Mejorando redacción...' : 'Mejorar Redacción del Ciclo'}
             </button>
-            <button
-              type="button"
-              onClick={generateOPRPDF}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center gap-2"
-            >
+            <button type="button" onClick={generateOPRPDF} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center gap-2">
               <Download className="w-4 h-4" />
               Descargar Informe PDF
             </button>
@@ -515,7 +493,7 @@ const AcompanamientoDocente: React.FC = () => {
   const rubrica = defaultRubric;
 
   const initialFormState: Omit<AcompanamientoDocenteType, 'id'> = useMemo(() => ({
-    fecha: new Date().toISOString(),
+    fecha: new Date().toISOString().split('T')[0],
     docente: '',
     curso: '',
     asignatura: '',
@@ -562,57 +540,109 @@ const AcompanamientoDocente: React.FC = () => {
     fetchProfesores();
   }, [fetchAcompanamientos, fetchProfesores]);
 
-  // *** INICIO DE LA CORRECCIÓN: Lógica de IA y PDF ***
   const handleGenerateFeedback = async () => {
     if (!('docente' in formData) || !formData.docente) {
         alert('Por favor, complete al menos el campo "Docente" antes de generar la retroalimentación.');
         return;
     }
-
     setIaLoadingGeneral(true);
     setError(null);
 
     try {
-        const functions = getFunctions();
-        const callGeminiAI = httpsCallable(functions, 'callGeminiAI');
-
-        // Preparamos los datos de forma segura, con valores por defecto
-        const rubricaTexto = Object.entries(formData.rubricaResultados || {})
-            .map(([criterio, nivel]) => `${criterio}: Nivel ${nivel}`)
-            .join('\n') || 'No se evaluaron criterios en la rúbrica.';
-
-        const contexto = {
-            docente: formData.docente || 'No especificado',
-            curso: formData.curso || 'No especificado',
-            asignatura: formData.asignatura || 'No especificado',
-            fecha: new Date(formData.fecha).toLocaleDateString('es-CL'),
-            bloques: formData.bloques || 'No especificado',
-            rubricaResultados: rubricaTexto,
-            observacionesGenerales: formData.observacionesGenerales || 'Sin observaciones adicionales.'
-        };
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        if (!apiKey) throw new Error("API Key de Gemini no configurada.");
         
-        // **NUEVA LÓGICA**: Enviar datos estructurados en lugar de un prompt largo
-        const result: any = await callGeminiAI({
-            contexto: contexto, // Objeto JSON con los datos
-            module: 'AcompanamientoGeneral'
-        });
+        await logApiCall('Acompañamiento - Feedback General');
+        const ai = new GoogleGenerativeAI(apiKey);
+        const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
-        const feedbackText = result?.data?.response;
+        const rubricaTexto = Object.entries(formData.rubricaResultados || {}).map(([criterio, nivel]) => `- ${criterio}: Nivel ${nivel}`).join('\n');
+        const prompt = `
+            Eres un asesor pedagógico experto. Redacta una retroalimentación consolidada y constructiva para un docente.
+            Contexto de la observación:
+            - Docente: ${formData.docente}
+            - Asignatura: ${formData.asignatura}
+            - Curso: ${formData.curso}
+            - Resultados de la pauta de observación (rúbrica):
+            ${rubricaTexto || "No se completó la pauta."}
+            - Observaciones adicionales del evaluador:
+            ${formData.observacionesGenerales || "Sin observaciones adicionales."}
 
-        if (!feedbackText) {
-            throw new Error("La IA no devolvió texto. Intente de nuevo.");
-        }
+            Basado en esta información, tu texto debe:
+            1. Iniciar con un reconocimiento positivo.
+            2. Mencionar 1 o 2 fortalezas clave observadas.
+            3. Identificar 1 o 2 áreas de mejora concretas, con un tono de sugerencia.
+            4. Concluir con una frase motivadora.
+            La respuesta debe ser solo el texto de la retroalimentación.
+        `;
+        
+        const result = await model.generateContent(prompt);
+        const feedbackText = result.response.text();
 
         setFormData(prev => ({ ...prev, retroalimentacionConsolidada: feedbackText }));
-        alert("Retroalimentación generada con éxito. Ahora puedes guardarla o generar el PDF.");
+        alert("Retroalimentación generada con éxito.");
 
     } catch (error) {
         console.error('Error al generar retroalimentación:', error);
-        setError('No se pudo generar la retroalimentación desde el servidor de IA. Revisa los datos o intenta más tarde.');
-        alert('No se pudo generar la retroalimentación. Revisa los datos ingresados o intenta nuevamente. Consulta la consola para más detalles.');
+        setError('No se pudo generar la retroalimentación. Revisa la consola para más detalles.');
     } finally {
         setIaLoadingGeneral(false);
     }
+  };
+
+  const handleSave = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!('docente' in formData) || !formData.docente || !formData.curso || !formData.asignatura) {
+      alert('Docente, curso y asignatura son campos obligatorios.');
+      return;
+    }
+    try {
+      if (editingId) {
+        await updateAcompanamiento(editingId, formData);
+        alert('¡Actualizado correctamente!');
+      } else {
+        const newRecord = await createAcompanamiento(formData);
+        setEditingId(newRecord.id);
+        setFormData(newRecord);
+        alert('¡Guardado correctamente! Ahora puedes agregar Ciclos OPR.');
+      }
+      await fetchAcompanamientos();
+    } catch (err) {
+      setError('Error al guardar el registro.');
+      console.error(err);
+    }
+  };
+
+  const handleCreateNew = () => {
+    setFormData(initialFormState);
+    setEditingId(null);
+    setView('form');
+    setActiveTab('general');
+    setError(null);
+  };
+
+  const handleEdit = (record: AcompanamientoDocenteType) => {
+    setFormData(record);
+    setEditingId(record.id);
+    setView('form');
+    setActiveTab('general');
+    setError(null);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('¿Está seguro de que desea eliminar este registro?')) {
+      try {
+        await deleteAcompanamiento(id);
+        await fetchAcompanamientos();
+      } catch (err) {
+        setError('No se pudo eliminar el registro.');
+        console.error(err);
+      }
+    }
+  };
+
+  const handleRubricSelect = (criterionName: string, level: number) => {
+    setFormData((prev) => ({ ...prev, rubricaResultados: { ...prev.rubricaResultados, [criterionName]: level } }));
   };
 
   const handleGeneratePDF = () => {
@@ -681,65 +711,9 @@ const AcompanamientoDocente: React.FC = () => {
     }
     doc.save(`Informe_Acompañamiento_${formData.docente}_${formData.curso}_${new Date().toISOString().split('T')[0]}.pdf`);
   };
-  // *** FIN DE LA CORRECCIÓN ***
 
   const handleFieldChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const handleRubricSelect = (criterionName: string, level: number) => {
-    setFormData((prev) => ({ ...prev, rubricaResultados: { ...prev.rubricaResultados, [criterionName]: level } }));
-  };
-
-  const handleSave = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!('docente' in formData) || !formData.docente || !formData.curso || !formData.asignatura) {
-      alert('Docente, curso y asignatura son campos obligatorios.');
-      return;
-    }
-    try {
-      if (editingId) {
-        await updateAcompanamiento(editingId, formData);
-        alert('¡Actualizado correctamente!');
-      } else {
-        const newRecord = await createAcompanamiento(formData);
-        setEditingId(newRecord.id);
-        setFormData(newRecord); // Actualiza el form con el ID para habilitar la pestaña OPR
-        alert('¡Guardado correctamente! Ahora puedes agregar Ciclos OPR.');
-      }
-      await fetchAcompanamientos();
-    } catch (err) {
-      setError('Error al guardar el registro.');
-      console.error(err);
-    }
-  };
-
-  const handleCreateNew = () => {
-    setFormData(initialFormState);
-    setEditingId(null);
-    setView('form');
-    setActiveTab('general');
-    setError(null);
-  };
-
-  const handleEdit = (record: AcompanamientoDocenteType) => {
-    setFormData(record);
-    setEditingId(record.id);
-    setView('form');
-    setActiveTab('general');
-    setError(null);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (window.confirm('¿Está seguro de que desea eliminar este registro? Esto no eliminará los ciclos OPR asociados.')) {
-      try {
-        await deleteAcompanamiento(id);
-        await fetchAcompanamientos();
-      } catch (err) {
-        setError('No se pudo eliminar el registro.');
-        console.error(err);
-      }
-    }
   };
 
   const renderListView = () => (
@@ -765,24 +739,15 @@ const AcompanamientoDocente: React.FC = () => {
                   <p className="text-xs text-slate-500 dark:text-slate-400">Fecha: {new Date(record.fecha).toLocaleDateString('es-CL')}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => { handleEdit(record); setActiveTab('general'); }} className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 font-semibold text-sm">Ver/Editar</button>
-                  <button onClick={() => { handleEdit(record); setActiveTab('opr'); }} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-semibold text-sm">Agregar OPR</button>
-                  <button onClick={() => handleDelete(record.id)} title="Eliminar" className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/40"><Trash2 className="w-4 h-4" /></button>
+                  <button onClick={() => { handleEdit(record); setActiveTab('general'); }} className="text-green-600 hover:text-green-800 font-semibold text-sm">Ver/Editar</button>
+                  <button onClick={() => { handleEdit(record); setActiveTab('opr'); }} className="text-blue-600 hover:text-blue-800 font-semibold text-sm">Agregar OPR</button>
+                  <button onClick={() => handleDelete(record.id)} title="Eliminar" className="text-red-600 hover:text-red-800 p-1"><Trash2 className="w-4 h-4" /></button>
                 </div>
               </div>
             ))
           ) : (
-            !loading && <p className="text-slate-500 italic p-4 bg-slate-100 dark:bg-slate-800 rounded-md">No hay acompañamientos generales registrados.</p>
+            !loading && <p className="text-slate-500 italic p-4 bg-slate-100 dark:bg-slate-800 rounded-md">No hay acompañamientos registrados.</p>
           )}
-        </div>
-      </div>
-
-      <div>
-        <h3 className="flex items-center gap-2 text-xl font-semibold text-slate-700 dark:text-slate-300 mb-3"><Wrench className="w-6 h-6 text-blue-500" /> Ciclos OPR Independientes</h3>
-        <div className="space-y-3">
-          <p className="text-sm text-slate-500 dark:text-slate-400 italic p-4 bg-slate-100 dark:bg-slate-800 rounded-md">
-            Los ciclos OPR se pueden crear de forma independiente o asociados a un acompañamiento general. Para ver los ciclos asociados, edita un acompañamiento y ve a la pestaña "Ciclo OPR".
-          </p>
         </div>
       </div>
     </div>
@@ -928,6 +893,8 @@ const AcompanamientoDocente: React.FC = () => {
       </div>
     );
   };
+
+  if (loading || loadingProfesores) return <div className="text-center p-8">Cargando...</div>;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 py-8">
