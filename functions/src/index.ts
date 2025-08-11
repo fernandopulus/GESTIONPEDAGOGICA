@@ -1,9 +1,106 @@
 import {onCall, CallableRequest, HttpsError} from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
+// *** INICIO DE LA CORRECCIÓN: Se cambia el paquete de IA ***
+import {GoogleGenerativeAI} from "@google/generative-ai";
+import {defineString} from "firebase-functions/params";
+// *** FIN DE LA CORRECCIÓN ***
 
+// Inicializa Firebase Admin
 admin.initializeApp();
 const db = admin.firestore();
 const auth = admin.auth();
+
+// =================================================================
+// INICIO: CÓDIGO CORREGIDO PARA LA FUNCIÓN DE IA
+// =================================================================
+
+// Define un parámetro secreto para la API Key de Gemini.
+// Deberás configurar este valor en tu proyecto de Firebase.
+const geminiApiKey = defineString("GEMINI_API_KEY");
+
+// Definición de tu función en la nube 'callGeminiAI'
+export const callGeminiAI = onCall({
+  enforceAppCheck: true, // Habilita la seguridad de App Check
+  timeoutSeconds: 120, // Aumenta el tiempo de espera a 2 minutos
+}, async (request: CallableRequest) => {
+  // Verifica que la llamada provenga de una aplicación verificada.
+  if (request.app == undefined) {
+    throw new HttpsError(
+      "failed-precondition",
+      "La función debe ser llamada desde una app verificada por App Check.",
+    );
+  }
+
+  // Extrae el objeto 'contexto' enviado desde tu aplicación.
+  const {contexto} = request.data;
+
+  // Valida que el objeto 'contexto' exista y no esté vacío.
+  if (!contexto) {
+    throw new HttpsError(
+      "invalid-argument",
+      "La función debe ser llamada con un objeto 'contexto' con datos.",
+    );
+  }
+
+  try {
+    // *** NUEVA LÓGICA DE INICIALIZACIÓN Y LLAMADA ***
+    const genAI = new GoogleGenerativeAI(geminiApiKey.value());
+    const model = genAI.getGenerativeModel({model: "gemini-pro"});
+
+    // El prompt se construye aquí en el servidor
+    const prompt = `
+Genera una retroalimentación pedagógica detallada y un resumen de 
+observaciones basado en estos datos del acompañamiento docente:
+
+DATOS DEL ACOMPAÑAMIENTO:
+- Docente: ${contexto.docente}
+- Curso: ${contexto.curso}
+- Asignatura: ${contexto.asignatura}
+- Fecha: ${contexto.fecha}
+- Bloques horarios: ${contexto.bloques}
+
+RESULTADOS DE RÚBRICA:
+${contexto.rubricaResultados}
+
+OBSERVACIONES GENERALES:
+${contexto.observacionesGenerales}
+
+Por favor genera una retroalimentación con tono técnico pedagógico, clara y 
+constructiva, con la siguiente estructura:
+1. INTRODUCCIÓN: Contextualización del acompañamiento
+2. FORTALEZAS OBSERVADAS: Aspectos destacados del desempeño docente
+3. OPORTUNIDADES DE MEJORA: Áreas a desarrollar
+4. RECOMENDACIONES ESPECÍFICAS: Estrategias concretas para implementar
+5. CONCLUSIÓN: Síntesis y próximos pasos
+
+La retroalimentación debe ser profesional, constructiva y orientada al 
+desarrollo profesional docente.`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const responseText = response.text();
+
+    if (!responseText) {
+      throw new Error("La respuesta de la IA no contiene texto.");
+    }
+
+    return {response: responseText};
+  } catch (error) {
+    console.error("Error al llamar a la API de Gemini:", error);
+    throw new HttpsError(
+      "internal",
+      "Error interno del servidor de IA.",
+      error,
+    );
+  }
+});
+
+// =================================================================
+// FIN: CÓDIGO CORREGIDO PARA LA FUNCIÓN DE IA
+// =================================================================
+
+
+// --- TUS FUNCIONES EXISTENTES (SIN CAMBIOS) ---
 
 const esSubdirector = (request: CallableRequest) => {
   if (!request.auth) {
@@ -20,9 +117,7 @@ const esSubdirector = (request: CallableRequest) => {
   }
 };
 
-// NUEVA FUNCIÓN: Agregar custom claims (solo para bootstrapping inicial)
 export const addCustomClaim = onCall(async (request) => {
-  // Solo verificar autenticación, no el claim (para el bootstrap inicial)
   if (!request.auth) {
     throw new HttpsError(
       "unauthenticated",
@@ -39,7 +134,6 @@ export const addCustomClaim = onCall(async (request) => {
   }
 
   try {
-    // Verificar que el usuario existe en Firestore con perfil SUBDIRECCION
     const userDoc = await db.collection("usuarios").doc(email).get();
     if (!userDoc.exists || userDoc.data()?.profile !== "SUBDIRECCION") {
       throw new HttpsError(
@@ -48,10 +142,7 @@ export const addCustomClaim = onCall(async (request) => {
       );
     }
 
-    // Obtener el usuario de Auth
     const user = await auth.getUserByEmail(email);
-
-    // Agregar custom claim
     await auth.setCustomUserClaims(user.uid, {profile: profile});
 
     console.log(`Custom claim agregado: ${email} -> ${profile}`);
@@ -63,7 +154,6 @@ export const addCustomClaim = onCall(async (request) => {
     throw new HttpsError("unknown", errorMessage);
   }
 });
-
 
 export const createUser = onCall(async (request) => {
   esSubdirector(request);

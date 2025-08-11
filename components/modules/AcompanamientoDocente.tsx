@@ -74,13 +74,12 @@ interface CicloOPRFormProps {
   cicloToEdit: CicloOPR | null;
   onSave: (data: Omit<CicloOPR, 'id'> | CicloOPR) => Promise<void>;
   onCancel: () => void;
-  profesores: string[]; // <-- Prop para la lista de profesores
+  profesores: string[];
 }
 
 const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit, onSave, onCancel, profesores }) => {
   const [iaImproving, setIaImproving] = useState<boolean>(false);
   
-  // Estado para datos básicos cuando es independiente
   const [basicData, setBasicData] = useState({
     docente: acompanamiento.docente || '',
     curso: acompanamiento.curso || '',
@@ -91,13 +90,13 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
     if (!text || !text.trim()) return text;
     const functions = getFunctions();
     const callGeminiAI = httpsCallable(functions, 'callGeminiAI');
-    const prompt = `Mejora la redacción del siguiente texto con un tono técnico-pedagógico propio de informes educativos. Mantén el sentido original y NO agregues información nueva ni ejemplos inventados. Devuélvelo como un texto breve, claro y directo. Texto (${label}):\n\n"""${text}"""`;
+    const prompt = `Mejora la redacción del siguiente texto con un tono técnico-pedagógico propio de informes educativos. Mantén el sentido original y NO agregues información nueva ni ejemplos inventados. Devélvelo como un texto breve, claro y directo. Texto (${label}):\n\n"""${text}"""`;
     try {
       const result: any = await callGeminiAI({ prompt, module: 'CicloOPR' });
       return result?.data?.response || text;
     } catch (error) {
       console.error(`Error improving text for ${label}:`, error);
-      return text; // Devuelve el texto original en caso de error
+      return text;
     }
   };
 
@@ -112,7 +111,7 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
     retroalimentacion: { exito: '', modelo: '', videoModeloUrl: '', foco: '', elementosIdentificar: '', brecha: { videoUrl: '', minutoInicial: '', minutoFinal: '', preguntas: '', indicadores: '' } },
     planificacion: { preparacion: '', objetivo: '', actividad: '', tiempo: '' },
     seguimiento: { fecha: '', curso: basicData.curso || '', profesor: basicData.docente || '', firma: '' },
-    acompanamientoId: acompanamiento.id && !acompanamiento.id.startsWith('temp-') ? acompanamiento.id : null,
+    acompanamientoId: (acompanamiento.id && !acompanamiento.id.startsWith('temp-')) ? acompanamiento.id : null,
   }), [acompanamiento, basicData]);
 
   const [formData, setFormData] = useState<Omit<CicloOPR, 'id'> | CicloOPR>(cicloToEdit || initialCicloState);
@@ -234,7 +233,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
     setIaImproving(false);
   };
 
-  // *** NUEVA FUNCIÓN PARA GENERAR PDF DEL CICLO OPR ***
   const generateOPRPDF = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -262,13 +260,11 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
       yPosition += (lines.length * 5) + 4;
     };
     
-    // Título
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
     doc.text('Informe de Ciclo OPR', pageWidth / 2, yPosition, { align: 'center' });
     yPosition += 15;
 
-    // Datos Generales
     addSectionTitle("1. Datos Generales");
     const infoData = [
         ['Docente:', basicData.docente],
@@ -287,7 +283,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
     });
     yPosition = (doc as any).lastAutoTable.finalY + 10;
 
-    // Registro Detallado de Observación
     addSectionTitle("2. Registro Detallado de Observación");
     const tableData = formData.detallesObservacion.map(d => [d.minuto, d.accionesDocente, d.accionesEstudiantes, d.actividades]);
     autoTable(doc, {
@@ -301,14 +296,12 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
     });
     yPosition = (doc as any).lastAutoTable.finalY + 10;
 
-    // Retroalimentación
     addSectionTitle("3. Retroalimentación Docente");
     addText(formData.retroalimentacion.exito, 'Éxito:');
     addText(formData.retroalimentacion.modelo, 'Modelo:');
     addText(formData.retroalimentacion.foco, 'Foco:');
     addText(formData.retroalimentacion.elementosIdentificar, 'Elementos a Identificar:');
     
-    // Brecha
     yPosition += 5;
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
@@ -318,25 +311,21 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
     addText(formData.retroalimentacion.brecha.preguntas, 'Preguntas:');
     addText(formData.retroalimentacion.brecha.indicadores, 'Indicadores:');
 
-    // Planificación
     addSectionTitle("4. Planificación de Práctica");
     addText(formData.planificacion.preparacion, 'Preparación:');
     addText(formData.planificacion.objetivo, 'Objetivo:');
     addText(formData.planificacion.actividad, 'Actividad:');
     addText(formData.planificacion.tiempo, 'Tiempo:');
 
-    // Seguimiento
     addSectionTitle("5. Seguimiento");
     addText(new Date(formData.seguimiento.fecha).toLocaleDateString('es-CL'), 'Fecha:');
     addText(formData.seguimiento.firma, 'Firma (Registrado por):');
 
-    // Guardar PDF
     doc.save(`Informe_OPR_${basicData.docente}_${formData.fecha}.pdf`);
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    // Poblar formData con los datos de basicData antes de guardar
     const finalFormData = {
         ...formData,
         docenteInfo: basicData.docente,
@@ -353,12 +342,10 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
 
   return (
     <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-lg animate-fade-in">
-      {/* Si es un ciclo independiente, mostrar campos básicos con selectores */}
       {(!acompanamiento.id || acompanamiento.id.startsWith('temp-')) && (
         <div className="mb-6 p-4 border rounded-lg bg-slate-50 dark:bg-slate-900/30">
           <h4 className="text-lg font-semibold mb-3 text-slate-700 dark:text-slate-300">Datos Básicos del Ciclo OPR</h4>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* *** CAMBIO: Input a Select para Docente *** */}
             <div>
               <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Docente</label>
               <select
@@ -370,7 +357,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
                 {profesores.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
-            {/* *** CAMBIO: Input a Select para Curso *** */}
             <div>
               <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Curso</label>
               <select
@@ -382,7 +368,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
                 {CURSOS.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-            {/* *** CAMBIO: Input a Select para Asignatura *** */}
             <div>
               <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Asignatura</label>
               <select
@@ -410,7 +395,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
               <Pencil className="w-4 h-4" />
               {iaImproving ? 'Mejorando redacción...' : 'Mejorar Redacción del Ciclo'}
             </button>
-            {/* *** NUEVO BOTÓN PARA DESCARGAR PDF *** */}
             <button
               type="button"
               onClick={generateOPRPDF}
@@ -428,7 +412,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
       <form onSubmit={handleSubmit} className="space-y-8">
         <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200">{cicloToEdit ? 'Editando' : 'Nuevo'} Ciclo OPR</h3>
         
-        {/* Datos Generales */}
         <fieldset className="shadow-md rounded-lg p-4 border dark:border-slate-700 space-y-4">
           <legend className="flex items-center gap-2 text-lg font-semibold px-2 text-slate-700 dark:text-slate-300"><Video className="w-5 h-5 text-amber-500" /> Datos Generales</legend>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -441,7 +424,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
           <FileUpload label="Subir video de observación de clase" onFileChange={(file) => handleFileUpload('videoObservacionUrl', file)} uploadedUrl={formData.videoObservacionUrl} onRemove={() => handleFileRemove('videoObservacionUrl')} isUploading={!!uploading.videoObservacionUrl} />
         </fieldset>
 
-        {/* Registro Detallado de Observación */}
         <fieldset className="shadow-md rounded-lg p-4 border dark:border-slate-700 space-y-4">
             <legend className="flex items-center gap-2 text-lg font-semibold px-2 text-slate-700 dark:text-slate-300"><ClipboardList className="w-5 h-5 text-blue-500" /> Registro Detallado de Observación</legend>
             <div className="overflow-x-auto">
@@ -471,7 +453,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
             <button type="button" onClick={addDetalleRow} className="text-sm bg-slate-200 dark:bg-slate-600 px-3 py-1 rounded-md hover:bg-slate-300 dark:hover:bg-slate-500 flex items-center gap-1"><PlusSquare className="w-4 h-4" /> Agregar Fila</button>
         </fieldset>
 
-        {/* Retroalimentación */}
         <fieldset className="shadow-md rounded-lg p-4 border dark:border-slate-700 space-y-4">
             <legend className="flex items-center gap-2 text-lg font-semibold px-2 text-slate-700 dark:text-slate-300"><MessageSquare className="w-5 h-5 text-green-600" /> Retroalimentación Docente</legend>
             <textarea name="retroalimentacion.exito" value={formData.retroalimentacion.exito} onChange={handleFieldChange} placeholder="Éxito" rows={3} className="w-full border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600" />
@@ -489,7 +470,6 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({ acompanamiento, cicloToEdit
             </div>
         </fieldset>
 
-        {/* Planificación y seguimiento */}
         <fieldset className="shadow-md rounded-lg p-4 border dark:border-slate-700 space-y-4">
             <legend className="flex items-center gap-2 text-lg font-semibold px-2 text-slate-700 dark:text-slate-300"><CalendarCheck className="w-5 h-5 text-purple-600" /> Planificación de Práctica y Seguimiento</legend>
             <textarea name="planificacion.preparacion" value={formData.planificacion.preparacion} onChange={handleFieldChange} placeholder="Preparación" rows={3} className="w-full border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600" />
@@ -531,8 +511,7 @@ const AcompanamientoDocente: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'general' | 'opr'>('general');
   const [iaLoadingGeneral, setIaLoadingGeneral] = useState<boolean>(false);
-  const [iaFeedbackGeneral, setIaFeedbackGeneral] = useState<string>('');
-
+  
   const rubrica = defaultRubric;
 
   const initialFormState: Omit<AcompanamientoDocenteType, 'id'> = useMemo(() => ({
@@ -546,7 +525,7 @@ const AcompanamientoDocente: React.FC = () => {
     retroalimentacionConsolidada: '',
   }), []);
 
-  const [formData, setFormData] = useState<Omit<AcompanamientoDocenteType, 'id' | 'ciclosOPR'>>(initialFormState);
+  const [formData, setFormData] = useState<AcompanamientoDocenteType | Omit<AcompanamientoDocenteType, 'id'>>(initialFormState);
 
   const fetchAcompanamientos = useCallback(async () => {
     setLoading(true);
@@ -583,41 +562,65 @@ const AcompanamientoDocente: React.FC = () => {
     fetchProfesores();
   }, [fetchAcompanamientos, fetchProfesores]);
 
-  const generateGeneralFeedbackAndPDF = async () => {
-    if (!formData.docente || !formData.curso || !formData.asignatura) {
-      alert('Por favor complete los datos básicos (docente, curso, asignatura) antes de generar el informe.');
-      return;
+  // *** INICIO DE LA CORRECCIÓN: Lógica de IA y PDF ***
+  const handleGenerateFeedback = async () => {
+    if (!('docente' in formData) || !formData.docente) {
+        alert('Por favor, complete al menos el campo "Docente" antes de generar la retroalimentación.');
+        return;
     }
-    setIaLoadingGeneral(true);
-    try {
-      const functions = getFunctions();
-      const callGeminiAI = httpsCallable(functions, 'callGeminiAI');
-      const rubricaTexto = Object.entries(formData.rubricaResultados || {}).map(([criterio, nivel]) => `${criterio}: Nivel ${nivel}`).join('\n');
-      const contexto = {
-        docente: formData.docente,
-        curso: formData.curso,
-        asignatura: formData.asignatura,
-        fecha: new Date(formData.fecha).toLocaleDateString('es-CL'),
-        bloques: formData.bloques || 'No especificado',
-        rubricaResultados: rubricaTexto || 'Sin evaluación de rúbrica',
-        observacionesGenerales: formData.observacionesGenerales || 'Sin observaciones adicionales'
-      };
-      const prompt = `Genera una retroalimentación pedagógica detallada y un resumen de observaciones basado en estos datos del acompañamiento docente:\n\nDATOS DEL ACOMPAÑAMIENTO:\n- Docente: ${contexto.docente}\n- Curso: ${contexto.curso}\n- Asignatura: ${contexto.asignatura}\n- Fecha: ${contexto.fecha}\n- Bloques horarios: ${contexto.bloques}\n\nRESULTADOS DE RÚBRICA:\n${contexto.rubricaResultados}\n\nOBSERVACIONES GENERALES:\n${contexto.observacionesGenerales}\n\nPor favor genera una retroalimentación con tono técnico pedagógico, clara y constructiva, con la siguiente estructura:\n1. INTRODUCCIÓN: Contextualización del acompañamiento\n2. FORTALEZAS OBSERVADAS: Aspectos destacados del desempeño docente\n3. OPORTUNIDADES DE MEJORA: Áreas a desarrollar\n4. RECOMENDACIONES ESPECÍFICAS: Estrategias concretas para implementar\n5. CONCLUSIÓN: Síntesis y próximos pasos\n\nLa retroalimentación debe ser profesional, constructiva y orientada al desarrollo profesional docente.`;
 
-      const result: any = await callGeminiAI({ prompt, module: 'AcompanamientoGeneral' });
-      const feedbackText = result?.data?.response || 'No se pudo generar la retroalimentación.';
-      setIaFeedbackGeneral(feedbackText);
-      setFormData(prev => ({ ...prev, retroalimentacionConsolidada: feedbackText }));
-      generatePDF(feedbackText);
+    setIaLoadingGeneral(true);
+    setError(null);
+
+    try {
+        const functions = getFunctions();
+        const callGeminiAI = httpsCallable(functions, 'callGeminiAI');
+
+        // Preparamos los datos de forma segura, con valores por defecto
+        const rubricaTexto = Object.entries(formData.rubricaResultados || {})
+            .map(([criterio, nivel]) => `${criterio}: Nivel ${nivel}`)
+            .join('\n') || 'No se evaluaron criterios en la rúbrica.';
+
+        const contexto = {
+            docente: formData.docente || 'No especificado',
+            curso: formData.curso || 'No especificado',
+            asignatura: formData.asignatura || 'No especificado',
+            fecha: new Date(formData.fecha).toLocaleDateString('es-CL'),
+            bloques: formData.bloques || 'No especificado',
+            rubricaResultados: rubricaTexto,
+            observacionesGenerales: formData.observacionesGenerales || 'Sin observaciones adicionales.'
+        };
+        
+        // **NUEVA LÓGICA**: Enviar datos estructurados en lugar de un prompt largo
+        const result: any = await callGeminiAI({
+            contexto: contexto, // Objeto JSON con los datos
+            module: 'AcompanamientoGeneral'
+        });
+
+        const feedbackText = result?.data?.response;
+
+        if (!feedbackText) {
+            throw new Error("La IA no devolvió texto. Intente de nuevo.");
+        }
+
+        setFormData(prev => ({ ...prev, retroalimentacionConsolidada: feedbackText }));
+        alert("Retroalimentación generada con éxito. Ahora puedes guardarla o generar el PDF.");
+
     } catch (error) {
-      console.error('Error al generar retroalimentación:', error);
-      alert('No se pudo generar la retroalimentación. Intente nuevamente.');
+        console.error('Error al generar retroalimentación:', error);
+        setError('No se pudo generar la retroalimentación desde el servidor de IA. Revisa los datos o intenta más tarde.');
+        alert('No se pudo generar la retroalimentación. Revisa los datos ingresados o intenta nuevamente. Consulta la consola para más detalles.');
     } finally {
-      setIaLoadingGeneral(false);
+        setIaLoadingGeneral(false);
     }
   };
 
-  const generatePDF = (feedbackText: string) => {
+  const handleGeneratePDF = () => {
+    if (!('docente' in formData) || !formData.docente) {
+        alert('Por favor, complete al menos el campo "Docente" antes de generar el PDF.');
+        return;
+    }
+
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 15;
@@ -632,7 +635,13 @@ const AcompanamientoDocente: React.FC = () => {
     doc.line(margin, yPosition, pageWidth - margin, yPosition);
     yPosition += 10;
 
-    const infoBasica = [['Docente:', formData.docente], ['Curso:', formData.curso], ['Asignatura:', formData.asignatura], ['Fecha:', new Date(formData.fecha).toLocaleDateString('es-CL')], ['Bloques horarios:', formData.bloques || 'No especificado']];
+    const infoBasica = [
+        ['Docente:', formData.docente], 
+        ['Curso:', formData.curso], 
+        ['Asignatura:', formData.asignatura], 
+        ['Fecha:', new Date(formData.fecha).toLocaleDateString('es-CL')], 
+        ['Bloques horarios:', formData.bloques || 'No especificado']
+    ];
     autoTable(doc, { body: infoBasica, startY: yPosition, theme: 'plain', styles: { fontSize: 10 }, columnStyles: { 0: { fontStyle: 'bold' } } });
     yPosition = (doc as any).lastAutoTable.finalY + 10;
 
@@ -646,8 +655,8 @@ const AcompanamientoDocente: React.FC = () => {
       yPosition = (doc as any).lastAutoTable.finalY + 10;
     }
 
-    const addTitledText = (title: string, text: string) => {
-        if (!text) return;
+    const addTitledText = (title: string, text: string | undefined) => {
+        if (!text || text.trim() === '') return;
         if (yPosition > 250) { doc.addPage(); yPosition = 20; }
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
@@ -661,7 +670,7 @@ const AcompanamientoDocente: React.FC = () => {
     };
 
     addTitledText('OBSERVACIONES GENERALES', formData.observacionesGenerales);
-    addTitledText('RETROALIMENTACIÓN PEDAGÓGICA (IA)', feedbackText);
+    addTitledText('RETROALIMENTACIÓN PEDAGÓGICA', formData.retroalimentacionConsolidada);
 
     const pageCount = doc.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
@@ -672,6 +681,7 @@ const AcompanamientoDocente: React.FC = () => {
     }
     doc.save(`Informe_Acompañamiento_${formData.docente}_${formData.curso}_${new Date().toISOString().split('T')[0]}.pdf`);
   };
+  // *** FIN DE LA CORRECCIÓN ***
 
   const handleFieldChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -683,7 +693,7 @@ const AcompanamientoDocente: React.FC = () => {
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
-    if (!formData.docente || !formData.curso || !formData.asignatura) {
+    if (!('docente' in formData) || !formData.docente || !formData.curso || !formData.asignatura) {
       alert('Docente, curso y asignatura son campos obligatorios.');
       return;
     }
@@ -694,7 +704,7 @@ const AcompanamientoDocente: React.FC = () => {
       } else {
         const newRecord = await createAcompanamiento(formData);
         setEditingId(newRecord.id);
-        setFormData((prev) => ({ ...prev, id: newRecord.id } as any));
+        setFormData(newRecord); // Actualiza el form con el ID para habilitar la pestaña OPR
         alert('¡Guardado correctamente! Ahora puedes agregar Ciclos OPR.');
       }
       await fetchAcompanamientos();
@@ -710,7 +720,6 @@ const AcompanamientoDocente: React.FC = () => {
     setView('form');
     setActiveTab('general');
     setError(null);
-    setIaFeedbackGeneral('');
   };
 
   const handleEdit = (record: AcompanamientoDocenteType) => {
@@ -719,7 +728,6 @@ const AcompanamientoDocente: React.FC = () => {
     setView('form');
     setActiveTab('general');
     setError(null);
-    setIaFeedbackGeneral(record.retroalimentacionConsolidada || '');
   };
 
   const handleDelete = async (id: string) => {
@@ -740,7 +748,7 @@ const AcompanamientoDocente: React.FC = () => {
         <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Módulo de Acompañamiento Docente</h2>
         <div className="flex gap-2">
           <button onClick={() => { handleCreateNew(); setActiveTab('general'); }} className="bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 flex items-center gap-2"><PlusSquare className="w-5 h-5" /> Acompañamiento</button>
-          <button onClick={() => { setFormData(initialFormState); setEditingId(null); setView('form'); setActiveTab('opr'); setError(null); setIaFeedbackGeneral(''); }} className="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 flex items-center gap-2"><PlusSquare className="w-5 h-5" /> Ciclo OPR</button>
+          <button onClick={() => { setFormData(initialFormState); setEditingId(null); setView('form'); setActiveTab('opr'); setError(null); }} className="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 flex items-center gap-2"><PlusSquare className="w-5 h-5" /> Ciclo OPR</button>
         </div>
       </div>
       
@@ -785,10 +793,10 @@ const AcompanamientoDocente: React.FC = () => {
     const temporaryAcompanamiento: AcompanamientoDocenteType = {
       id: 'temp-' + Date.now(),
       fecha: new Date().toISOString(),
-      docente: formData.docente || '',
-      curso: formData.curso || '',
-      asignatura: formData.asignatura || '',
-      bloques: formData.bloques || '',
+      docente: 'docente' in formData ? formData.docente || '' : '',
+      curso: 'curso' in formData ? formData.curso || '' : '',
+      asignatura: 'asignatura' in formData ? formData.asignatura || '' : '',
+      bloques: 'bloques' in formData ? formData.bloques || '' : '',
       rubricaResultados: {},
       observacionesGenerales: '',
       retroalimentacionConsolidada: ''
@@ -814,12 +822,15 @@ const AcompanamientoDocente: React.FC = () => {
           <form onSubmit={handleSave} className="space-y-8">
             <div className="p-4 border rounded-lg bg-green-50 dark:bg-green-900/30">
               <h4 className="text-lg font-semibold mb-2 text-green-700 dark:text-green-300">Asistente IA - Informe General</h4>
-              <button type="button" onClick={generateGeneralFeedbackAndPDF} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md mb-2 flex items-center gap-2" disabled={iaLoadingGeneral}><Download className="w-4 h-4" />{iaLoadingGeneral ? 'Generando...' : 'Generar Retroalimentación e Informe PDF'}</button>
-              <p className="text-xs text-slate-600 dark:text-slate-400">Genera automáticamente retroalimentación pedagógica e informe PDF basándose en los datos ingresados.</p>
-              {iaFeedbackGeneral && (
+              <div className="flex flex-wrap gap-4 items-center">
+                <button type="button" onClick={handleGenerateFeedback} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md flex items-center gap-2" disabled={iaLoadingGeneral}><Pencil className="w-4 h-4" />{iaLoadingGeneral ? 'Generando...' : 'Generar Retroalimentación con IA'}</button>
+                <button type="button" onClick={() => handleGeneratePDF()} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md flex items-center gap-2"><Download className="w-4 h-4" />Crear Informe PDF</button>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-2">Genera automáticamente la retroalimentación. Luego, crea el informe en PDF.</p>
+              {'retroalimentacionConsolidada' in formData && formData.retroalimentacionConsolidada && (
                 <div className="mt-4 p-3 bg-white dark:bg-slate-800 rounded-md shadow">
                   <h5 className="font-semibold text-sm mb-2">Retroalimentación Consolidada (guardada):</h5>
-                  <textarea readOnly rows={8} value={iaFeedbackGeneral} className="w-full text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap bg-transparent border-none p-0 focus:ring-0" />
+                  <textarea readOnly rows={8} value={formData.retroalimentacionConsolidada} className="w-full text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap bg-transparent border-none p-0 focus:ring-0" />
                 </div>
               )}
             </div>
@@ -827,34 +838,34 @@ const AcompanamientoDocente: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 border rounded-lg bg-slate-50 dark:bg-slate-800/50 dark:border-slate-700">
               <div>
                 <label htmlFor="docente" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Docente</label>
-                <select name="docente" value={formData.docente} onChange={handleFieldChange} required className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" disabled={loadingProfesores}>
+                <select name="docente" value={'docente' in formData ? formData.docente : ''} onChange={handleFieldChange} required className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" disabled={loadingProfesores}>
                   <option value="">{loadingProfesores ? 'Cargando...' : 'Seleccione'}</option>
                   {profesores.map((p) => (<option key={p} value={p}>{p}</option>))}
                 </select>
               </div>
               <div>
                 <label htmlFor="curso" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Curso</label>
-                <select name="curso" value={formData.curso} onChange={handleFieldChange} required className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600">
+                <select name="curso" value={'curso' in formData ? formData.curso : ''} onChange={handleFieldChange} required className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600">
                   <option value="">Seleccione</option>
                   {CURSOS.map((c) => (<option key={c} value={c}>{c}</option>))}
                 </select>
               </div>
               <div>
                 <label htmlFor="asignatura" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Asignatura</label>
-                <select name="asignatura" value={formData.asignatura} onChange={handleFieldChange} required className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600">
+                <select name="asignatura" value={'asignatura' in formData ? formData.asignatura : ''} onChange={handleFieldChange} required className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600">
                   <option value="">Seleccione</option>
                   {ASIGNATURAS.map((a) => (<option key={a} value={a}>{a}</option>))}
                 </select>
               </div>
               <div>
                 <label htmlFor="bloques" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Bloques Horarios</label>
-                <input type="text" name="bloques" value={formData.bloques} onChange={handleFieldChange} placeholder="Ej: 3-4" className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" />
+                <input type="text" name="bloques" value={'bloques' in formData ? formData.bloques : ''} onChange={handleFieldChange} placeholder="Ej: 3-4" className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" />
               </div>
             </div>
 
             <div>
               <label htmlFor="observacionesGenerales" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Observaciones Generales</label>
-              <textarea name="observacionesGenerales" value={formData.observacionesGenerales} onChange={handleFieldChange} rows={4} placeholder="Ingrese sus observaciones sobre la clase..." className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" />
+              <textarea name="observacionesGenerales" value={'observacionesGenerales' in formData ? formData.observacionesGenerales : ''} onChange={handleFieldChange} rows={4} placeholder="Ingrese sus observaciones sobre la clase..." className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" />
             </div>
 
             <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-lg">
@@ -878,7 +889,7 @@ const AcompanamientoDocente: React.FC = () => {
                           <td className="px-3 py-4 align-top text-sm font-medium text-slate-700 dark:text-slate-300 border-r dark:border-slate-600">{criterion.name}</td>
                           {criterion.levels.map((levelText, levelIndex) => {
                             const level = levelIndex + 1;
-                            const isSelected = formData.rubricaResultados[criterion.name] === level;
+                            const isSelected = 'rubricaResultados' in formData && formData.rubricaResultados[criterion.name] === level;
                             return (<td key={level} onClick={() => handleRubricSelect(criterion.name, level)} className={`px-3 py-4 align-top text-sm text-slate-600 dark:text-slate-300 border-r dark:border-slate-600 cursor-pointer transition-colors ${isSelected ? 'bg-amber-100 dark:bg-amber-900/30' : 'hover:bg-amber-50 dark:hover:bg-slate-700'}`}>{levelText}</td>);
                           })}
                         </tr>
@@ -898,14 +909,14 @@ const AcompanamientoDocente: React.FC = () => {
         {activeTab === 'opr' && (
           <CicloOPRForm
             acompanamiento={currentAcompanamiento || temporaryAcompanamiento}
-            cicloToEdit={null} // Simplificado para siempre crear uno nuevo. La edición se manejaría por separado.
+            cicloToEdit={null}
             profesores={profesores}
             onSave={async (data) => {
               try {
                 const dataToSave = { ...data, acompanamientoId: currentAcompanamiento?.id || null };
                 await createCicloOPR(dataToSave);
                 alert('Ciclo OPR guardado exitosamente');
-                setView('list'); // Volver a la lista después de guardar
+                setView('list');
               } catch (error) {
                 console.error('Error al guardar ciclo OPR:', error);
                 alert('Error al guardar el ciclo OPR');

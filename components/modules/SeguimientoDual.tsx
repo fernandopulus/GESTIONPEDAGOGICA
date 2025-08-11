@@ -103,7 +103,7 @@ const SupervisionModal: React.FC<{
                 <div className="p-6">
                     <div className="flex items-center gap-3 mb-6">
                         <img 
-                            src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754320187/ChatGPT_Image_4_ago_2025_11_09_32_a.m._nb456n.png"
+                            src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754875084/ChatGPT_Image_10_ago_2025_09_17_50_p.m._t9cbut.png"
                             alt="Logo LIR"
                             className="w-12 h-12 object-contain"
                         />
@@ -465,7 +465,7 @@ const SeguimientoDual: React.FC = () => {
             <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
                 <div className="flex items-center gap-3 mb-6">
                     <img 
-                        src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754320187/ChatGPT_Image_4_ago_2025_11_09_32_a.m._nb456n.png"
+                        src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754875084/ChatGPT_Image_10_ago_2025_09_17_50_p.m._t9cbut.png"
                         alt="Logo Gestión Pedagógica LIR"
                         className="w-12 h-12 object-contain"
                     />
@@ -544,7 +544,7 @@ const SeguimientoDual: React.FC = () => {
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
                 <div className="flex items-center gap-3 mb-4">
                     <img 
-                        src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754320187/ChatGPT_Image_4_ago_2025_11_09_32_a.m._nb456n.png"
+                        src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754875084/ChatGPT_Image_10_ago_2025_09_17_50_p.m._t9cbut.png"
                         alt="Logo LIR"
                         className="w-8 h-8 object-contain"
                     />
@@ -560,7 +560,7 @@ const SeguimientoDual: React.FC = () => {
              <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
                 <div className="flex items-center gap-3 mb-4">
                     <img 
-                        src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754320187/ChatGPT_Image_4_ago_2025_11_09_32_a.m._nb456n.png"
+                        src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754875084/ChatGPT_Image_10_ago_2025_09_17_50_p.m._t9cbut.png"
                         alt="Logo LIR"
                         className="w-8 h-8 object-contain"
                     />

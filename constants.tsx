@@ -14,7 +14,7 @@ export const profileIconClass = "w-24 h-24";
 // --- ÍCONOS ---
 export const MainLogo = () => (
     <img 
-        src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754320187/ChatGPT_Image_4_ago_2025_11_09_32_a.m._nb456n.png"
+        src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754875084/ChatGPT_Image_10_ago_2025_09_17_50_p.m._t9cbut.png"
         alt="Logo Gestión Pedagógica LIR"
         className="w-32 h-32 object-contain"
     />
