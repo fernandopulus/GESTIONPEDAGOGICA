@@ -146,6 +146,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
         { name: 'Muro de Anuncios', icon: <BellIcon /> },
         { name: 'Mensajería Interna', icon: <MessageSquareIcon /> },
+        { name: 'Alternancia TP', icon: '🔄' }, // Ícono de ciclo o sincronización
         { name: 'Generador de Actas', icon: <DocumentTextIcon /> },
     ],
     [Profile.ESTUDIANTE]: [

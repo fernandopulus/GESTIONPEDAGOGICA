@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Profile, Module, User } from '../types';
-import { MODULES_BY_PROFILE, LirLogoIcon, LogoutIcon, MenuIcon } from '../constants';
+import { MODULES_BY_PROFILE, LirLogoIcon } from '../constants';
 
 // Component imports
-// LÍNEA CORRECTA
 import TopBar from './TopBar';
 import RegistroReemplazos from './modules/RegistroReemplazos';
 import DashboardSubdireccion from './modules/DashboardSubdireccion';
@@ -32,7 +31,8 @@ import TareasInterdisciplinariasEstudiante from './modules/TareasInterdisciplina
 import AcompanamientoDocenteProfesor from './modules/AcompanamientoDocenteProfesor';
 import SeguimientoCurricular from './modules/SeguimientoCurricular';
 import AnalisisTaxonomico from './modules/AnalisisTaxonomico';
-import GestionEmpresas from './modules/GestionEmpresas'; // ✅ IMPORTA EL NUEVO MÓDULO
+import GestionEmpresas from './modules/GestionEmpresas';
+import AlternanciaTP from './modules/AlternanciaTP'; // --- CAMBIO AQUÍ --- (1. Se importa el nuevo módulo)
 
 interface DashboardProps {
     currentUser: User;
@@ -67,7 +67,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     const profile = currentUser.profile;
     
     const modules = useMemo(() => {
-        const baseModules = MODULES_BY_PROFILE[profile];
+        const baseModules = MODULES_BY_PROFILE[profile] || []; // Añadido fallback por si el perfil no existe
 
         if (profile !== Profile.ESTUDIANTE) {
             return baseModules;
@@ -138,11 +138,13 @@ const Dashboard: React.FC<DashboardProps> = ({
             );
         }
         
+        // Módulos Comunes
         if (activeModule.name === 'Calendario Académico') return <CalendarioAcademico profile={profile} />;
         if (activeModule.name === 'Muro de Anuncios') return <MuroAnuncios currentUser={currentUser} />;
         if (activeModule.name === 'Mensajería Interna') return <MensajeriaInterna currentUser={currentUser} refreshUnreadCount={refreshUnreadCount} />;
         if (activeModule.name === 'Generador de Actas') return <GeneradorActas />;
 
+        // Módulos por Perfil
         if (profile === Profile.SUBDIRECCION) {
             if (activeModule.name === 'Dashboard') return <DashboardSubdireccion currentUser={currentUser} />;
             if (activeModule.name === 'Administración') return <Administracion />;
@@ -172,8 +174,8 @@ const Dashboard: React.FC<DashboardProps> = ({
             if (activeModule.name === 'Seguimiento Dual') return <SeguimientoDual />;
             if (activeModule.name === 'Asistencia Dual') return <AsistenciaDual />;
             if (activeModule.name === 'Pañol') return <Panol />;
-            // ✅ AÑADE ESTA LÍNEA PARA RENDERIZAR TU MÓDULO
             if (activeModule.name === 'Gestión de Empresas') return <GestionEmpresas />;
+            if (activeModule.name === 'Alternancia TP') return <AlternanciaTP />; // --- CAMBIO AQUÍ --- (2. Se renderiza el nuevo módulo)
         }
 
         if (profile === Profile.ESTUDIANTE) {
@@ -183,6 +185,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             if (activeModule.name === 'Asistencia a Empresa') return <AsistenciaEmpresa currentUser={currentUser} />;
         }
 
+        // Fallback por si un módulo no tiene componente asignado aún
         return (
             <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-md h-full w-full animate-fade-in">
                 <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-6">{activeModule.name}</h1>
@@ -196,7 +199,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     };
 
     return (
-        <div className="h-screen flex flex-col bg-slate-100">
+        <div className="h-screen flex flex-col bg-slate-100 dark:bg-slate-900">
             <TopBar 
                 currentUser={currentUser}
                 onLogout={onLogout}
@@ -216,7 +219,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     <SidebarContent />
                 </aside>
 
-                <main className="flex-1 overflow-y-auto">
+                <main className="flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-900">
                     <div className="p-6 md:p-8">
                        {renderContent()}
                     </div>

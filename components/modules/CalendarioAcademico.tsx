@@ -20,7 +20,6 @@ import {
   Save,
   Clock,
   MapPin,
-  Users,
   BookOpen,
   Megaphone,
   Target,
@@ -597,18 +596,22 @@ const CalendarioAcademico: React.FC<CalendarioAcademicoProps> = ({ profile }) =>
           </button>
         </header>
 
-        <div className="grid grid-cols-7">
+        {/* Cabecera de días con líneas tipo tabla */}
+        <div className="grid grid-cols-7 border-t border-l border-slate-200/80 dark:border-slate-700/70">
           {DAYS_OF_WEEK.map(day => (
             <div
               key={day}
-              className="text-center font-semibold text-slate-600 dark:text-slate-300 text-sm py-3 bg-white/40 dark:bg-white/10 border-b border-r border-white/20"
+              className="text-center font-semibold text-slate-600 dark:text-slate-300 text-sm py-3
+                         bg-white/40 dark:bg-white/10
+                         border-b border-r border-slate-200/80 dark:border-slate-700/70"
             >
               {day}
             </div>
           ))}
         </div>
 
-        <div className="grid grid-cols-7 grid-rows-6">
+        {/* Celdas del mes con líneas tipo tabla */}
+        <div className="grid grid-cols-7 grid-rows-6 border-t border-l border-slate-200/80 dark:border-slate-700/70">
           {calendarGrid.flat().map((date, i) => {
             const isToday = date && date.toDateString() === new Date().toDateString();
             const dateStr = date?.toISOString().split('T')[0];
@@ -618,8 +621,9 @@ const CalendarioAcademico: React.FC<CalendarioAcademicoProps> = ({ profile }) =>
               <div
                 key={i}
                 onClick={() => date && handleDayClick(date)}
-                className={`border-b border-r border-white/20 p-2 h-36 flex flex-col overflow-hidden relative group 
-                  ${date ? (profile !== Profile.ESTUDIANTE ? 'cursor-pointer hover:bg-white/40 dark:hover:bg-white/10' : '') : 'bg-white/30 dark:bg-white/5'}`}
+                className={`border-b border-r border-slate-200/80 dark:border-slate-700/70
+                            p-2 h-36 flex flex-col overflow-hidden relative group 
+                            ${date ? (profile !== Profile.ESTUDIANTE ? 'cursor-pointer hover:bg-white/40 dark:hover:bg-white/10' : '') : 'bg-white/30 dark:bg-white/5'}`}
               >
                 {date && (
                   <>

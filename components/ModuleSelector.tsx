@@ -2,6 +2,7 @@ import React from 'react';
 import { Profile, User } from '../types';
 import TopBar from './TopBar';
 
+// Interfaz para la estructura de un módulo individual
 interface Module {
   id: string;
   name: string;
@@ -9,6 +10,7 @@ interface Module {
   description?: string;
 }
 
+// Interfaz para las propiedades que recibe el componente ModuleSelector
 interface ModuleSelectorProps {
   currentUser: User;
   onModuleSelect: (module: string) => void;
@@ -25,16 +27,29 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
   canChangeProfile
 }) => {
   
+  // Función para obtener la lista de módulos según el perfil del usuario
   const getModulesForProfile = (profile: Profile): Module[] => {
+    
+    // Módulos comunes a la mayoría de los perfiles
     const commonModules: Module[] = [
       { id: 'muro', name: 'Muro de Anuncios', icon: '🔔' },
       { id: 'calendario', name: 'Calendario Académico', icon: '📅' }
     ];
 
+    // Definición del módulo de Alternancia TP para poder reutilizarlo
+    const alternanciaTPModule: Module = {
+      id: 'alternancia_tp',
+      name: 'Alternancia TP',
+      icon: '🏢',
+      description: 'Gestiona y monitorea programas de formación en alternancia (liceo-empresa).'
+    };
+
+    // Estructura switch para devolver los módulos específicos de cada perfil
     switch (profile) {
       case Profile.PROFESORADO:
         return [
           { id: 'selector_completo', name: 'Vista Completa (Dashboard)', icon: '📊', description: 'Acceso a todos los módulos con navegación lateral' },
+          alternanciaTPModule,
           { id: 'planificacion', name: 'Planificación', icon: '📖' },
           { id: 'acompañamientos', name: 'Mis Acompañamientos', icon: '✅' },
           { id: 'recursos', name: 'Recursos de Aprendizaje', icon: '🧩' },
@@ -52,6 +67,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
       case Profile.COORDINACION:
         return [
           { id: 'selector_completo', name: 'Vista Completa (Dashboard)', icon: '📊', description: 'Acceso a todos los módulos con navegación lateral' },
+          alternanciaTPModule,
           { id: 'seguimiento_dual', name: 'Seguimiento Dual', icon: '📈' },
           { id: 'asistencia_dual', name: 'Asistencia Dual', icon: '🕐' },
           { id: 'pañol', name: 'Pañol', icon: '🔧' },
@@ -64,6 +80,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
       case Profile.SUBDIRECCION:
         return [
           { id: 'selector_completo', name: 'Vista Completa (Dashboard)', icon: '📊', description: 'Acceso a todos los módulos con navegación lateral' },
+          alternanciaTPModule,
           { id: 'administracion', name: 'Administración', icon: '⚙️' },
           { id: 'seguimiento_curricular', name: 'Seguimiento Curricular', icon: '📋' },
           { id: 'acompañamiento_docente', name: 'Acompañamiento Docente', icon: '👥' },
@@ -91,8 +108,10 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
     }
   };
 
+  // Se obtienen los módulos para el perfil del usuario actual
   const modules = getModulesForProfile(currentUser.profile);
 
+  // Función para obtener el nombre legible del perfil
   const getProfileDisplayName = (profile: Profile): string => {
     switch (profile) {
       case Profile.PROFESORADO:
@@ -108,6 +127,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
     }
   };
 
+  // Renderización del componente JSX
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900">
       <TopBar
