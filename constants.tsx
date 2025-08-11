@@ -424,3 +424,63 @@ export const INSIGNIAS_GAMIFICACION: Insignia[] = [
     { nombre: 'Maestro del Saber', emoji: '🎓', promedioMin: 6.0, promedioMax: 6.5, mensaje: "¡Impresionante! Tu dedicación te lleva a la excelencia." },
     { nombre: 'Sabio Luminar', emoji: '🌟', promedioMin: 6.6, promedioMax: 7.0, mensaje: "¡Extraordinario! Eres una inspiración para tus compañeros." },
 ];
+// —— Alternancia TP (nombres únicos) ——
+export const ESPECIALIDADES_TP = [
+  "Mecánica Industrial",
+  "Mecánica Automotriz",
+] as const;
+
+export const INSTITUCIONES_TP = [
+  "INACAP",
+  "UNAB",
+  "DUOC",
+  "Universidad de Las Américas",
+] as const;
+
+export const NIVELES_TP = ["Tercero Medio", "Cuarto Medio"] as const;
+
+export const CURSOS_BY_ESPECIALIDAD_TP: Record<string, string[]> = {
+  "Mecánica Automotriz": ["3ºA", "3ºB", "4ºA", "4ºB"],
+  "Mecánica Industrial": ["3ºC", "3ºD", "4ºC", "4ºD"],
+};
+
+export const TIPOS_ALTERNANCIA_TP = [
+  "Pasantía",
+  "Visita",
+  "Certificación",
+  "Formación en empresa",
+] as const;
+
+export const MODULOS_MAP_TP: Record<string, Record<string, string[]>> = {
+  "Mecánica Industrial": {
+    "Tercero Medio": [
+      "Soldadura industrial",
+      "Mantenimiento de herramientas",
+      "Medición y verificación",
+      "Mecánica de banco",
+      "Torneado de piezas y conjuntos mecánicos",
+    ],
+    "Cuarto Medio": [
+      "Fresado de piezas mecánicas",
+      "Taladrado de piezas mecánicas",
+      "Rectificado de piezas mecánicas",
+      "Fabricación asistida por computador (CNC)",
+    ],
+  },
+  "Mecánica Automotriz": {
+    "Tercero Medio": [
+      "Ajuste de motores",
+      "Lectura de planos y manuales técnicos",
+      "Manejo de residuos y desechos automotrices",
+      "Mantenimiento de sistemas de seguridad y confortabilidad",
+      "Mantenimiento de sistemas eléctricos y electrónicos",
+    ],
+    "Cuarto Medio": [
+      "Mantenimiento de motores",
+      "Mantenimiento de sistemas hidráulicos y neumáticos",
+      "Mantenimiento de los sistemas de transmisión y frenos",
+      "Mantenimiento de sistemas de dirección y suspensión",
+      "Emprendimiento y empleabilidad",
+    ],
+  },
+};
