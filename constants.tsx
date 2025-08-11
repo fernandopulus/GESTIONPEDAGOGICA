@@ -451,36 +451,98 @@ export const TIPOS_ALTERNANCIA_TP = [
   "Formación en empresa",
 ] as const;
 
-export const MODULOS_MAP_TP: Record<string, Record<string, string[]>> = {
-  "Mecánica Industrial": {
-    "Tercero Medio": [
-      "Soldadura industrial",
-      "Mantenimiento de herramientas",
-      "Medición y verificación",
-      "Mecánica de banco",
-      "Torneado de piezas y conjuntos mecánicos",
+// Módulos por especialidad (SIN horas)
+export const MODULOS_MAP_TP: Record<string, string[]> = {
+  "Mecánica Industrial": [
+    // 3º
+    "Soldadura industrial",
+    "Mantenimiento de herramientas",
+    "Medición y verificación",
+    "Mecánica de banco",
+    "Torneado de piezas y conjuntos mecánicos",
+    // 4º
+    "Fresado de piezas mecánicas",
+    "Taladrado de piezas mecánicas",
+    "Rectificado de piezas mecánicas",
+    "Fabricación asistida por computador (CNC)",
+  ],
+  "Mecánica Automotriz": [
+    // 3º
+    "Ajuste de motores",
+    "Lectura de planos y manuales técnicos",
+    "Manejo de residuos y desechos automotrices",
+    "Mantenimiento de sistemas de seguridad y confortabilidad",
+    "Mantenimiento de sistemas eléctricos y electrónicos",
+    // 4º
+    "Mantenimiento de motores",
+    "Mantenimiento de sistemas hidráulicos y neumáticos",
+    "Mantenimiento de los sistemas de transmisión y frenos",
+    "Mantenimiento de sistemas de dirección y suspensión",
+    "Emprendimiento y empleabilidad",
+  ],
+}; // 👈 importante el punto y coma
+
+// OA por módulo (claves EXACTAS según MODULOS_MAP_TP, SIN horas)
+export const OAS_MAP_TP: Record<string, Record<string, string[]>> = {
+  "Mecánica Automotriz": {
+    "Ajuste de motores": [
+      "Reparar y probar el funcionamiento de motores (gasolina, diésel, gas e híbridos), incluyendo sistemas de control de emisiones, lubricación y refrigeración, usando herramientas e instrumentos apropiados y siguiendo especificaciones del fabricante.",
     ],
-    "Cuarto Medio": [
-      "Fresado de piezas mecánicas",
-      "Taladrado de piezas mecánicas",
-      "Rectificado de piezas mecánicas",
-      "Fabricación asistida por computador (CNC)",
+    "Lectura de planos y manuales técnicos": [
+      "Leer e interpretar información técnica (manuales, planos, diagramas y normas de emisiones) para resolver diagnósticos y fallas.",
+    ],
+    "Manejo de residuos y desechos automotrices": [
+      "Aplicar procedimientos y normativas de seguridad, higiene y cuidado ambiental en la manipulación y disposición de residuos y desechos automotrices.",
+    ],
+    "Mantenimiento de sistemas de seguridad y confortabilidad": [
+      "Diagnosticar, reparar y mantener sistemas de seguridad (frenos ABS, airbags) y confortabilidad (climatización, cierre centralizado, asientos eléctricos) según especificaciones técnicas.",
+    ],
+    "Mantenimiento de sistemas eléctricos y electrónicos": [
+      "Reemplazar, ajustar y probar sistemas eléctricos y electrónicos automotrices, siguiendo procedimientos y normas internacionales.",
+    ],
+    "Mantenimiento de motores": [
+      "Realizar mantenimiento preventivo y correctivo de motores y sus sistemas asociados, verificando tolerancias y parámetros operativos según especificaciones.",
+    ],
+    "Mantenimiento de sistemas hidráulicos y neumáticos": [
+      "Inspeccionar, diagnosticar y reparar sistemas hidráulicos y neumáticos de vehículos automotrices.",
+    ],
+    "Mantenimiento de los sistemas de transmisión y frenos": [
+      "Verificar, ajustar o reemplazar componentes de transmisión y frenos, según manual del fabricante.",
+    ],
+    "Mantenimiento de sistemas de dirección y suspensión": [
+      "Diagnosticar, alinear y corregir sistemas de dirección y suspensión, cumpliendo normas de seguridad.",
+    ],
+    "Emprendimiento y empleabilidad": [
+      "Desarrollar un proyecto o plan de negocio relacionado con el sector automotriz, aplicando conceptos de gestión, marketing y normativa vigente.",
     ],
   },
-  "Mecánica Automotriz": {
-    "Tercero Medio": [
-      "Ajuste de motores",
-      "Lectura de planos y manuales técnicos",
-      "Manejo de residuos y desechos automotrices",
-      "Mantenimiento de sistemas de seguridad y confortabilidad",
-      "Mantenimiento de sistemas eléctricos y electrónicos",
+  "Mecánica Industrial": {
+    "Soldadura industrial": [
+      "Ejecutar procesos de corte y soldadura (oxiacetileno, arco manual, TIG, MIG) en distintas posiciones y materiales, aplicando normas de seguridad, higiene y cuidado ambiental.",
     ],
-    "Cuarto Medio": [
-      "Mantenimiento de motores",
-      "Mantenimiento de sistemas hidráulicos y neumáticos",
-      "Mantenimiento de los sistemas de transmisión y frenos",
-      "Mantenimiento de sistemas de dirección y suspensión",
-      "Emprendimiento y empleabilidad",
+    "Mantenimiento de herramientas": [
+      "Mantener y reparar herramientas manuales y de máquinas, asegurando su operatividad y prolongando su vida útil.",
+    ],
+    "Medición y verificación": [
+      "Utilizar instrumentos de medición y verificación para controlar dimensiones y tolerancias según planos y especificaciones técnicas.",
+    ],
+    "Mecánica de banco": [
+      "Realizar operaciones manuales de mecanizado, ajuste, limado, roscado y ensamblaje, siguiendo planos y tolerancias indicadas.",
+    ],
+    "Torneado de piezas y conjuntos mecánicos": [
+      "Operar tornos convencionales para fabricar piezas y conjuntos mecánicos, cumpliendo con las especificaciones técnicas y de seguridad.",
+    ],
+    "Fresado de piezas mecánicas": [
+      "Operar fresadoras para fabricar piezas mecánicas, seleccionando herramientas de corte y parámetros de mecanizado adecuados.",
+    ],
+    "Taladrado de piezas mecánicas": [
+      "Ejecutar operaciones de taladrado, escariado y roscado en taladros de banco o columna, cumpliendo especificaciones técnicas y de seguridad.",
+    ],
+    "Rectificado de piezas mecánicas": [
+      "Utilizar rectificadoras para mejorar el acabado y precisión dimensional de piezas mecánicas, cumpliendo tolerancias indicadas.",
+    ],
+    "Fabricación asistida por computador (CNC)": [
+      "Programar y operar máquinas CNC para fabricar piezas mecánicas con precisión, optimizando procesos y aplicando normas de seguridad.",
     ],
   },
 };

@@ -15,9 +15,9 @@ import {
   ESPECIALIDADES_TP,
   INSTITUCIONES_TP,
   CURSOS_BY_ESPECIALIDAD_TP,
-  NIVELES_TP,
-  MODULOS_MAP_TP,
+  MODULOS_MAP_TP,      // especialidad -> string[]
   TIPOS_ALTERNANCIA_TP,
+  OAS_MAP_TP,          // especialidad -> { [módulo]: string[] }
 } from "../../constants";
 
 interface AlternanciaTPProps {
@@ -30,6 +30,8 @@ interface Actividad {
   actividad: string;
   lugar: string;
   evidencias: string;
+  modulo?: string;
+  oa?: string;
 }
 
 interface Integrante {
@@ -39,12 +41,11 @@ interface Integrante {
 }
 
 interface FormValues {
-  especialidad: string;      // Industrial | Automotriz
-  curso: string;             // 3ºA...4ºD (según especialidad)
-  institucion: string;       // INACAP, UNAB, DUOC, UDLA
-  nivel: string;             // Tercero Medio | Cuarto Medio
-  modulos: string[];         // según especialidad+nivel
-  tipoAlternancia: string[]; // checkboxes
+  especialidad: string;
+  curso: string[];            // multiselect 3ºA...4ºD (según especialidad)
+  institucion: string;        // INACAP, UNAB, DUOC, UDLA
+  modulos: string[];          // según especialidad
+  tipoAlternancia: string[];  // checkboxes
   fundamentacion: string;
   actividades: Actividad[];
   equipo: Integrante[];
@@ -69,9 +70,8 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
   } = useForm<FormValues>({
     defaultValues: {
       especialidad: "",
-      curso: "",
+      curso: [],
       institucion: "",
-      nivel: "",
       modulos: [],
       tipoAlternancia: [],
       fundamentacion: "",
@@ -87,21 +87,24 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
 
   // --- Acceso flexible (coordinación/subdirección) ---
   const allowedRoles = ["COORDINACION_TP", "SUBDIRECCION"];
-  const userRoleNormalized = (currentUser?.role || "")
-    .toString()
-    .trim()
-    .toUpperCase();
-
+  const userRoleNormalized = (currentUser?.role || "").toString().trim().toUpperCase();
   const hasAccess =
     !userRoleNormalized || allowedRoles.some((r) => userRoleNormalized.includes(r));
+  if (!hasAccess) return <div className="p-4 text-red-600">Acceso no autorizado</div>;
 
-  if (!hasAccess) {
-    return <div className="p-4 text-red-600">Acceso no autorizado</div>;
-  }
+  // --- Helpers ---
+  // Normaliza módulos que pudieran venir con "– 228 horas" desde BD antigua
+  const normalizeModule = (s: string) =>
+    (s || "").replace(/\s*[-–]\s*\d+\s*horas?$/i, "").trim();
+
+  const getOAsForModule = (esp: string, modulo?: string): string[] => {
+    if (!esp || !modulo) return [];
+    return OAS_MAP_TP[esp]?.[modulo] ?? [];
+  };
 
   // --- Dependencias de UI ---
   const especialidad = watch("especialidad");
-  const nivel = watch("nivel");
+  const selectedModules: string[] = watch("modulos") || [];
 
   const cursosDisponibles = useMemo<string[]>(
     () => (especialidad ? CURSOS_BY_ESPECIALIDAD_TP[especialidad] ?? [] : []),
@@ -109,20 +112,28 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
   );
 
   const modulosDisponibles = useMemo<string[]>(
-    () => (especialidad && nivel ? MODULOS_MAP_TP[especialidad]?.[nivel] ?? [] : []),
-    [especialidad, nivel]
+    () => (especialidad ? MODULOS_MAP_TP[especialidad] ?? [] : []),
+    [especialidad]
   );
 
   // Reseteos dependientes
   useEffect(() => {
-    setValue("curso", "");
-    setValue("nivel", "");
+    setValue("curso", []);
     setValue("modulos", []);
-  }, [especialidad, setValue]);
+    // limpiar módulo/OA en actividades si cambia especialidad
+    const acts = [...(watch("actividades") || [])].map((a) => ({ ...a, modulo: "", oa: "" }));
+    setValue("actividades", acts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [especialidad]);
 
   useEffect(() => {
-    setValue("modulos", []);
-  }, [nivel, setValue]);
+    // Si cambian los módulos seleccionados, limpiar OA en actividades cuyo módulo ya no está seleccionado
+    const acts = [...(watch("actividades") || [])].map((a) =>
+      a.modulo && !selectedModules.includes(a.modulo) ? { ...a, modulo: "", oa: "" } : a
+    );
+    setValue("actividades", acts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModules]);
 
   // --- Cargar lista ---
   const loadAlternancias = async () => {
@@ -150,7 +161,20 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
 
   // --- Editar / Eliminar ---
   const onEdit = (alt: any) => {
-    reset(alt);
+    // Normaliza curso (si viniera como string) y módulos/actividades “con horas”
+    const cursoNormalized = Array.isArray(alt.curso) ? alt.curso : alt.curso ? [alt.curso] : [];
+    const modulosNormalized = Array.isArray(alt.modulos)
+      ? alt.modulos.map((m: string) => normalizeModule(m))
+      : [];
+    const actsNormalized = Array.isArray(alt.actividades)
+      ? alt.actividades.map((a: any) => ({
+          ...a,
+          modulo: a?.modulo ? normalizeModule(a.modulo) : "",
+          oa: a?.oa || "",
+        }))
+      : [];
+
+    reset({ ...alt, curso: cursoNormalized, modulos: modulosNormalized, actividades: actsNormalized });
     setSelectedId(alt.id);
   };
 
@@ -165,6 +189,12 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
   const onUploadEvidencia = async (id: string, file: File) => {
     await uploadEvidencia(id, file);
     alert("Evidencia subida correctamente");
+  };
+
+  // Multiselect de curso → array de strings
+  const handleCursoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const values = Array.from(e.currentTarget.selectedOptions).map((o) => o.value);
+    setValue("curso", values, { shouldDirty: true });
   };
 
   return (
@@ -186,8 +216,9 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
                   className="border p-2 rounded flex flex-col gap-2 md:flex-row md:items-center md:justify-between"
                 >
                   <span className="text-sm">
-                    <strong>{alt.especialidad}</strong> — {alt.curso} — {alt.institucion} —{" "}
-                    {alt.nivel} — {Array.isArray(alt.tipoAlternancia) ? alt.tipoAlternancia.join(", ") : ""}
+                    <strong>{alt.especialidad}</strong> —{" "}
+                    {Array.isArray(alt.curso) ? alt.curso.join(", ") : alt.curso} — {alt.institucion} —{" "}
+                    {Array.isArray(alt.tipoAlternancia) ? alt.tipoAlternancia.join(", ") : ""}
                   </span>
                   <div className="flex gap-2">
                     <label className="cursor-pointer bg-yellow-500 text-white px-2 py-1 rounded flex items-center gap-1">
@@ -236,18 +267,29 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
           </select>
         </div>
 
-        {/* Curso / Institución / Nivel */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Curso (multiselección) / Institución */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block font-semibold mb-1">Curso</label>
-            <select {...register("curso")} className="border rounded p-2 w-full" disabled={!especialidad}>
-              <option value="">{especialidad ? "Selecciona…" : "Elige especialidad primero"}</option>
-              {cursosDisponibles.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
+            <label className="block font-semibold mb-1">Curso (puedes elegir varios)</label>
+            <select
+              multiple
+              size={4}
+              {...register("curso")}
+              onChange={handleCursoChange}
+              className="border rounded p-2 w-full min-h-[140px]"
+              disabled={!especialidad}
+            >
+              {!especialidad ? (
+                <option value="">Elige especialidad primero</option>
+              ) : (
+                cursosDisponibles.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))
+              )}
             </select>
+            <p className="text-xs text-gray-500 mt-1">Ctrl/Cmd + clic para seleccionar múltiples cursos.</p>
           </div>
 
           <div>
@@ -261,25 +303,13 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
               ))}
             </select>
           </div>
-
-          <div>
-            <label className="block font-semibold mb-1">Nivel</label>
-            <select {...register("nivel")} className="border rounded p-2 w-full" disabled={!especialidad}>
-              <option value="">{especialidad ? "Selecciona…" : "Elige especialidad primero"}</option>
-              {NIVELES_TP.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
         {/* Módulos */}
         <div>
           <label className="block font-semibold mb-2">Módulos</label>
-          {!especialidad || !nivel ? (
-            <p className="text-sm text-gray-500">Elige especialidad y nivel para ver los módulos.</p>
+          {!especialidad ? (
+            <p className="text-sm text-gray-500">Elige especialidad para ver los módulos.</p>
           ) : (
             <div className="flex flex-wrap gap-4">
               {modulosDisponibles.map((m) => (
@@ -307,50 +337,105 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
 
         {/* Fundamentación */}
         <div>
-          <label className="block font-semibold">Fundamentación técnico‑pedagógica</label>
+          <label className="block font-semibold">Fundamentación técnico-pedagógica</label>
           <textarea {...register("fundamentacion")} className="border rounded p-2 w-full" />
         </div>
 
-        {/* Actividades */}
+        {/* Actividades (con Módulo + OA) */}
         <div>
           <label className="block font-semibold mb-2">Plan de actividades</label>
-          {actividadesFA.fields.map((field, index) => (
-            <div key={field.id} className="flex gap-2 mb-2">
-              <input
-                placeholder="Fecha"
-                {...register(`actividades.${index}.fecha` as const)}
-                className="border p-1 rounded w-28"
-              />
-              <input
-                placeholder="Tipo"
-                {...register(`actividades.${index}.tipo` as const)}
-                className="border p-1 rounded w-32"
-              />
-              <input
-                placeholder="Actividad"
-                {...register(`actividades.${index}.actividad` as const)}
-                className="border p-1 rounded flex-1"
-              />
-              <input
-                placeholder="Lugar"
-                {...register(`actividades.${index}.lugar` as const)}
-                className="border p-1 rounded w-32"
-              />
-              <input
-                placeholder="Evidencias"
-                {...register(`actividades.${index}.evidencias` as const)}
-                className="border p-1 rounded w-36"
-              />
-              <button
-                type="button"
-                onClick={() => actividadesFA.remove(index)}
-                className="text-red-600"
-                title="Eliminar fila"
-              >
-                <Trash2 size={18} />
-              </button>
-            </div>
-          ))}
+          {actividadesFA.fields.map((field, index) => {
+            const currentModule = watch(`actividades.${index}.modulo` as const) || "";
+            const oaOptions = getOAsForModule(especialidad, currentModule);
+
+            return (
+              <div key={field.id} className="flex flex-col gap-2 mb-3 border rounded p-2">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                  <input
+                    placeholder="Fecha"
+                    {...register(`actividades.${index}.fecha` as const)}
+                    className="border p-1 rounded"
+                  />
+                  <input
+                    placeholder="Tipo"
+                    {...register(`actividades.${index}.tipo` as const)}
+                    className="border p-1 rounded"
+                  />
+                  <input
+                    placeholder="Actividad"
+                    {...register(`actividades.${index}.actividad` as const)}
+                    className="border p-1 rounded"
+                  />
+                  <input
+                    placeholder="Lugar"
+                    {...register(`actividades.${index}.lugar` as const)}
+                    className="border p-1 rounded"
+                  />
+                  <input
+                    placeholder="Evidencias"
+                    {...register(`actividades.${index}.evidencias` as const)}
+                    className="border p-1 rounded"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Módulo</label>
+                    <select
+                      {...register(`actividades.${index}.modulo` as const)}
+                      className="border p-2 rounded w-full"
+                      disabled={!especialidad || selectedModules.length === 0}
+                    >
+                      <option value="">
+                        {(!especialidad && "Elige especialidad arriba") ||
+                          (selectedModules.length === 0 && "Selecciona módulos arriba") ||
+                          "Selecciona…"}
+                      </option>
+                      {selectedModules.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Objetivo de Aprendizaje (OA)</label>
+                    <select
+                      {...register(`actividades.${index}.oa` as const)}
+                      className="border p-2 rounded w-full"
+                      disabled={!currentModule || oaOptions.length === 0}
+                    >
+                      <option value="">
+                        {!currentModule
+                          ? "Selecciona módulo primero"
+                          : oaOptions.length === 0
+                          ? "Sin OA definidos para este módulo"
+                          : "Selecciona…"}
+                      </option>
+                      {oaOptions.map((oa) => (
+                        <option key={oa} value={oa}>
+                          {oa}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => actividadesFA.remove(index)}
+                    className="text-red-600 inline-flex items-center gap-1"
+                    title="Eliminar fila"
+                  >
+                    <Trash2 size={18} />
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            );
+          })}
 
           <button
             type="button"
@@ -361,6 +446,8 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
                 actividad: "",
                 lugar: "",
                 evidencias: "",
+                modulo: "",
+                oa: "",
               })
             }
             className="px-2 py-1 bg-green-600 text-white rounded flex items-center gap-1"
