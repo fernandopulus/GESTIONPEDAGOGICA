@@ -9,11 +9,12 @@ import {
   Timestamp,
   where,
   getDocs,
+  getDoc,
 } from 'firebase/firestore';
 import { db } from './config';
 import { ActividadRemota, RespuestaEstudianteActividad, User } from '../../types';
 
-// --- CONSTANTES DE COLECCIONES ---
+// --- CONSTANTES DE COLECCIONES (DEBEN COINCIDIR CON actividadesRemotasHelper) ---
 const ACTIVIDADES_COLLECTION = 'actividades_remotas';
 const RESPUESTAS_COLLECTION = 'respuestas_actividades';
 
@@ -47,7 +48,6 @@ const toYYYYMMDD = (v: any): string | undefined => {
   return d ? d.toISOString().split('T')[0] : undefined;
 };
 
-
 const convertFirestoreDoc = <T>(docSnapshot: any): T => {
   const data = docSnapshot.data();
   return {
@@ -64,14 +64,19 @@ const convertFirestoreDoc = <T>(docSnapshot: any): T => {
 
 /**
  * Se suscribe a las actividades disponibles para un estudiante específico.
+ * MEJORADO: Con mejor manejo de errores y logging
  */
 export const subscribeToActividadesDisponibles = (
   currentUser: User,
   callback: (data: ActividadRemota[]) => void
 ) => {
+  console.log('🔔 Suscribiéndose a actividades disponibles para:', currentUser.nombreCompleto);
+  
   const q = query(collection(db, ACTIVIDADES_COLLECTION), orderBy('fechaCreacion', 'desc'));
   
   const unsubscribe = onSnapshot(q, (querySnapshot) => {
+    console.log('📋 Actividades recibidas desde Firestore:', querySnapshot.docs.length);
+    
     const todasActividades = querySnapshot.docs.map(doc => convertFirestoreDoc<ActividadRemota>(doc));
     
     // La lógica de filtrado es correcta y se mantiene
@@ -89,9 +94,10 @@ export const subscribeToActividadesDisponibles = (
       return false;
     });
     
+    console.log('✅ Actividades filtradas para el estudiante:', actividadesDisponibles.length);
     callback(actividadesDisponibles);
   }, (error) => {
-    console.error("Error al suscribirse a las actividades disponibles:", error);
+    console.error("❌ Error al suscribirse a las actividades disponibles:", error);
     callback([]);
   });
 
@@ -100,44 +106,163 @@ export const subscribeToActividadesDisponibles = (
 
 /**
  * Se suscribe a las respuestas de un estudiante específico.
+ * MEJORADO: Con logging detallado y mejor sincronización
  */
 export const subscribeToRespuestasEstudiante = (
   estudianteId: string,
   callback: (data: RespuestaEstudianteActividad[]) => void
 ) => {
+  console.log('🔔 Suscribiéndose a respuestas del estudiante:', estudianteId);
+  
+  const q = query(
+    collection(db, RESPUESTAS_COLLECTION), 
+    where('estudianteId', '==', estudianteId),
+    orderBy('fechaCompletado', 'desc')
+  );
+  
+  const unsubscribe = onSnapshot(q, (querySnapshot) => {
+    console.log('📝 Respuestas recibidas desde Firestore:', querySnapshot.docs.length);
+    
+    const respuestas = querySnapshot.docs.map(doc => {
+      const respuesta = convertFirestoreDoc<RespuestaEstudianteActividad>(doc);
+      
+      // LOG DETALLADO para debugging
+      console.log(`📄 Respuesta ${doc.id}:`, {
+        actividadId: respuesta.actividadId,
+        puntaje: respuesta.puntaje,
+        nota: respuesta.nota,
+        requiereRevision: respuesta.requiereRevisionDocente,
+        revisionCompletada: respuesta.revisionDocente?.completada,
+        fechaCompletado: respuesta.fechaCompletado
+      });
+      
+      return respuesta;
+    });
+    
+    console.log('✅ Enviando respuestas procesadas al componente:', respuestas.length);
+    callback(respuestas);
+  }, (error) => {
+    console.error("❌ Error al suscribirse a las respuestas del estudiante:", error);
+    callback([]);
+  });
+
+  return unsubscribe;
+};
+
+/**
+ * Guarda la respuesta de una actividad.
+ * MEJORADO: Con mejor logging y validación
+ */
+export const saveRespuestaActividad = async (
+  respuestaData: Omit<RespuestaEstudianteActividad, 'id'>
+): Promise<string> => {
+  try {
+    console.log('💾 Guardando respuesta de actividad:', {
+      actividadId: respuestaData.actividadId,
+      estudianteId: respuestaData.estudianteId,
+      puntaje: respuestaData.puntaje,
+      nota: respuestaData.nota
+    });
+    
+    // Asegura que la fecha se guarde como un Timestamp de Firestore
+    const dataToSend = {
+      ...respuestaData,
+      fechaCompletado: Timestamp.fromDate(new Date(respuestaData.fechaCompletado)),
+    };
+    
+    const docRef = await addDoc(collection(db, RESPUESTAS_COLLECTION), dataToSend);
+    
+    console.log('✅ Respuesta guardada exitosamente con ID:', docRef.id);
+    return docRef.id;
+  } catch (error) {
+    console.error("❌ Error al guardar la respuesta de actividad:", error);
+    throw new Error("No se pudo guardar la respuesta de la actividad.");
+  }
+};
+
+/**
+ * NUEVA: Función para obtener una respuesta específica (para debugging)
+ */
+export const getRespuestaById = async (respuestaId: string): Promise<RespuestaEstudianteActividad | null> => {
+  try {
+    const docSnap = await getDoc(doc(db, RESPUESTAS_COLLECTION, respuestaId));
+    if (docSnap.exists()) {
+      return convertFirestoreDoc<RespuestaEstudianteActividad>(docSnap);
+    }
+    return null;
+  } catch (error) {
+    console.error("Error al obtener respuesta por ID:", error);
+    return null;
+  }
+};
+
+/**
+ * NUEVA: Función para obtener todas las respuestas de un estudiante (sin subscripción)
+ */
+export const getRespuestasEstudiante = async (estudianteId: string): Promise<RespuestaEstudianteActividad[]> => {
+  try {
+    console.log('🔍 Obteniendo respuestas del estudiante (sin suscripción):', estudianteId);
+    
     const q = query(
       collection(db, RESPUESTAS_COLLECTION), 
       where('estudianteId', '==', estudianteId),
       orderBy('fechaCompletado', 'desc')
     );
     
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const respuestas = querySnapshot.docs.map(doc => convertFirestoreDoc<RespuestaEstudianteActividad>(doc));
-        callback(respuestas);
-    }, (error) => {
-        console.error("Error al suscribirse a las respuestas del estudiante:", error);
-        callback([]);
-    });
-
-    return unsubscribe;
+    const querySnapshot = await getDocs(q);
+    const respuestas = querySnapshot.docs.map(doc => convertFirestoreDoc<RespuestaEstudianteActividad>(doc));
+    
+    console.log('📊 Respuestas obtenidas:', respuestas.length);
+    return respuestas;
+  } catch (error) {
+    console.error("❌ Error al obtener respuestas del estudiante:", error);
+    return [];
+  }
 };
 
 /**
- * Guarda la respuesta de una actividad.
+ * NUEVA: Función para verificar si una actividad específica fue completada
  */
-export const saveRespuestaActividad = async (
-  respuestaData: Omit<RespuestaEstudianteActividad, 'id'>
-): Promise<string> => {
+export const checkActividadCompletada = async (actividadId: string, estudianteId: string): Promise<RespuestaEstudianteActividad | null> => {
   try {
-    // Asegura que la fecha se guarde como un Timestamp de Firestore
-    const dataToSend = {
-        ...respuestaData,
-        fechaCompletado: Timestamp.fromDate(new Date(respuestaData.fechaCompletado)),
-    };
-    const docRef = await addDoc(collection(db, RESPUESTAS_COLLECTION), dataToSend);
-    return docRef.id;
+    const q = query(
+      collection(db, RESPUESTAS_COLLECTION),
+      where('actividadId', '==', actividadId),
+      where('estudianteId', '==', estudianteId)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    if (querySnapshot.docs.length > 0) {
+      return convertFirestoreDoc<RespuestaEstudianteActividad>(querySnapshot.docs[0]);
+    }
+    return null;
   } catch (error) {
-    console.error("Error al guardar la respuesta de actividad:", error);
-    throw new Error("No se pudo guardar la respuesta de la actividad.");
+    console.error("Error al verificar si actividad fue completada:", error);
+    return null;
   }
+};
+
+/**
+ * NUEVA: Función para debug - mostrar el estado actual de las respuestas
+ */
+export const debugRespuestasEstudiante = async (estudianteId: string) => {
+  console.log('🐛 === DEBUG: Estado de respuestas del estudiante ===');
+  
+  const respuestas = await getRespuestasEstudiante(estudianteId);
+  
+  respuestas.forEach((respuesta, index) => {
+    console.log(`📋 Respuesta ${index + 1}:`, {
+      id: respuesta.id,
+      actividadId: respuesta.actividadId,
+      puntaje: `${respuesta.puntaje}/${respuesta.puntajeMaximo}`,
+      nota: respuesta.nota,
+      requiereRevision: respuesta.requiereRevisionDocente,
+      revisionCompletada: respuesta.revisionDocente?.completada,
+      puntajeDocente: respuesta.revisionDocente?.puntajeDocente,
+      fechaCompletado: respuesta.fechaCompletado
+    });
+  });
+  
+  console.log('🐛 === FIN DEBUG ===');
+  return respuestas;
 };
