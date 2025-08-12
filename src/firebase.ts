@@ -7,7 +7,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyAfL9dpeLfpWQPg4orpFSh3X5dzXrSsBwc",
   authDomain: "planificador-145df.firebaseapp.com",
   projectId: "planificador-145df",
-  storageBucket: "pplanificador-145df.firebasestorage.app", // ✅ corregido
+  storageBucket: "planificador-145df.firebasestorage.app", // ✅ corregido
   messagingSenderId: "1022861144167",
   appId: "1:1022861144167:web:7c277dd701dad5986864c2",
   measurementId: "G-LKJRFMVC9F"
