@@ -1,400 +1,605 @@
+// src/firebaseHelpers/acompanamientos.ts - VERSIÓN COMPLETA Y CORREGIDA
+
 import {
-    collection,
-    addDoc,
-    getDocs,
-    doc,
-    updateDoc,
-    deleteDoc,
-    query,
-    orderBy,
-    where,
-    getDoc,
-    setDoc
+  collection,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  getDocs,
+  getDoc,
+  query,
+  orderBy,
+  where,
+  Timestamp,
+  writeBatch,
 } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
-// RUTA CORREGIDA: Apuntando a 'src/firebase.ts' desde 'src/firebaseHelpers/'
-import { db } from '../firebase';
-// RUTA CORREGIDA: Apuntando a 'types.ts' en la raíz desde 'src/firebaseHelpers/'
-import { AcompanamientoDocente as AcompanamientoDocenteType, CicloOPR } from '../../types';
 
-// --- DEFINICIÓN DE CONSTANTES PARA COLECCIONES ---
+import {
+  getStorage,
+  ref,
+  uploadBytesResumable,
+  getDownloadURL,
+  deleteObject,
+  listAll,
+} from 'firebase/storage';
+
+import { auth, db } from './config';
+import { AcompanamientoDocente, CicloOPR } from '../../types';
+
+// ✅ CRÍTICO: Obtener storage desde la configuración correcta
+const storage = getStorage();
+
+// =========================
+// CONSTANTES DE COLECCIONES
+// =========================
 const ACOMPANAMIENTOS_COLLECTION = 'acompanamientos';
-const CICLOS_OPR_SUBCOLLECTION = 'ciclosOPR';
-const CONFIGURACION_COLLECTION = 'configuracion';
+const CICLOS_OPR_COLLECTION = 'ciclos_opr';
 
+// =========================
+// UTILIDADES DE FECHAS Y PATHS
+// =========================
 
-// =================================================================
-// HELPERS PARA ACOMPAÑAMIENTOS (COLECCIÓN PRINCIPAL)
-// =================================================================
-
-/**
- * Obtiene todos los registros de acompañamiento docente desde Firestore, ordenados por fecha descendente.
- */
-export const getAllAcompanamientos = async (): Promise<AcompanamientoDocenteType[]> => {
-    try {
-        const q = query(collection(db, ACOMPANAMIENTOS_COLLECTION), orderBy('fecha', 'desc'));
-        const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AcompanamientoDocenteType[];
-    } catch (error) {
-        console.error('Error al obtener acompañamientos:', error);
-        throw new Error('No se pudieron cargar los registros de acompañamiento');
-    }
+const normalizeFecha = (fecha: any): string => {
+  if (!fecha) return new Date().toISOString().split('T')[0];
+  if (typeof fecha === 'string') {
+    return fecha.includes('T') ? fecha.split('T')[0] : fecha;
+  }
+  if (typeof fecha?.toDate === 'function') {
+    return fecha.toDate().toISOString().split('T')[0];
+  }
+  try {
+    return new Date(fecha).toISOString().split('T')[0];
+  } catch {
+    return new Date().toISOString().split('T')[0];
+  }
 };
 
-/**
- * Obtener un registro de acompañamiento específico por ID.
- */
-export const getAcompanamientoById = async (id: string): Promise<AcompanamientoDocenteType | null> => {
-    try {
-        const docRef = doc(db, ACOMPANAMIENTOS_COLLECTION, id);
-        const docSnap = await getDoc(docRef);
-        return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } as AcompanamientoDocenteType : null;
-    } catch (error) {
-        console.error('Error al obtener acompañamiento por ID:', error);
-        throw new Error('No se pudo obtener el registro de acompañamiento');
-    }
+/** Sanitiza nombres de archivo evitando caracteres problemáticos */
+const sanitizeFileName = (fileName: string): string => {
+  const lastDot = fileName.lastIndexOf('.');
+  const name = lastDot > 0 ? fileName.substring(0, lastDot) : fileName;
+  const extension = lastDot > 0 ? fileName.substring(lastDot) : '';
+  const cleanName = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .substring(0, 50);
+  return cleanName + extension.toLowerCase();
 };
 
-/**
- * Crea un nuevo registro de acompañamiento docente en Firestore.
- * @param data - Los datos del acompañamiento a crear.
- * @returns El acompañamiento creado con su nuevo ID.
- */
-export const createAcompanamiento = async (data: Omit<AcompanamientoDocenteType, 'id'>): Promise<AcompanamientoDocenteType> => {
-    try {
-        const docRef = await addDoc(collection(db, ACOMPANAMIENTOS_COLLECTION), {
-            ...data,
-            fecha: data.fecha || new Date().toISOString(),
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-        });
-        return { id: docRef.id, ...data };
-    } catch (error) {
-        console.error('Error al crear acompañamiento:', error);
-        throw new Error('No se pudo crear el registro de acompañamiento');
-    }
+/** Construye un path seguro para Firebase Storage */
+const buildSecurePath = (acompId: string, cicloId: string, fileName: string): string => {
+  const sanitizedAcompId = (acompId || 'general').replace(/[^a-zA-Z0-9-]/g, '_');
+  const sanitizedCicloId = (cicloId || 'temp').replace(/[^a-zA-Z0-9-]/g, '_');
+  const sanitizedFileName = sanitizeFileName(fileName);
+  return `videos_opr/${sanitizedAcompId}/${sanitizedCicloId}/${sanitizedFileName}`;
 };
 
-/**
- * Actualiza un registro de acompañamiento docente existente en Firestore.
- * @param id - El ID del documento a actualizar.
- * @param data - Los datos a modificar.
- */
-export const updateAcompanamiento = async (id: string, data: Partial<Omit<AcompanamientoDocenteType, 'id'>>): Promise<void> => {
-    try {
-        const docRef = doc(db, ACOMPANAMIENTOS_COLLECTION, id);
-        await updateDoc(docRef, { ...data, updatedAt: new Date().toISOString() });
-    } catch (error) {
-        console.error('Error al actualizar acompañamiento:', error, 'ID:', id);
-        throw new Error('No se pudo actualizar el registro de acompañamiento');
-    }
+/** Extrae el storage path desde una downloadURL pública */
+export const storagePathFromDownloadURL = (url: string): string | null => {
+  try {
+    const u = new URL(url);
+    const afterO = u.pathname.split('/o/')[1];
+    if (!afterO) return null;
+    return decodeURIComponent(afterO.split('?')[0]);
+  } catch {
+    return null;
+  }
 };
 
-/**
- * Elimina un registro de acompañamiento docente de Firestore.
- * NOTA: Esto no elimina las subcolecciones (ciclosOPR) ni los archivos en Storage.
- * Se requiere una Cloud Function para una eliminación en cascada.
- * @param id - El ID del documento a eliminar.
- */
+// =========================
+// SUBIDA DE ARCHIVOS COMPLETAMENTE CORREGIDA
+// =========================
+
+export const uploadFileImproved = async (
+  file: File,
+  requestedPath: string,
+  onProgress?: (progressPercent: number) => void
+): Promise<string> => {
+  try {
+    // 🔍 DEBUG: Verificar configuración de Storage
+    console.log('🔍 DEBUG - Storage configurado:', {
+      bucket: storage.app.options.storageBucket,
+      app: storage.app.name
+    });
+    console.log('🔍 DEBUG - Path solicitado:', requestedPath);
+    
+    // Validaciones de autenticación y archivo
+    if (!auth.currentUser) {
+      throw new Error('Usuario no autenticado. Por favor, inicia sesión nuevamente.');
+    }
+    if (!file) {
+      throw new Error('No se proporcionó un archivo válido.');
+    }
+
+    // Validaciones de archivo
+    const allowedTypes = [
+      'video/mp4',
+      'video/quicktime',  // .mov
+      'video/x-msvideo',  // .avi
+      'video/x-m4v',      // .m4v
+    ];
+    const MAX_SIZE = 500 * 1024 * 1024; // 500MB
+
+    if (file.size > MAX_SIZE) {
+      throw new Error(`El archivo es demasiado grande. Máximo permitido: ${(MAX_SIZE / 1024 / 1024).toFixed(0)}MB`);
+    }
+    
+    if (!allowedTypes.includes(file.type)) {
+      throw new Error('Tipo de archivo no permitido. Solo se aceptan MP4, MOV, AVI o M4V.');
+    }
+
+    console.log('📹 Iniciando subida:', {
+      nombre: file.name,
+      tamaño: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+      tipo: file.type,
+      pathSolicitado: requestedPath
+    });
+
+    // Resolver ruta final
+    let finalPath = '';
+    const parts = (requestedPath || '').split('/');
+    if (parts.length >= 4 && parts[0] === 'videos_opr') {
+      const acompId = parts[1];
+      const cicloId = parts[2];
+      const fileName = parts.slice(3).join('/');
+      finalPath = buildSecurePath(acompId, cicloId, fileName);
+    } else {
+      const timestamp = Date.now();
+      const sanitizedName = sanitizeFileName(file.name);
+      finalPath = `videos_opr/general/${timestamp}_${sanitizedName}`;
+    }
+
+    console.log('📁 Path final sanitizado:', finalPath);
+
+    // ✅ CRÍTICO: Crear referencia usando Firebase Storage SDK
+    const storageRef = ref(storage, finalPath);
+    
+    // 🔍 DEBUG: Verificar referencia creada
+    console.log('🔍 Storage ref creado:', {
+      bucket: storageRef.bucket,
+      fullPath: storageRef.fullPath,
+      name: storageRef.name,
+      toString: storageRef.toString()
+    });
+
+    // Metadata optimizada
+    const metadata = {
+      contentType: file.type,
+      cacheControl: 'public, max-age=31536000',
+      customMetadata: {
+        originalName: file.name,
+        uploadedBy: auth.currentUser.uid,
+        uploadDate: new Date().toISOString(),
+        fileSize: String(file.size),
+      },
+    };
+
+    // ✅ CRÍTICO: Usar uploadBytesResumable del Firebase SDK
+    const uploadTask = uploadBytesResumable(storageRef, file, metadata);
+
+    return new Promise<string>((resolve, reject) => {
+      let lastReportedProgress = -1;
+
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          // Reportar progreso
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          const progressRounded = Math.floor(progress);
+          
+          if (onProgress && progressRounded !== lastReportedProgress) {
+            lastReportedProgress = progressRounded;
+            onProgress(progressRounded);
+            console.log(`📊 Progreso: ${progressRounded}%`);
+          }
+        },
+        (error: any) => {
+          console.error('❌ Error en la subida:', error);
+          
+          let errorMessage = 'Error desconocido durante la subida.';
+          
+          switch (error?.code) {
+            case 'storage/unauthorized':
+              errorMessage = 'No tienes permisos para subir archivos. Verifica las reglas de Firebase Storage.';
+              break;
+            case 'storage/canceled':
+              errorMessage = 'La subida fue cancelada por el usuario.';
+              break;
+            case 'storage/quota-exceeded':
+              errorMessage = 'Se agotó el espacio de almacenamiento disponible.';
+              break;
+            case 'storage/retry-limit-exceeded':
+              errorMessage = 'Se agotaron los reintentos. Verifica tu conexión a internet.';
+              break;
+            case 'storage/invalid-format':
+              errorMessage = 'El formato del archivo no es válido para Firebase Storage.';
+              break;
+            case 'storage/unknown':
+              errorMessage = 'Error desconocido del servidor de Firebase Storage.';
+              break;
+            default:
+              const errorMsg = error?.message?.toLowerCase() || '';
+              if (errorMsg.includes('cors')) {
+                errorMessage = 'Error de configuración CORS. Verifica las reglas de Firebase Storage.';
+              } else if (errorMsg.includes('network') || errorMsg.includes('connection')) {
+                errorMessage = 'Error de conexión. Verifica tu internet e intenta nuevamente.';
+              } else if (errorMsg.includes('permission') || errorMsg.includes('forbidden')) {
+                errorMessage = 'Permisos insuficientes. Contacta al administrador del sistema.';
+              } else if (error?.message) {
+                errorMessage = `Error del servidor: ${error.message}`;
+              }
+              break;
+          }
+          
+          reject(new Error(errorMessage));
+        },
+        async () => {
+          try {
+            // ✅ CRÍTICO: Obtener URL usando getDownloadURL del SDK
+            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+            
+            console.log('✅ Archivo subido exitosamente:', {
+              path: finalPath,
+              url: downloadURL,
+              bucket: uploadTask.snapshot.ref.bucket,
+              size: `${(uploadTask.snapshot.totalBytes / 1024 / 1024).toFixed(2)} MB`
+            });
+            
+            resolve(downloadURL);
+            
+          } catch (urlError: any) {
+            console.error('❌ Error al obtener URL de descarga:', urlError);
+            reject(new Error('El archivo se subió correctamente, pero no se pudo obtener la URL de descarga. Intenta recargar la página.'));
+          }
+        }
+      );
+    });
+
+  } catch (error: any) {
+    console.error('❌ Error general en uploadFileImproved:', error);
+    const errorMessage = error?.message || 'Error inesperado al procesar el archivo. Intenta nuevamente.';
+    throw new Error(errorMessage);
+  }
+};
+
+/** Elimina un archivo (recibe path en Storage, no la URL) */
+export const deleteFile = async (filePath: string): Promise<void> => {
+  try {
+    if (!auth.currentUser) throw new Error('Usuario no autenticado');
+    const storageRef = ref(storage, filePath);
+    await deleteObject(storageRef);
+    console.log('🗑️ Archivo eliminado:', filePath);
+  } catch (error: any) {
+    if (error?.code === 'storage/object-not-found') {
+      console.warn('⚠️ El archivo no existe en Storage:', filePath);
+      return;
+    }
+    console.error('❌ Error al eliminar archivo:', error);
+    throw new Error('Error al eliminar el archivo del almacenamiento');
+  }
+};
+
+/** Elimina en cascada todos los archivos debajo de un prefijo (carpeta) */
+const listAndDeleteFolder = async (prefix: string): Promise<void> => {
+  try {
+    const folderRef = ref(storage, prefix);
+    const { items, prefixes } = await listAll(folderRef);
+    await Promise.all(items.map((it) => deleteObject(it)));
+    await Promise.all(prefixes.map((p) => listAndDeleteFolder(p.fullPath)));
+  } catch (error) {
+    console.warn('⚠️ Error al eliminar carpeta:', prefix, error);
+  }
+};
+
+// =========================
+// ACOMPAÑAMIENTOS (CRUD) - TODAS LAS FUNCIONES EXPORTADAS
+// =========================
+
+export const getAllAcompanamientos = async (): Promise<AcompanamientoDocente[]> => {
+  try {
+    console.log('📋 Obteniendo todos los acompañamientos...');
+    
+    const q = query(collection(db, ACOMPANAMIENTOS_COLLECTION), orderBy('fecha', 'desc'));
+    const querySnapshot = await getDocs(q);
+    const acompanamientos = querySnapshot.docs.map((d) => {
+      const data = d.data() as any;
+      return {
+        id: d.id,
+        ...data,
+        fecha: normalizeFecha(data?.fecha),
+      } as AcompanamientoDocente;
+    });
+    
+    console.log('✅ Acompañamientos obtenidos:', acompanamientos.length);
+    return acompanamientos.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
+  } catch (error) {
+    console.error('❌ Error al obtener acompañamientos:', error);
+    throw new Error('No se pudieron cargar los acompañamientos');
+  }
+};
+
+export const createAcompanamiento = async (
+  acompanamiento: Omit<AcompanamientoDocente, 'id'>
+): Promise<AcompanamientoDocente> => {
+  try {
+    console.log('💾 Creando nuevo acompañamiento:', {
+      docente: acompanamiento.docente,
+      curso: acompanamiento.curso,
+      asignatura: acompanamiento.asignatura
+    });
+
+    const dataToSave = {
+      ...acompanamiento,
+      fecha: Timestamp.fromDate(new Date(acompanamiento.fecha)),
+      fechaCreacion: Timestamp.now(),
+    };
+    
+    const docRef = await addDoc(collection(db, ACOMPANAMIENTOS_COLLECTION), dataToSave);
+    
+    const newAcompanamiento: AcompanamientoDocente = {
+      ...acompanamiento,
+      id: docRef.id,
+      fecha: normalizeFecha(acompanamiento.fecha),
+    };
+
+    console.log('✅ Acompañamiento creado con ID:', docRef.id);
+    return newAcompanamiento;
+  } catch (error) {
+    console.error('❌ Error al crear acompañamiento:', error);
+    throw new Error('No se pudo crear el acompañamiento');
+  }
+};
+
+export const updateAcompanamiento = async (
+  id: string,
+  updates: Partial<Omit<AcompanamientoDocente, 'id'>>
+): Promise<void> => {
+  try {
+    console.log('🔄 Actualizando acompañamiento:', id);
+
+    const dataToUpdate = {
+      ...updates,
+      ...(updates.fecha ? { fecha: Timestamp.fromDate(new Date(updates.fecha)) } : {}),
+      fechaModificacion: Timestamp.now(),
+    };
+    
+    await updateDoc(doc(db, ACOMPANAMIENTOS_COLLECTION, id), dataToUpdate);
+    console.log('✅ Acompañamiento actualizado exitosamente');
+  } catch (error) {
+    console.error('❌ Error al actualizar acompañamiento:', error);
+    throw new Error('No se pudo actualizar el acompañamiento');
+  }
+};
+
 export const deleteAcompanamiento = async (id: string): Promise<void> => {
-    try {
-        const docRef = doc(db, ACOMPANAMIENTOS_COLLECTION, id);
-        await deleteDoc(docRef);
-    } catch (error) {
-        console.error('Error al eliminar acompañamiento:', error, 'ID:', id);
-        throw new Error('No se pudo eliminar el registro de acompañamiento');
+  try {
+    console.log('🗑️ Eliminando acompañamiento:', id);
+
+    // 1) Eliminar ciclos asociados
+    const ciclosQ = query(collection(db, CICLOS_OPR_COLLECTION), where('acompanamientoId', '==', id));
+    const snap = await getDocs(ciclosQ);
+
+    const batch = writeBatch(db);
+    snap.forEach((d) => batch.delete(doc(db, CICLOS_OPR_COLLECTION, d.id)));
+    await batch.commit();
+
+    // 2) Eliminar archivos en Storage bajo la carpeta del acompañamiento
+    await listAndDeleteFolder(`videos_opr/${id}`);
+
+    // 3) Eliminar el acompañamiento
+    await deleteDoc(doc(db, ACOMPANAMIENTOS_COLLECTION, id));
+
+    console.log('✅ Acompañamiento eliminado con sus ciclos y archivos');
+  } catch (error) {
+    console.error('❌ Error al eliminar acompañamiento:', error);
+    throw new Error('No se pudo eliminar el acompañamiento y sus datos asociados');
+  }
+};
+
+// =========================
+// CICLOS OPR (CRUD) - TODAS LAS FUNCIONES EXPORTADAS
+// =========================
+
+export const createCicloOPR = async (ciclo: Omit<CicloOPR, 'id'>): Promise<CicloOPR> => {
+  try {
+    console.log('💾 Creando nuevo ciclo OPR:', {
+      nombre: ciclo.nombreCiclo,
+      docente: ciclo.docenteInfo,
+      acompanamientoId: ciclo.acompanamientoId
+    });
+
+    const dataToSave: any = {
+      ...ciclo,
+      fecha: Timestamp.fromDate(new Date(ciclo.fecha)),
+      fechaCreacion: Timestamp.now(),
+    };
+
+    if (ciclo.seguimiento?.fecha) {
+      dataToSave.seguimiento = {
+        ...ciclo.seguimiento,
+        fecha: Timestamp.fromDate(new Date(ciclo.seguimiento.fecha)),
+      };
     }
+
+    const docRef = await addDoc(collection(db, CICLOS_OPR_COLLECTION), dataToSave);
+    
+    const newCiclo: CicloOPR = {
+      ...ciclo,
+      id: docRef.id,
+      fecha: normalizeFecha(ciclo.fecha)
+    };
+
+    console.log('✅ Ciclo OPR creado con ID:', docRef.id);
+    return newCiclo;
+  } catch (error) {
+    console.error('❌ Error al crear ciclo OPR:', error);
+    throw new Error('No se pudo crear el ciclo OPR');
+  }
 };
 
+export const updateCicloOPR = async (
+  id: string,
+  updates: Partial<Omit<CicloOPR, 'id'>>
+): Promise<void> => {
+  try {
+    console.log('🔄 Actualizando ciclo OPR:', id);
 
-// =================================================================
-// HELPERS PARA CICLOS OPR (SUBCOLECCIÓN)
-// =================================================================
-
-/**
- * Obtiene todos los ciclos OPR para un acompañamiento específico.
- * @param acompanamientoId - El ID del documento de acompañamiento padre.
- * @returns Un array de ciclos OPR.
- */
-export const getAllCiclosOPR = async (acompanamientoId: string): Promise<CicloOPR[]> => {
-    try {
-        const ciclosRef = collection(db, ACOMPANAMIENTOS_COLLECTION, acompanamientoId, CICLOS_OPR_SUBCOLLECTION);
-        const q = query(ciclosRef, orderBy('fecha', 'desc'));
-        const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as CicloOPR[];
-    } catch (error) {
-        console.error(`Error al obtener ciclos OPR para ${acompanamientoId}:`, error);
-        throw new Error('No se pudieron cargar los ciclos OPR');
+    const dataToUpdate: any = { ...updates };
+    if (updates.fecha) dataToUpdate.fecha = Timestamp.fromDate(new Date(updates.fecha));
+    if (updates.seguimiento?.fecha) {
+      dataToUpdate.seguimiento = {
+        ...updates.seguimiento,
+        fecha: Timestamp.fromDate(new Date(updates.seguimiento.fecha)),
+      };
     }
+    dataToUpdate.fechaModificacion = Timestamp.now();
+    
+    await updateDoc(doc(db, CICLOS_OPR_COLLECTION, id), dataToUpdate);
+    console.log('✅ Ciclo OPR actualizado exitosamente');
+  } catch (error) {
+    console.error('❌ Error al actualizar ciclo OPR:', error);
+    throw new Error('No se pudo actualizar el ciclo OPR');
+  }
 };
 
-/**
- * Crea un nuevo ciclo OPR dentro de un acompañamiento.
- * @param acompanamientoId - El ID del acompañamiento padre.
- * @param data - Los datos del nuevo ciclo OPR.
- * @returns El ciclo OPR creado con su nuevo ID.
- */
-export const createCicloOPR = async (acompanamientoId: string, data: Omit<CicloOPR, 'id'>): Promise<CicloOPR> => {
-    try {
-        const ciclosRef = collection(db, ACOMPANAMIENTOS_COLLECTION, acompanamientoId, CICLOS_OPR_SUBCOLLECTION);
-        const docRef = await addDoc(ciclosRef, { ...data, createdAt: new Date().toISOString() });
-        return { id: docRef.id, ...data };
-    } catch (error) {
-        console.error(`Error al crear ciclo OPR para ${acompanamientoId}:`, error);
-        throw new Error('No se pudo crear el ciclo OPR');
-    }
-};
+export const getCiclosOPRByAcompanamiento = async (acompanamientoId: string): Promise<CicloOPR[]> => {
+  try {
+    console.log('📋 Obteniendo ciclos OPR para acompañamiento:', acompanamientoId);
 
-/**
- * Actualiza un ciclo OPR existente.
- * @param acompanamientoId - El ID del acompañamiento padre.
- * @param cicloId - El ID del ciclo OPR a actualizar.
- * @param data - Los datos a modificar.
- */
-export const updateCicloOPR = async (acompanamientoId: string, cicloId: string, data: Partial<CicloOPR>): Promise<void> => {
-    try {
-        const cicloRef = doc(db, ACOMPANAMIENTOS_COLLECTION, acompanamientoId, CICLOS_OPR_SUBCOLLECTION, cicloId);
-        await updateDoc(cicloRef, { ...data, updatedAt: new Date().toISOString() });
-    } catch (error) {
-        console.error(`Error al actualizar ciclo OPR ${cicloId}:`, error);
-        throw new Error('No se pudo actualizar el ciclo OPR');
-    }
-};
+    const q = query(
+      collection(db, CICLOS_OPR_COLLECTION),
+      where('acompanamientoId', '==', acompanamientoId),
+      orderBy('fecha', 'desc')
+    );
 
-
-// =================================================================
-// HELPER PARA FIREBASE STORAGE
-// =================================================================
-
-/**
- * Sube un archivo a Firebase Storage y devuelve su URL de descarga.
- * @param file - El archivo a subir.
- * @param path - La ruta en Storage donde se guardará el archivo (ej: "videos_opr/cicloId/nombreArchivo.mp4").
- * @returns La URL de descarga del archivo.
- */
-export const uploadFile = async (file: File, path: string): Promise<string> => {
-    try {
-        const storage = getStorage();
-        const storageRef = ref(storage, path);
-        const snapshot = await uploadBytes(storageRef, file);
-        const downloadURL = await getDownloadURL(snapshot.ref);
-        return downloadURL;
-    } catch (error) {
-        console.error(`Error al subir archivo a ${path}:`, error);
-        throw new Error('No se pudo subir el archivo');
-    }
-};
-
-
-// =================================================================
-// FILTROS Y BÚSQUEDAS DE ACOMPAÑAMIENTOS
-// =================================================================
-
-/**
- * Obtener acompañamientos de un docente específico.
- */
-export const getAcompanamientosByDocente = async (nombreDocente: string): Promise<AcompanamientoDocenteType[]> => {
-    try {
-        const q = query(collection(db, ACOMPANAMIENTOS_COLLECTION), where('docente', '==', nombreDocente), orderBy('fecha', 'desc'));
-        const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AcompanamientoDocenteType[];
-    } catch (error) {
-        console.error('Error al obtener acompañamientos por docente:', error);
-        throw new Error('No se pudieron cargar los acompañamientos del docente');
-    }
-};
-
-/**
- * Obtener acompañamientos por curso.
- */
-export const getAcompanamientosByCurso = async (curso: string): Promise<AcompanamientoDocenteType[]> => {
-    try {
-        const q = query(collection(db, ACOMPANAMIENTOS_COLLECTION), where('curso', '==', curso), orderBy('fecha', 'desc'));
-        const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AcompanamientoDocenteType[];
-    } catch (error) {
-        console.error('Error al obtener acompañamientos por curso:', error);
-        throw new Error('No se pudieron cargar los acompañamientos del curso');
-    }
-};
-
-/**
- * Obtener acompañamientos por asignatura.
- */
-export const getAcompanamientosByAsignatura = async (asignatura: string): Promise<AcompanamientoDocenteType[]> => {
-    try {
-        const q = query(collection(db, ACOMPANAMIENTOS_COLLECTION), where('asignatura', '==', asignatura), orderBy('fecha', 'desc'));
-        const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AcompanamientoDocenteType[];
-    } catch (error) {
-        console.error('Error al obtener acompañamientos por asignatura:', error);
-        throw new Error('No se pudieron cargar los acompañamientos de la asignatura');
-    }
-};
-
-/**
- * Obtener acompañamientos por rango de fechas.
- */
-export const getAcompanamientosByDateRange = async (startDate: string, endDate: string): Promise<AcompanamientoDocenteType[]> => {
-    try {
-        const q = query(
-            collection(db, ACOMPANAMIENTOS_COLLECTION),
-            where('fecha', '>=', startDate),
-            where('fecha', '<=', endDate),
-            orderBy('fecha', 'desc')
-        );
-        const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AcompanamientoDocenteType[];
-    } catch (error) {
-        console.error('Error al obtener acompañamientos por rango de fechas:', error);
-        throw new Error('No se pudieron cargar los acompañamientos del rango especificado');
-    }
-};
-
-/**
- * Obtener acompañamientos recientes (últimos N días).
- */
-export const getAcompanamientosRecientes = async (diasAtras: number = 30): Promise<AcompanamientoDocenteType[]> => {
-    const fechaLimite = new Date();
-    fechaLimite.setDate(fechaLimite.getDate() - diasAtras);
-    return getAcompanamientosByDateRange(fechaLimite.toISOString(), new Date().toISOString());
-};
-
-/**
- * Buscar acompañamientos por texto (filtro en el cliente).
- */
-export const searchAcompanamientos = async (searchTerm: string): Promise<AcompanamientoDocenteType[]> => {
-    try {
-        const allAcompanamientos = await getAllAcompanamientos();
-        const searchLower = searchTerm.toLowerCase();
-        return allAcompanamientos.filter(acomp =>
-            acomp.docente.toLowerCase().includes(searchLower) ||
-            acomp.curso.toLowerCase().includes(searchLower) ||
-            acomp.asignatura.toLowerCase().includes(searchLower) ||
-            (acomp.observacionesGenerales && acomp.observacionesGenerales.toLowerCase().includes(searchLower))
-        );
-    } catch (error) {
-        console.error('Error al buscar acompañamientos:', error);
-        throw new Error('No se pudieron buscar los acompañamientos');
-    }
-};
-
-
-// =================================================================
-// HELPERS PARA RÚBRICA PERSONALIZADA
-// =================================================================
-
-/**
- * Obtener rúbrica personalizada si existe.
- */
-export const getRubricaPersonalizada = async (): Promise<any | null> => {
-    try {
-        const docRef = doc(db, CONFIGURACION_COLLECTION, 'rubricaAcompanamiento');
-        const docSnap = await getDoc(docRef);
-        return docSnap.exists() ? docSnap.data().rubrica : null;
-    } catch (error) {
-        console.error('Error al obtener rúbrica personalizada:', error);
-        return null; // No es un error crítico, se puede usar la rúbrica por defecto.
-    }
-};
-
-/**
- * Guardar rúbrica personalizada.
- */
-export const saveRubricaPersonalizada = async (rubrica: any): Promise<void> => {
-    try {
-        const docRef = doc(db, CONFIGURACION_COLLECTION, 'rubricaAcompanamiento');
-        await setDoc(docRef, { rubrica, updatedAt: new Date().toISOString() }, { merge: true });
-    } catch (error) {
-        console.error('Error al guardar rúbrica personalizada:', error);
-        throw new Error('No se pudo guardar la rúbrica personalizada');
-    }
-};
-
-
-// =================================================================
-// ESTADÍSTICAS Y REPORTES
-// =================================================================
-
-/**
- * Obtener estadísticas de acompañamiento de un docente específico.
- */
-export const getEstadisticasDocente = async (nombreDocente: string): Promise<{
-    totalAcompanamientos: number;
-    promedioGeneral: number;
-    ultimoAcompanamiento: string | null;
-    tendencia: 'mejorando' | 'estable' | 'declinando';
-}> => {
-    try {
-        const acompanamientos = await getAcompanamientosByDocente(nombreDocente);
-        if (acompanamientos.length === 0) {
-            return { totalAcompanamientos: 0, promedioGeneral: 0, ultimoAcompanamiento: null, tendencia: 'estable' };
-        }
-
-        const calcularPromedio = (acomp: AcompanamientoDocenteType) => {
-            const puntos = Object.values(acomp.rubricaResultados).reduce((sum, score) => sum + (score || 0), 0);
-            const criterios = Object.keys(acomp.rubricaResultados).length;
-            return criterios > 0 ? puntos / criterios : 0;
+    const snapshot = await getDocs(q);
+    const ciclos = snapshot.docs.map((d) => {
+      const data = d.data() as any;
+      const base: CicloOPR = {
+        id: d.id,
+        ...data,
+        fecha: normalizeFecha(data?.fecha),
+      };
+      if (data?.seguimiento?.fecha) {
+        base.seguimiento = {
+          ...data.seguimiento,
+          fecha: normalizeFecha(data.seguimiento.fecha),
         };
-
-        const promedioGeneral = acompanamientos.reduce((sum, acomp) => sum + calcularPromedio(acomp), 0) / acompanamientos.length;
-
-        let tendencia: 'mejorando' | 'estable' | 'declinando' = 'estable';
-        if (acompanamientos.length >= 2) {
-            const promedioUltimo = calcularPromedio(acompanamientos[0]);
-            const promedioPenultimo = calcularPromedio(acompanamientos[1]);
-            if (promedioUltimo > promedioPenultimo + 0.1) tendencia = 'mejorando';
-            else if (promedioUltimo < promedioPenultimo - 0.1) tendencia = 'declinando';
-        }
-
-        return {
-            totalAcompanamientos: acompanamientos.length,
-            promedioGeneral: Math.round(promedioGeneral * 100) / 100,
-            ultimoAcompanamiento: acompanamientos[0]?.fecha || null,
-            tendencia
-        };
-    } catch (error) {
-        console.error('Error al calcular estadísticas del docente:', error);
-        throw new Error('No se pudieron calcular las estadísticas');
-    }
+      }
+      return base;
+    });
+    
+    console.log('✅ Ciclos OPR obtenidos:', ciclos.length);
+    return ciclos;
+  } catch (error) {
+    console.error('❌ Error al obtener ciclos OPR:', error);
+    throw new Error('No se pudieron cargar los ciclos OPR');
+  }
 };
 
-/**
- * Obtener resumen general de acompañamientos para un dashboard.
- */
-export const getResumenAcompanamientos = async (): Promise<{
-    totalAcompanamientos: number;
-    docentesEvaluados: number;
-    promedioGeneralInstitucion: number;
-    acompanamientosEsteMes: number;
-}> => {
-    try {
-        const allAcompanamientos = await getAllAcompanamientos();
-        const docentesUnicos = new Set(allAcompanamientos.map(a => a.docente));
+export const deleteCicloOPR = async (id: string): Promise<void> => {
+  try {
+    console.log('🗑️ Eliminando ciclo OPR:', id);
 
-        let totalPuntos = 0;
-        let totalCriterios = 0;
-        allAcompanamientos.forEach(acomp => {
-            const puntos = Object.values(acomp.rubricaResultados).reduce((sum, score) => sum + (score || 0), 0);
-            const criterios = Object.keys(acomp.rubricaResultados).length;
-            totalPuntos += puntos;
-            totalCriterios += criterios;
-        });
-        const promedioGeneral = totalCriterios > 0 ? totalPuntos / totalCriterios : 0;
+    const d = await getDoc(doc(db, CICLOS_OPR_COLLECTION, id));
+    if (!d.exists()) return;
 
-        const inicioMes = new Date();
-        inicioMes.setDate(1);
-        inicioMes.setHours(0, 0, 0, 0);
-        const acompanamientosEsteMes = allAcompanamientos.filter(acomp => new Date(acomp.fecha) >= inicioMes).length;
+    const ciclo = d.data() as any;
+    const acompanamientoId = ciclo?.acompanamientoId || 'general';
 
-        return {
-            totalAcompanamientos: allAcompanamientos.length,
-            docentesEvaluados: docentesUnicos.size,
-            promedioGeneralInstitucion: Math.round(promedioGeneral * 100) / 100,
-            acompanamientosEsteMes
-        };
-    } catch (error) {
-        console.error('Error al obtener resumen de acompañamientos:', error);
-        throw new Error('No se pudo obtener el resumen de acompañamientos');
-    }
+    await listAndDeleteFolder(`videos_opr/${acompanamientoId}/${id}`);
+    await deleteDoc(doc(db, CICLOS_OPR_COLLECTION, id));
+
+    console.log('✅ Ciclo OPR eliminado con sus archivos');
+  } catch (error) {
+    console.error('❌ Error al eliminar ciclo OPR:', error);
+    throw new Error('No se pudo eliminar el ciclo OPR');
+  }
 };
+
+// =========================
+// FUNCIONES DE UTILIDAD EXPORTADAS
+// =========================
+
+export const getFileInfo = (file: File) => ({
+  name: file.name,
+  size: file.size,
+  sizeFormatted: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+  type: file.type,
+  lastModified: new Date(file.lastModified).toLocaleString(),
+  sanitizedName: sanitizeFileName(file.name),
+});
+
+export const canAccessAcompanamiento = (
+  acompanamiento: AcompanamientoDocente,
+  currentUser: { nombreCompleto: string; profile: string }
+): boolean => {
+  if (currentUser.profile === 'ADMINISTRADOR') return true;
+  if (currentUser.profile === 'PROFESORADO' && acompanamiento.docente === currentUser.nombreCompleto) return true;
+  return false;
+};
+
+export const getAcompanamientosByDocente = async (
+  nombreDocente: string
+): Promise<AcompanamientoDocente[]> => {
+  try {
+    const q = query(
+      collection(db, ACOMPANAMIENTOS_COLLECTION),
+      where('docente', '==', nombreDocente),
+      orderBy('fecha', 'desc')
+    );
+    const snap = await getDocs(q);
+
+    return snap.docs.map((d) => {
+      const data = d.data() as any;
+      return {
+        id: d.id,
+        ...data,
+        fecha: normalizeFecha(data?.fecha),
+      } as AcompanamientoDocente;
+    });
+  } catch (error) {
+    console.error('❌ Error en getAcompanamientosByDocente:', error);
+    throw new Error('No se pudieron cargar los acompañamientos del docente');
+  }
+};
+
+export const getRubricaPersonalizada = async (
+  nombreDocente: string
+): Promise<any | null> => {
+  try {
+    const q = query(
+      collection(db, 'rubricas_personalizadas'),
+      where('docente', '==', nombreDocente)
+    );
+    const snap = await getDocs(q);
+
+    if (snap.empty) return null;
+
+    const data = snap.docs[0].data() as any;
+    return data?.rubrica ?? null;
+  } catch (error) {
+    console.error('❌ Error en getRubricaPersonalizada:', error);
+    return null;
+  }
+};
+
+// =========================
+// FUNCIONES DE DEPURACIÓN TEMPORAL
+// =========================
+
+/** Función para verificar configuración de Storage */
+export const debugStorageConfig = () => {
+  console.log('🔍 DEBUG Storage Config:', {
+    bucket: storage.app.options.storageBucket,
+    projectId: storage.app.options.projectId,
+    appName: storage.app.name
+  });
+  return storage.app.options.storageBucket;
+};
+
+// Mantener compatibilidad con código existente
+export const uploadFile = uploadFileImproved;

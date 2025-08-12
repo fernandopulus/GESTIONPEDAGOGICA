@@ -1,0 +1,26 @@
+[
+  {
+    "origin": [
+      "planificador-145df.firebasestorage.app",
+      "http://localhost:5173"
+    ],
+    "method": [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "HEAD",
+      "DELETE",
+      "OPTIONS"
+    ],
+    "responseHeader": [
+      "Content-Type",
+      "Authorization",
+      "x-goog-meta-*",
+      "x-goog-upload-command",
+      "x-goog-upload-offset",
+      "x-goog-upload-status"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]
