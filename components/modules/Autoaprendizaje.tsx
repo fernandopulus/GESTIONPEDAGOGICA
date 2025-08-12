@@ -1,357 +1,989 @@
-import React, { useState, useEffect, useCallback } from 'react';
+// components/modules/Autoaprendizaje.tsx
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    ActividadRemota,
-    RespuestaEstudianteActividad,
-    User,
-    TipoActividadRemota,
-    QuizQuestion,
-    ComprensionLecturaContent,
-    DetailedFeedback,
-} from '../../types'; // Ajusta la ruta a tu archivo de types
+  ActividadRemota,
+  RespuestaEstudianteActividad,
+  User,
+  TipoActividadRemota,
+  QuizQuestion,
+  ComprensionLecturaContent,
+  DetailedFeedback,
+  FeedbackAI
+} from '../../types';
 import {
-    subscribeToActividadesDisponibles,
-    saveRespuestaActividad,
-} from '../../src/firebaseHelpers/autoaprendizajeHelper'; // Ajusta la ruta a tus helpers de Firebase
+  subscribeToActividadesDisponibles,
+  subscribeToRespuestasEstudiante,
+  saveRespuestaActividad,
+} from '../../src/firebaseHelpers/autoaprendizajeHelper';
+import { calcularNota60 } from '../../src/utils/grades';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// --- Funciones de Utilidad y Componentes Genéricos ---
+// —— Tipos defensivos para las variantes que pueden venir del generador —— //
+type PareadoFromTeacher = { id?: number; concepto?: string; definicion?: string };
+type PareadosContent =
+  | PareadoFromTeacher[]
+  | { pares: { izquierda: string; derecha: string; puntaje?: number }[] };
 
-const calculateGrade = (score: number, maxScore: number): string => {
-    if (maxScore === 0) return '1.0';
-    const exigencia = 0.6;
-    const puntajeAprobacion = maxScore * exigencia;
-    let nota = 1.0;
-    if (score >= puntajeAprobacion) {
-        nota = 4.0 + (score - puntajeAprobacion) * 3.0 / (maxScore - puntajeAprobacion);
-    } else {
-        nota = 1.0 + score * 3.0 / puntajeAprobacion;
-    }
-    nota = Math.max(1.0, Math.min(7.0, nota));
-    return nota.toFixed(1);
-};
+type DesarrolloItemFromTeacher = { pregunta?: string; enunciado?: string; texto?: string; rubrica?: string | object };
+type DesarrolloContentTeacher =
+  | DesarrolloItemFromTeacher[]
+  | { preguntas: DesarrolloItemFromTeacher[] };
 
-const SpinnerIcon = () => (
-    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-    </svg>
+// —— UI —— //
+const SpinnerIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={`animate-spin ${className}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+  </svg>
 );
 
-// --- Componente para Rendir Actividades Remotas ---
+// —— Debugging y funciones auxiliares ULTRA seguras —— //
+const logSuspiciousObject = (obj: any, context: string) => {
+  if (typeof obj === 'object' && obj !== null && !Array.isArray(obj)) {
+    const keys = Object.keys(obj);
+    if (keys.some(key => ['comprension', 'analisis', 'argumentacion', 'creatividad', 'claridad', 'precision', 'organizacion'].includes(key))) {
+      console.warn(`🚨 OBJETO SOSPECHOSO EN ${context}:`, obj);
+      console.warn('Keys:', keys);
+    }
+  }
+};
 
+const ultraSafeStringify = (value: any, context?: string): string => {
+  if (context) logSuspiciousObject(value, context);
+  
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'boolean') return String(value);
+  
+  if (typeof value === 'object') {
+    if (Array.isArray(value)) {
+      // Si es array, intentamos extraer strings
+      return value.map(item => ultraSafeStringify(item, `${context}-array-item`)).join(', ');
+    }
+    
+    // Si es un objeto, intentamos extraer propiedades de texto conocidas
+    const textFields = [
+      'texto', 'contenido', 'descripcion', 'valor', 'name', 'title', 'label',
+      'pregunta', 'enunciado', 'respuesta', 'opcion', 'concepto', 'definicion'
+    ];
+    
+    for (const field of textFields) {
+      if (value[field] && typeof value[field] === 'string') {
+        return value[field];
+      }
+    }
+    
+    // Si tiene keys sospechosas, devolvemos descripción genérica
+    const keys = Object.keys(value);
+    if (keys.some(key => ['comprension', 'analisis', 'argumentacion', 'creatividad', 'claridad', 'precision'].includes(key))) {
+      return '[Criterios de evaluación]';
+    }
+    
+    // Último recurso: convertir a JSON de forma segura
+    try {
+      const json = JSON.stringify(value);
+      if (json.length > 100) return '[Objeto complejo]';
+      return json;
+    } catch {
+      return '[Objeto no serializable]';
+    }
+  }
+  
+  return String(value);
+};
+
+const extractTextSafely = (item: any, context: string, ...fields: string[]): string => {
+  logSuspiciousObject(item, `extractTextSafely-${context}`);
+  
+  if (!item) return '';
+  
+  // Primero intentamos con los campos especificados
+  for (const field of fields) {
+    if (item[field]) {
+      const result = ultraSafeStringify(item[field], `${context}-${field}`);
+      if (result && result !== '[Objeto complejo]' && result !== '[Objeto no serializable]') {
+        return result;
+      }
+    }
+  }
+  
+  // Luego con campos comunes
+  const commonFields = ['texto', 'pregunta', 'enunciado', 'contenido', 'descripcion', 'value', 'label'];
+  for (const field of commonFields) {
+    if (item[field]) {
+      const result = ultraSafeStringify(item[field], `${context}-${field}`);
+      if (result && result !== '[Objeto complejo]' && result !== '[Objeto no serializable]') {
+        return result;
+      }
+    }
+  }
+  
+  // Si es un string directamente
+  if (typeof item === 'string') return item;
+  
+  // Si nada funciona, devolvemos algo seguro
+  return '[Sin contenido disponible]';
+};
+
+// —— Componente ULTRA seguro para renderizar cualquier cosa —— //
+const UltraSafeRenderer = ({ content, context = 'unknown' }: { content: any; context?: string }) => {
+  try {
+    const safeText = ultraSafeStringify(content, `UltraSafeRenderer-${context}`);
+    return <span>{safeText}</span>;
+  } catch (error) {
+    console.error('Error in UltraSafeRenderer:', error, 'Content:', content);
+    return <span>[Error al mostrar contenido]</span>;
+  }
+};
+
+// —— Normalizadores ULTRA seguros —— //
+function ultraSafeNormalizeLectura(content: any): { texto: string; preguntas: QuizQuestion[] } {
+  console.log('🔍 Normalizando lectura:', content);
+  logSuspiciousObject(content, 'normalizeLectura-input');
+  
+  if (!content) return { texto: '', preguntas: [] };
+
+  const normalizeQuestion = (q: any, index: number): QuizQuestion => {
+    logSuspiciousObject(q, `normalizeQuestion-${index}`);
+    
+    const opciones = Array.isArray(q?.opciones) 
+      ? q.opciones.map((op, i) => ultraSafeStringify(op, `opcion-${index}-${i}`)).filter(Boolean)
+      : [];
+    
+    return {
+      pregunta: extractTextSafely(q, `pregunta-${index}`, 'pregunta', 'texto'),
+      opciones,
+      respuestaCorrecta: ultraSafeStringify(q?.respuestaCorrecta, `respuestaCorrecta-${index}`),
+      puntaje: typeof q?.puntaje === 'number' ? q.puntaje : 1
+    };
+  };
+
+  // Caso estándar: objeto con {texto, preguntas}
+  if (!Array.isArray(content) && Array.isArray((content as ComprensionLecturaContent).preguntas)) {
+    const c = content as ComprensionLecturaContent;
+    return {
+      texto: extractTextSafely(c, 'lectura-texto', 'texto'),
+      preguntas: (c.preguntas || []).map(normalizeQuestion)
+    };
+  }
+
+  // A veces la IA devuelve un array de bloques de lectura
+  if (Array.isArray(content)) {
+    const texto = content
+      .map((b: any, i) => extractTextSafely(b, `lectura-bloque-${i}`, 'texto'))
+      .filter(Boolean)
+      .join('\n\n---\n\n');
+    const preguntas = content
+      .flatMap((b: any, i) => {
+        logSuspiciousObject(b, `lectura-bloque-preguntas-${i}`);
+        return Array.isArray(b?.preguntas) ? b.preguntas : [];
+      })
+      .map(normalizeQuestion);
+    return { texto, preguntas };
+  }
+
+  return { texto: '', preguntas: [] };
+}
+
+function ultraSafeNormalizePareados(content: PareadosContent): { izquierda: string; derecha: string; puntaje?: number }[] {
+  console.log('🔍 Normalizando pareados:', content);
+  logSuspiciousObject(content, 'normalizePareados-input');
+  
+  if (!content) return [];
+
+  // Forma usada en el player antiguo
+  if (!Array.isArray(content) && Array.isArray(content.pares)) {
+    return content.pares.map((p, i) => {
+      logSuspiciousObject(p, `pareado-${i}`);
+      return {
+        izquierda: extractTextSafely(p, `pareado-izq-${i}`, 'izquierda', 'concepto'),
+        derecha: extractTextSafely(p, `pareado-der-${i}`, 'derecha', 'definicion'),
+        puntaje: typeof p?.puntaje === 'number' ? p.puntaje : 1
+      };
+    });
+  }
+
+  // Forma generada por el creador: array de { concepto, definicion }
+  if (Array.isArray(content)) {
+    return content.map((p, i) => {
+      logSuspiciousObject(p, `pareado-array-${i}`);
+      return {
+        izquierda: extractTextSafely(p, `pareado-concepto-${i}`, 'concepto', 'izquierda'),
+        derecha: extractTextSafely(p, `pareado-definicion-${i}`, 'definicion', 'derecha'),
+        puntaje: 1
+      };
+    });
+  }
+
+  return [];
+}
+
+function ultraSafeNormalizeDesarrollo(content: DesarrolloContentTeacher): { enunciado: string; puntajeMax?: number }[] {
+  console.log('🔍 Normalizando desarrollo:', content);
+  logSuspiciousObject(content, 'normalizeDesarrollo-input');
+  
+  if (!content) return [];
+
+  // Si viene como objeto { preguntas: [...] }
+  if (!Array.isArray(content) && Array.isArray(content.preguntas)) {
+    return content.preguntas.map((d, i) => {
+      logSuspiciousObject(d, `desarrollo-pregunta-${i}`);
+      return {
+        enunciado: extractTextSafely(d, `desarrollo-enunciado-${i}`, 'enunciado', 'pregunta', 'texto'),
+        puntajeMax: undefined
+      };
+    });
+  }
+
+  // Si viene como array [{ pregunta, rubrica }]
+  if (Array.isArray(content)) {
+    return content.map((d, i) => {
+      logSuspiciousObject(d, `desarrollo-array-${i}`);
+      // Específicamente ignoramos la rubrica si es un objeto complejo
+      if (d?.rubrica && typeof d.rubrica === 'object') {
+        console.warn(`🚨 Rubrica detectada como objeto en item ${i}, ignorando`, d.rubrica);
+      }
+      return {
+        enunciado: extractTextSafely(d, `desarrollo-array-enunciado-${i}`, 'enunciado', 'pregunta', 'texto'),
+        puntajeMax: undefined
+      };
+    });
+  }
+
+  return [];
+}
+
+// —— Player de Actividad ULTRA seguro —— //
 interface ActivityPlayerProps {
-    actividad: ActividadRemota;
-    onComplete: (submission: Omit<RespuestaEstudianteActividad, 'id' | 'actividadId' | 'estudianteId' | 'fechaCompletado'>, detailedFeedback: DetailedFeedback) => void;
-    currentUser: User;
+  actividad: ActividadRemota;
+  onComplete: (
+    submission: Omit<RespuestaEstudianteActividad,
+      'id' | 'actividadId' | 'estudianteId' | 'fechaCompletado' | 'retroalimentacionDetallada'>,
+    detailedFeedback: DetailedFeedback
+  ) => void;
+  currentUser: User;
 }
 
 const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, currentUser }) => {
-    const [userAnswers, setUserAnswers] = useState<Partial<Record<TipoActividadRemota, any>>>({});
-    const [isLoading, setIsLoading] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
-    const [saveSuccess, setSaveSuccess] = useState(false);
-    const progressKey = `progress-${currentUser.id}-${actividad.id}`;
+  const [userAnswers, setUserAnswers] = useState<Partial<Record<TipoActividadRemota, any>>>({});
+  const [isLoading, setIsLoading] = useState(false);
+  const progressKey = `progress-${currentUser.id}-${actividad.id}`;
 
-    useEffect(() => {
-        const savedProgress = localStorage.getItem(progressKey);
-        if (savedProgress) {
-            setUserAnswers(JSON.parse(savedProgress));
-        }
-    }, [progressKey]);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(progressKey);
+      if (saved) setUserAnswers(JSON.parse(saved));
+    } catch (error) {
+      console.error('Error loading saved progress:', error);
+    }
+  }, [progressKey]);
 
-    const handleAnswerChange = (tipo: TipoActividadRemota, answerData: any) => {
-        setUserAnswers(prev => {
-            const newAnswers = { ...prev, [tipo]: answerData };
-            // Guarda el progreso automáticamente al cambiar una respuesta
-            localStorage.setItem(progressKey, JSON.stringify(newAnswers));
-            return newAnswers;
+  const handleAnswerChange = (tipo: TipoActividadRemota, answerData: any) => {
+    const newAnswers = { ...userAnswers, [tipo]: answerData };
+    setUserAnswers(newAnswers);
+    try {
+      localStorage.setItem(progressKey, JSON.stringify(newAnswers));
+    } catch (error) {
+      console.error('Error saving progress:', error);
+    }
+  };
+
+  const handleSubmit = async () => {
+    setIsLoading(true);
+    let puntajeTotal = 0;
+    let puntajeMaximoTotal = 0;
+    const retroalimentacionDetallada: DetailedFeedback = { items: [] };
+
+    actividad.tipos.forEach((tipo) => {
+      const content = actividad.generatedContent[tipo as keyof typeof actividad.generatedContent];
+      const answers = userAnswers[tipo];
+
+      console.log(`🔍 Procesando tipo: ${tipo}`, content);
+      logSuspiciousObject(content, `handleSubmit-${tipo}`);
+
+      if (!content) return;
+
+      // QUIZ + COMPRENSIÓN
+      if (tipo === 'Quiz' || tipo === 'Comprensión de Lectura') {
+        const questions: QuizQuestion[] =
+          tipo === 'Quiz'
+            ? (Array.isArray(content) ? content.map((q, i) => {
+                logSuspiciousObject(q, `quiz-question-${i}`);
+                return {
+                  pregunta: extractTextSafely(q, `quiz-pregunta-${i}`, 'pregunta'),
+                  opciones: Array.isArray(q?.opciones) ? q.opciones.map((op, j) => ultraSafeStringify(op, `quiz-opcion-${i}-${j}`)) : [],
+                  respuestaCorrecta: ultraSafeStringify(q?.respuestaCorrecta, `quiz-respuesta-${i}`),
+                  puntaje: typeof q?.puntaje === 'number' ? q.puntaje : 1
+                };
+              }) : [])
+            : ultraSafeNormalizeLectura(content).preguntas;
+
+        questions.forEach((q, idx) => {
+          const userAnswer = answers?.[idx];
+          const isCorrect = userAnswer === q.respuestaCorrecta;
+          const p = q.puntaje ?? 1;
+          if (isCorrect) puntajeTotal += p;
+          puntajeMaximoTotal += p;
+
+          retroalimentacionDetallada.items.push({
+            pregunta: q.pregunta,
+            respuestaUsuario: ultraSafeStringify(userAnswer, `feedback-respuesta-${idx}`) || 'No respondida',
+            respuestaCorrecta: q.respuestaCorrecta,
+            esCorrecta: isCorrect,
+            puntajeObtenido: isCorrect ? p : 0,
+            tipo,
+          });
         });
+      }
+
+      // TÉRMINOS PAREADOS
+      if (tipo === 'Términos Pareados') {
+        const pares = ultraSafeNormalizePareados(content as PareadosContent);
+        const resp = (answers || {}) as Record<number, string>;
+
+        pares.forEach((par, idx) => {
+          const userMatch = resp[idx];
+          const isCorrect = userMatch === par.derecha;
+          const p = par.puntaje ?? 1;
+          if (isCorrect) puntajeTotal += p;
+          puntajeMaximoTotal += p;
+
+          retroalimentacionDetallada.items.push({
+            pregunta: `${par.izquierda} → ¿?`,
+            respuestaUsuario: ultraSafeStringify(userMatch, `pareado-feedback-${idx}`) || 'No respondida',
+            respuestaCorrecta: par.derecha,
+            esCorrecta: isCorrect,
+            puntajeObtenido: isCorrect ? p : 0,
+            tipo,
+          });
+        });
+      }
+
+      // DESARROLLO (no autocorregible)
+      if (tipo === 'Desarrollo') {
+        const items = ultraSafeNormalizeDesarrollo(content as DesarrolloContentTeacher);
+        const resp = (answers || {}) as Record<number, string>;
+
+        items.forEach((it, idx) => {
+          const userText = ultraSafeStringify(resp[idx], `desarrollo-feedback-${idx}`).trim();
+
+          retroalimentacionDetallada.items.push({
+            pregunta: it.enunciado,
+            respuestaUsuario: userText || 'No respondida',
+            respuestaCorrecta: 'Revisión docente',
+            // @ts-ignore: usamos null para marcar "pendiente"
+            esCorrecta: null,
+            puntajeObtenido: 0,
+            tipo,
+          });
+        });
+      }
+    });
+
+    const submissionData = {
+      puntaje: puntajeTotal,
+      puntajeMaximo: puntajeMaximoTotal,
+      respuestas: userAnswers,
+      nota: calcularNota60(puntajeTotal, puntajeMaximoTotal),
+      requiereRevisionDocente: actividad.tipos.includes('Desarrollo'),
     };
+
+    try {
+      localStorage.removeItem(progressKey);
+    } catch (error) {
+      console.error('Error removing progress:', error);
+    }
     
-    // ✅ FUNCIÓN CORREGIDA: Lógica para guardar progreso
-    const handleSaveProgress = () => {
-        setIsSaving(true);
-        localStorage.setItem(progressKey, JSON.stringify(userAnswers));
-        setTimeout(() => {
-            setIsSaving(false);
-            setSaveSuccess(true);
-            setTimeout(() => setSaveSuccess(false), 2000);
-        }, 1000);
-    };
+    onComplete(submissionData, retroalimentacionDetallada);
+  };
 
-    // ✅ FUNCIÓN CORREGIDA: Lógica para evaluar y enviar
-    const handleSubmit = async () => {
-        setIsLoading(true);
-
-        let puntajeTotal = 0;
-        let puntajeMaximoTotal = 0;
-        const retroalimentacionDetallada: DetailedFeedback = { items: [] };
-
-        actividad.tipos.forEach(tipo => {
-            const content = actividad.generatedContent[tipo];
-            const answers = userAnswers[tipo];
-
-            if (tipo === 'Quiz' || tipo === 'Comprensión de Lectura') {
-                const questions: QuizQuestion[] = tipo === 'Quiz'
-                    ? (content as QuizQuestion[])
-                    : (content as ComprensionLecturaContent).preguntas;
-
-                questions.forEach((q, qIndex) => {
-                    const userAnswer = answers?.[qIndex];
-                    const isCorrect = userAnswer === q.respuestaCorrecta;
-                    const puntajePregunta = isCorrect ? (q.puntaje || 1) : 0;
-
-                    puntajeTotal += puntajePregunta;
-                    puntajeMaximoTotal += (q.puntaje || 1);
-
-                    retroalimentacionDetallada.items.push({
-                        pregunta: q.pregunta,
-                        respuestaUsuario: userAnswer || 'No respondida',
-                        respuestaCorrecta: q.respuestaCorrecta,
-                        esCorrecta: isCorrect,
-                        puntajeObtenido: puntajePregunta,
-                        tipo: tipo,
-                    });
-                });
-            }
-            // Aquí puedes agregar la lógica para otros tipos de actividad como 'Términos Pareados'
-        });
-
-        const submissionData = {
-            puntaje: puntajeTotal,
-            puntajeMaximo: puntajeMaximoTotal,
-            respuestas: userAnswers,
-            nota: calculateGrade(puntajeTotal, puntajeMaximoTotal),
-        };
-
-        localStorage.removeItem(progressKey);
-        onComplete(submissionData, retroalimentacionDetallada);
-        // setIsLoading(false) se maneja en el componente padre después de guardar
-    };
-
-    return (
-        <div className="space-y-8 animate-fade-in">
-            <div className="p-4 bg-sky-50 border-l-4 border-sky-400 rounded-r-lg">
-                <h2 className="text-2xl font-bold text-sky-800 mb-2">{actividad.asignatura}</h2>
-                <p className="text-slate-700 whitespace-pre-wrap">{actividad.introduccion}</p>
-            </div>
-
-            {actividad.tipos.map(tipo => {
-                const content = actividad.generatedContent[tipo];
-                if (!content) return null;
-
-                switch (tipo) {
-                    case 'Quiz':
-                    case 'Comprensión de Lectura': {
-                        const isQuiz = tipo === 'Quiz';
-                        const questions: QuizQuestion[] = isQuiz
-                            ? (content as QuizQuestion[])
-                            : (content as ComprensionLecturaContent).preguntas;
-                        
-                        return (
-                            <div key={tipo} className="p-6 border rounded-lg bg-white shadow-sm">
-                                <h3 className="text-xl font-bold mb-4 text-slate-700">{tipo}</h3>
-                                {!isQuiz && (
-                                    <div className="mb-6 p-4 rounded bg-slate-50 border whitespace-pre-wrap text-slate-800 leading-relaxed">
-                                        {(content as ComprensionLecturaContent).texto}
-                                    </div>
-                                )}
-                                <div className="space-y-6">
-                                    {questions.map((q, qIndex) => (
-                                        <div key={qIndex} className="border-t pt-4 first:border-t-0 first:pt-0">
-                                            <p className="font-semibold text-slate-800">{`${qIndex + 1}. ${q.pregunta}`}</p>
-                                            <div className="mt-2 space-y-2">
-                                                {q.opciones.map((op, opIndex) => (
-                                                    <label key={opIndex} className="flex items-center gap-3 p-3 rounded-lg hover:bg-amber-50 cursor-pointer transition-colors has-[:checked]:bg-amber-100 has-[:checked]:font-semibold">
-                                                        <input
-                                                            type="radio"
-                                                            name={`q-${tipo}-${qIndex}`}
-                                                            value={op}
-                                                            checked={userAnswers[tipo]?.[qIndex] === op}
-                                                            onChange={() => handleAnswerChange(tipo, { ...(userAnswers[tipo] || {}), [qIndex]: op })}
-                                                            className="h-5 w-5 text-amber-500 focus:ring-amber-400 border-slate-300"
-                                                        />
-                                                        <span>{op}</span>
-                                                    </label>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        );
-                    }
-                    // Agrega aquí los 'case' para otros tipos de actividad si los implementas
-                    default:
-                        return null;
-                }
-            })}
-
-            <div className="text-right mt-8 flex justify-end gap-4">
-                <button
-                    onClick={handleSaveProgress}
-                    disabled={isLoading || isSaving || saveSuccess}
-                    className="bg-sky-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-sky-700 disabled:bg-slate-400 flex items-center justify-center min-w-[180px] transition-all"
-                >
-                    {isSaving ? <><SpinnerIcon /> Guardando...</> : saveSuccess ? '✓ Guardado' : 'Guardar Progreso'}
-                </button>
-                <button
-                    onClick={handleSubmit}
-                    disabled={isLoading || isSaving}
-                    className="bg-slate-800 text-white font-bold py-3 px-8 rounded-lg hover:bg-slate-700 disabled:bg-slate-400 flex items-center justify-center min-w-[180px]"
-                >
-                    {isLoading ? <><SpinnerIcon /> Evaluando...</> : 'Entregar Actividad'}
-                </button>
-            </div>
+  return (
+    <div className="space-y-8 animate-fade-in">
+      <div className="p-4 bg-sky-50 border-l-4 border-sky-400 rounded-r-lg">
+        <h2 className="text-2xl font-bold text-sky-800 mb-2">
+          <UltraSafeRenderer content={actividad.asignatura} context="actividad-asignatura" />
+        </h2>
+        <div className="text-slate-700 whitespace-pre-wrap">
+          <UltraSafeRenderer content={actividad.introduccion} context="actividad-introduccion" />
         </div>
-    );
+      </div>
+
+      {actividad.tipos.map((tipo) => {
+        const content = actividad.generatedContent[tipo as keyof typeof actividad.generatedContent];
+        console.log(`🔍 Renderizando tipo: ${tipo}`, content);
+        logSuspiciousObject(content, `render-${tipo}`);
+        
+        if (!content) return null;
+
+        switch (tipo) {
+          case 'Quiz': {
+            const questions: QuizQuestion[] = Array.isArray(content) ? content.map((q, i) => {
+              logSuspiciousObject(q, `render-quiz-question-${i}`);
+              return {
+                pregunta: extractTextSafely(q, `render-quiz-pregunta-${i}`, 'pregunta'),
+                opciones: Array.isArray(q?.opciones) ? q.opciones.map((op, j) => ultraSafeStringify(op, `render-quiz-opcion-${i}-${j}`)) : [],
+                respuestaCorrecta: ultraSafeStringify(q?.respuestaCorrecta, `render-quiz-respuesta-${i}`),
+                puntaje: typeof q?.puntaje === 'number' ? q.puntaje : 1
+              };
+            }) : [];
+            
+            return (
+              <div key={tipo} className="p-6 border rounded-lg bg-white shadow-sm">
+                <h3 className="text-xl font-bold mb-4 text-slate-700">Quiz</h3>
+                <div className="space-y-6">
+                  {questions.map((q, qIndex) => (
+                    <div key={qIndex} className="border-t pt-4 first:border-t-0 first:pt-0">
+                      <p className="font-semibold text-slate-800">
+                        {qIndex + 1}. <UltraSafeRenderer content={q.pregunta} context={`quiz-pregunta-${qIndex}`} />
+                      </p>
+                      <div className="mt-2 space-y-2">
+                        {q.opciones.map((op, opIndex) => (
+                          <label key={opIndex} className="flex items-center gap-3 p-3 rounded-lg hover:bg-amber-50 cursor-pointer transition-colors has-[:checked]:bg-amber-100 has-[:checked]:font-semibold">
+                            <input
+                              type="radio"
+                              name={`q-${tipo}-${qIndex}`}
+                              value={op}
+                              checked={userAnswers[tipo]?.[qIndex] === op}
+                              onChange={() =>
+                                handleAnswerChange(tipo, { ...(userAnswers[tipo] || {}), [qIndex]: op })
+                              }
+                              className="h-5 w-5 text-amber-500 focus:ring-amber-400 border-slate-300"
+                            />
+                            <span><UltraSafeRenderer content={op} context={`quiz-opcion-${qIndex}-${opIndex}`} /></span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+
+          case 'Comprensión de Lectura': {
+            const lectura = ultraSafeNormalizeLectura(content);
+            return (
+              <div key={tipo} className="p-6 border rounded-lg bg-white shadow-sm">
+                <h3 className="text-xl font-bold mb-4 text-slate-700">Comprensión de Lectura</h3>
+                <div className="mb-6 p-4 rounded bg-slate-50 border whitespace-pre-wrap">
+                  <UltraSafeRenderer content={lectura.texto} context="lectura-texto" />
+                </div>
+                <div className="space-y-6">
+                  {lectura.preguntas.map((q, qIndex) => (
+                    <div key={qIndex} className="border-t pt-4 first:border-t-0 first:pt-0">
+                      <p className="font-semibold text-slate-800">
+                        {qIndex + 1}. <UltraSafeRenderer content={q.pregunta} context={`lectura-pregunta-${qIndex}`} />
+                      </p>
+                      <div className="mt-2 space-y-2">
+                        {q.opciones.map((op, opIndex) => (
+                          <label key={opIndex} className="flex items-center gap-3 p-3 rounded-lg hover:bg-amber-50 cursor-pointer transition-colors has-[:checked]:bg-amber-100 has-[:checked]:font-semibold">
+                            <input
+                              type="radio"
+                              name={`q-${tipo}-${qIndex}`}
+                              value={op}
+                              checked={userAnswers[tipo]?.[qIndex] === op}
+                              onChange={() =>
+                                handleAnswerChange(tipo, { ...(userAnswers[tipo] || {}), [qIndex]: op })
+                              }
+                              className="h-5 w-5 text-amber-500 focus:ring-amber-400 border-slate-300"
+                            />
+                            <span><UltraSafeRenderer content={op} context={`lectura-opcion-${qIndex}-${opIndex}`} /></span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+
+          case 'Términos Pareados': {
+            const pares = ultraSafeNormalizePareados(content as PareadosContent);
+            const respuestas = (userAnswers[tipo] || {}) as Record<number, string>;
+            const derechaBarajada = [...new Set(pares.map(p => p.derecha))];
+            for (let i = derechaBarajada.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [derechaBarajada[i], derechaBarajada[j]] = [derechaBarajada[j], derechaBarajada[i]];
+            }
+
+            return (
+              <div key={tipo} className="p-6 border rounded-lg bg-white shadow-sm">
+                <h3 className="text-xl font-bold mb-4 text-slate-700">Términos Pareados</h3>
+                <div className="grid md:grid-cols-2 gap-6">
+                  {pares.map((p, i) => (
+                    <div key={`${p.izquierda}-${i}`} className="p-3 rounded border bg-slate-50">
+                      <p className="font-semibold text-slate-800 mb-2">
+                        {i + 1}. <UltraSafeRenderer content={p.izquierda} context={`pareado-izq-${i}`} />
+                      </p>
+                      <select
+                        className="w-full border rounded p-2 bg-white"
+                        value={respuestas[i] ?? ''}
+                        onChange={(e) =>
+                          handleAnswerChange(tipo, { ...respuestas, [i]: e.target.value })
+                        }
+                      >
+                        <option value="">— Selecciona la pareja —</option>
+                        {derechaBarajada.map((d, idx) => (
+                          <option key={idx} value={d}>
+                            {ultraSafeStringify(d, `pareado-opcion-${i}-${idx}`)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+
+          case 'Desarrollo': {
+            const items = ultraSafeNormalizeDesarrollo(content as DesarrolloContentTeacher);
+            const respuestas = (userAnswers[tipo] || {}) as Record<number, string>;
+
+            return (
+              <div key={tipo} className="p-6 border rounded-lg bg-white shadow-sm">
+                <h3 className="text-xl font-bold mb-4 text-slate-700">Preguntas de Desarrollo</h3>
+                <div className="space-y-6">
+                  {items.map((p, i) => (
+                    <div key={i} className="space-y-2">
+                      <p className="font-semibold text-slate-800">
+                        {i + 1}. <UltraSafeRenderer content={p.enunciado} context={`desarrollo-enunciado-${i}`} />
+                      </p>
+                      <textarea
+                        className="w-full min-h-[120px] border rounded p-3"
+                        placeholder="Escribe tu respuesta…"
+                        value={respuestas[i] ?? ''}
+                        onChange={(e) => handleAnswerChange(tipo, { ...respuestas, [i]: e.target.value })}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-sm text-slate-500">Este apartado será revisado y calificado por tu profesor/a.</p>
+              </div>
+            );
+          }
+
+          default:
+            return null;
+        }
+      })}
+
+      <div className="text-right mt-8 flex justify-end gap-4">
+        <button
+          onClick={handleSubmit}
+          disabled={isLoading}
+          className="bg-slate-800 text-white font-bold py-3 px-8 rounded-lg hover:bg-slate-700 disabled:bg-slate-400 flex items-center justify-center min-w-[180px]"
+        >
+          {isLoading ? <SpinnerIcon className="w-5 h-5 mr-2" /> : null}
+          {isLoading ? 'Evaluando...' : 'Entregar Actividad'}
+        </button>
+      </div>
+    </div>
+  );
 };
 
-
-// --- Componente Principal ---
-
+// —— Componente principal —— //
 interface AutoaprendizajeProps {
-    currentUser: User;
+  currentUser: User;
 }
 
 const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
-    const [loading, setLoading] = useState(true);
-    const [view, setView] = useState<'list' | 'activity' | 'result'>('list');
-    const [actividades, setActividades] = useState<ActividadRemota[]>([]);
-    const [selectedActividad, setSelectedActividad] = useState<ActividadRemota | null>(null);
-    const [lastResult, setLastResult] = useState<RespuestaEstudianteActividad | null>(null);
-    const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<'list' | 'activity' | 'result'>('list');
+  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
+  const [actividades, setActividades] = useState<ActividadRemota[]>([]);
+  const [respuestas, setRespuestas] = useState<RespuestaEstudianteActividad[]>([]);
+  const [selectedActividad, setSelectedActividad] = useState<ActividadRemota | null>(null);
+  const [lastResult, setLastResult] = useState<RespuestaEstudianteActividad | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        setLoading(true);
-        const unsub = subscribeToActividadesDisponibles(currentUser, (data) => {
-            setActividades(data);
-            setLoading(false);
-        });
-        return () => unsub();
-    }, [currentUser]);
+  useEffect(() => {
+    let actLoaded = false;
+    let respLoaded = false;
+    const stopLoading = () => { if (actLoaded && respLoaded) setLoading(false); };
 
-    const handleStartActivity = (actividad: ActividadRemota) => {
-        setSelectedActividad(actividad);
-        setView('activity');
+    const unsubActividades = subscribeToActividadesDisponibles(currentUser, (data) => {
+      console.log('🔍 Actividades cargadas:', data);
+      data.forEach((act, i) => logSuspiciousObject(act, `actividad-${i}`));
+      setActividades(data);
+      actLoaded = true;
+      stopLoading();
+    });
+
+    const unsubRespuestas = subscribeToRespuestasEstudiante(currentUser.id, (data) => {
+      console.log('🔍 Respuestas cargadas:', data);
+      data.forEach((resp, i) => logSuspiciousObject(resp, `respuesta-${i}`));
+      setRespuestas(data);
+      respLoaded = true;
+      stopLoading();
+    });
+
+    return () => { unsubActividades(); unsubRespuestas(); };
+  }, [currentUser]);
+
+  const handleStartActivity = (actividad: ActividadRemota) => {
+    console.log('🔍 Iniciando actividad:', actividad);
+    logSuspiciousObject(actividad, 'handleStartActivity');
+    setSelectedActividad(actividad);
+    setView('activity');
+  };
+
+  const handleViewResult = (respuesta: RespuestaEstudianteActividad) => {
+    console.log('🔍 Viendo resultado:', respuesta);
+    logSuspiciousObject(respuesta, 'handleViewResult');
+    const actividadOriginal = actividades.find(a => a.id === respuesta.actividadId);
+    if (actividadOriginal) {
+      setSelectedActividad(actividadOriginal);
+      setLastResult(respuesta);
+      setView('result');
+    } else {
+      setError("No se pudieron cargar los detalles de esta actividad completada.");
+    }
+  };
+
+  const generateFeedbackPrompt = (actividad: ActividadRemota, feedback: DetailedFeedback): string => {
+    const errores = feedback.items.filter(item => item.esCorrecta === false);
+    const desarrollo = feedback.items.filter(item => item.tipo === 'Desarrollo');
+
+    const erroresString = errores.map(e =>
+      `- Pregunta: "${ultraSafeStringify(e.pregunta, 'feedback-prompt-pregunta')}"\n  - Respuesta del estudiante: "${ultraSafeStringify(e.respuestaUsuario, 'feedback-prompt-respuesta')}"\n  - Respuesta correcta: "${ultraSafeStringify(e.respuestaCorrecta, 'feedback-prompt-correcta')}"`
+    ).join('\n');
+
+    const desarrolloString = desarrollo.map(d =>
+      `- Pregunta abierta: "${ultraSafeStringify(d.pregunta, 'feedback-prompt-desarrollo-pregunta')}"\n  - Respuesta del estudiante: """${ultraSafeStringify(d.respuestaUsuario, 'feedback-prompt-desarrollo-respuesta')}"""`
+    ).join('\n');
+
+    return `
+Eres tutor pedagógico. Actividad de "${ultraSafeStringify(actividad.asignatura, 'feedback-prompt-asignatura')}" sobre "${ultraSafeStringify(actividad.contenido, 'feedback-prompt-contenido')}".
+Devuelve SOLO un JSON con esta forma:
+
+{
+  "logros": "1 párrafo motivador, reconociendo aciertos",
+  "desafios": [
+    { "pregunta": "...", "explicacionDelError": "≤50 palabras, por qué la correcta es adecuada" }
+  ],
+  "comentariosDesarrollo": [
+    { "pregunta": "...", "retroalimentacionBreve": "≤60 palabras, concreta y constructiva. No asignes nota." }
+  ]
+}
+
+ERRORES (alternativa / lectura / pareados):
+${erroresString || "- Sin errores de alternativa."}
+
+RESPUESTAS DE DESARROLLO:
+${desarrolloString || "- Sin preguntas de desarrollo."}
+`.trim();
+  };
+
+  const handleCompleteActivity = useCallback(async (submission: any, detailedFeedback: DetailedFeedback) => {
+    if (!selectedActividad) return;
+
+    console.log('🔍 Completando actividad:', submission, detailedFeedback);
+    logSuspiciousObject(submission, 'handleCompleteActivity-submission');
+    logSuspiciousObject(detailedFeedback, 'handleCompleteActivity-feedback');
+
+    setView('result');
+    setIsGeneratingFeedback(true);
+
+    const baseResult: Omit<RespuestaEstudianteActividad, 'id' | 'retroalimentacionAI'> = {
+      actividadId: selectedActividad.id,
+      estudianteId: currentUser.id,
+      fechaCompletado: new Date().toISOString(),
+      ...submission,
+      retroalimentacionDetallada: detailedFeedback,
     };
+    setLastResult({ id: '', ...baseResult });
 
-    // ✅ FUNCIÓN CORREGIDA: Guarda en la base de datos y luego muestra los resultados
-    const handleCompleteActivity = useCallback(async (submission: any, detailedFeedback: DetailedFeedback) => {
-        if (!selectedActividad) return;
-        
-        const newResult: Omit<RespuestaEstudianteActividad, 'id'> = {
-            actividadId: selectedActividad.id,
-            estudianteId: currentUser.id,
-            fechaCompletado: new Date().toISOString(),
-            ...submission,
-            retroalimentacionDetallada: detailedFeedback,
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error("API Key no encontrada");
+
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+      const prompt = generateFeedbackPrompt(selectedActividad, detailedFeedback);
+
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+
+      let text = response.text().trim();
+      text = text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '');
+      const jsonMatch = text.match(/\{[\s\S]*\}$/);
+
+      let feedbackAI: FeedbackAI;
+      try {
+        feedbackAI = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+        console.log('🔍 Feedback AI generado:', feedbackAI);
+        logSuspiciousObject(feedbackAI, 'handleCompleteActivity-feedbackAI');
+      } catch {
+        feedbackAI = {
+          logros: "¡Buen trabajo! Recibimos tus respuestas y pronto tendrás retroalimentación detallada.",
+          desafios: [],
+          // @ts-ignore por compatibilidad si tu tipo no define esta clave
+          comentariosDesarrollo: []
         };
+      }
 
-        try {
-            await saveRespuestaActividad(newResult as Omit<RespuestaEstudianteActividad, 'id'>);
-            setLastResult({ id: '', ...newResult }); // Guardamos el resultado en el estado para mostrarlo
-            setView('result');
-        } catch (err) {
-            console.error("Error al guardar la respuesta:", err);
-            setError("Hubo un problema al guardar tu actividad. Por favor, inténtalo de nuevo.");
-            // Opcional: podrías querer volver a la vista de actividad o lista
-        }
-    }, [selectedActividad, currentUser.id]);
-
-    if (loading) {
-        return <div className="flex justify-center items-center h-64"><SpinnerIcon /> <span className="ml-2">Cargando actividades...</span></div>;
+      const finalResult = { ...baseResult, retroalimentacionAI: feedbackAI };
+      await saveRespuestaActividad(finalResult);
+      setLastResult({ id: '', ...finalResult });
+    } catch (err) {
+      console.error("Error al generar feedback con IA o guardar:", err);
+      await saveRespuestaActividad(baseResult);
+      setError("No se pudo generar el resumen de la IA, pero tus resultados fueron guardados.");
+    } finally {
+      setIsGeneratingFeedback(false);
     }
+  }, [selectedActividad, currentUser.id]);
 
-    if (view === 'activity' && selectedActividad) {
-        return (
-            <ActivityPlayer
-                actividad={selectedActividad}
-                onComplete={handleCompleteActivity}
-                currentUser={currentUser}
-            />
-        );
-    }
-    
-    // ✅ VISTA DE RESULTADOS CORREGIDA: Muestra la retroalimentación detallada
-    if (view === 'result' && lastResult) {
-        const nota = lastResult.nota;
-        return (
-            <div className="p-6 bg-white rounded-lg shadow-lg animate-fade-in">
-                <h1 className="text-3xl font-bold text-slate-800 mb-2">Resultados de la Actividad</h1>
-                <div className="flex items-baseline gap-4 mb-6 p-4 bg-slate-50 rounded-lg border">
-                    <p className="text-lg text-slate-600">
-                        Puntaje: <span className="font-bold text-2xl text-slate-800">{lastResult.puntaje} / {lastResult.puntajeMaximo}</span>
-                    </p>
-                    <p className="text-lg text-slate-600">
-                        Nota: <span className={`font-bold text-2xl ${parseFloat(nota) >= 4.0 ? 'text-green-600' : 'text-red-600'}`}>{nota}</span>
-                    </p>
-                </div>
-    
-                {lastResult.retroalimentacionDetallada && lastResult.retroalimentacionDetallada.items.length > 0 && (
-                    <div className="space-y-4">
-                        <h2 className="text-2xl font-semibold text-slate-700 mt-6 mb-4">Revisión de Respuestas</h2>
-                        {lastResult.retroalimentacionDetallada.items.map((item, index) => (
-                            <div key={index} className={`p-4 border-l-4 rounded-r-lg ${item.esCorrecta ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}>
-                                <div className="flex justify-between items-start">
-                                    <p className="font-semibold text-slate-800 flex-1 pr-4">{index + 1}. {item.pregunta}</p>
-                                    <span className="font-bold text-lg">{item.esCorrecta ? '✅' : '❌'}</span>
-                                </div>
-                                <div className="mt-2 text-sm pl-4">
-                                    <p className="text-slate-700">Tu respuesta: <span className="font-medium">{item.respuestaUsuario}</span></p>
-                                    {!item.esCorrecta && (
-                                         <p className="text-slate-700">Respuesta correcta: <span className="font-medium text-green-700">{item.respuestaCorrecta}</span></p>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-    
-                <button
-                    onClick={() => {
-                        setView('list');
-                        setSelectedActividad(null);
-                        setLastResult(null);
-                    }}
-                    className="mt-8 w-full bg-slate-800 text-white font-bold py-3 rounded-lg hover:bg-slate-700 transition-colors"
-                >
-                    Volver a la Lista de Actividades
-                </button>
-            </div>
-        );
-    }
+  const completedActivityIds = useMemo(() => new Set(respuestas.map(r => r.actividadId)), [respuestas]);
+  const actividadesPendientes = useMemo(
+    () => actividades.filter(act => !completedActivityIds.has(act.id)),
+    [actividades, completedActivityIds]
+  );
+  const actividadesCompletadas = useMemo(() =>
+    respuestas
+      .map(resp => {
+        const actividad = actividades.find(a => a.id === resp.actividadId);
+        return { 
+          ...resp, 
+          asignatura: actividad?.asignatura || 'Desconocida', 
+          tipos: actividad?.tipos || [] 
+        };
+      })
+      .sort((a, b) => new Date(b.fechaCompletado).getTime() - new Date(a.fechaCompletado).getTime())
+    , [respuestas, actividades]);
 
+  if (loading) {
     return (
-        <div className="bg-white p-6 md:p-8 rounded-xl shadow-md">
-            <h1 className="text-3xl font-bold text-slate-800 mb-2">Auto-aprendizaje</h1>
-            <p className="text-slate-500 mb-6">Completa las actividades asignadas por tus profesores.</p>
-            {error && <p className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</p>}
-            <div className="space-y-4">
-                {actividades.length > 0 ? (
-                    actividades.map(act => (
-                        <div key={act.id} className="p-4 border rounded-lg bg-slate-50 flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:bg-slate-100 transition-colors">
-                            <div>
-                                <p className="font-bold text-slate-800">{act.asignatura} - {act.tipos.join(', ')}</p>
-                                <p className="text-sm text-slate-500">Plazo: {act.plazoEntrega}</p>
-                            </div>
-                            <button 
-                                onClick={() => handleStartActivity(act)}
-                                className="bg-amber-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-amber-600 w-full sm:w-auto"
-                            >
-                                Comenzar
-                            </button>
-                        </div>
-                    ))
-                ) : (
-                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                        <div className="text-6xl mb-4">📚</div>
-                        <h3 className="text-xl font-semibold text-slate-700">¡Todo al día!</h3>
-                        <p className="text-slate-500 mt-1">No hay actividades nuevas disponibles en este momento.</p>
-                    </div>
-                )}
-            </div>
-        </div>
+      <div className="flex justify-center items-center h-64">
+        <SpinnerIcon className="w-8 h-8 text-slate-500" />
+        <span className="ml-3 text-slate-500">Cargando actividades...</span>
+      </div>
     );
+  }
+
+  if (view === 'activity' && selectedActividad) {
+    return <ActivityPlayer actividad={selectedActividad} onComplete={handleCompleteActivity} currentUser={currentUser} />;
+  }
+
+  if (view === 'result' && lastResult) {
+    console.log('🔍 Renderizando resultado:', lastResult);
+    logSuspiciousObject(lastResult, 'render-result');
+    
+    return (
+      <div className="p-6 bg-white rounded-lg shadow-lg animate-fade-in">
+        <h1 className="text-3xl font-bold text-slate-800 mb-2">Resultados de la Actividad</h1>
+        <div className="flex items-baseline gap-4 mb-6 p-4 bg-slate-50 rounded-lg border">
+          <p className="text-lg text-slate-600">
+            Puntaje: <span className="font-bold text-2xl text-slate-800">{lastResult.puntaje} / {lastResult.puntajeMaximo}</span>
+          </p>
+          <p className="text-lg text-slate-600">
+            Nota: <span className={`font-bold text-2xl ${parseFloat(lastResult.nota) >= 4.0 ? 'text-green-600' : 'text-red-600'}`}>
+              {lastResult.nota}
+            </span>
+          </p>
+        </div>
+
+        {isGeneratingFeedback && (
+          <div className="flex flex-col items-center justify-center p-6 bg-blue-50 border border-blue-200 rounded-lg text-center">
+            <SpinnerIcon className="w-8 h-8 text-blue-500" />
+            <p className="mt-3 font-semibold text-blue-700">Analizando tus respuestas para darte un resumen...</p>
+          </div>
+        )}
+
+        {lastResult.retroalimentacionAI && !isGeneratingFeedback && (
+          <div className="p-6 bg-blue-50 border border-blue-200 rounded-lg space-y-4">
+            <h2 className="text-2xl font-semibold text-blue-800">Resumen de tu Desempeño 💡</h2>
+            <div>
+              <h3 className="font-bold text-green-700">✅ Principales Logros</h3>
+              <p className="text-slate-700 mt-1">
+                <UltraSafeRenderer content={lastResult.retroalimentacionAI.logros} context="feedback-logros" />
+              </p>
+            </div>
+            {lastResult.retroalimentacionAI.desafios?.length > 0 && (
+              <div>
+                <h3 className="font-bold text-amber-700">🎯 Principales Desafíos</h3>
+                <div className="space-y-3 mt-2">
+                  {lastResult.retroalimentacionAI.desafios.map((d, i) => {
+                    logSuspiciousObject(d, `feedback-desafio-${i}`);
+                    return (
+                      <div key={i} className="p-3 bg-white border rounded-md">
+                        <p className="font-semibold text-slate-800">
+                          En la pregunta: "<UltraSafeRenderer content={d.pregunta} context={`feedback-desafio-pregunta-${i}`} />"
+                        </p>
+                        <p className="mt-2 text-sm text-slate-600 bg-slate-50 p-2 rounded">
+                          <UltraSafeRenderer content={d.explicacionDelError} context={`feedback-desafio-explicacion-${i}`} />
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {/* @ts-ignore compat si el tipo aún no define comentariosDesarrollo */}
+            {lastResult.retroalimentacionAI.comentariosDesarrollo?.length > 0 && (
+              <div>
+                <h3 className="font-bold text-sky-700">📝 Comentarios sobre tus respuestas de desarrollo</h3>
+                <div className="space-y-3 mt-2">
+                  {/* @ts-ignore */}
+                  {lastResult.retroalimentacionAI.comentariosDesarrollo.map((c: any, i: number) => {
+                    logSuspiciousObject(c, `feedback-desarrollo-${i}`);
+                    return (
+                      <div key={i} className="p-3 bg-white border rounded-md">
+                        <p className="font-semibold text-slate-800">
+                          "<UltraSafeRenderer content={c.pregunta} context={`feedback-desarrollo-pregunta-${i}`} />"
+                        </p>
+                        <p className="mt-2 text-sm text-slate-600 bg-slate-50 p-2 rounded">
+                          <UltraSafeRenderer content={c.retroalimentacionBreve} context={`feedback-desarrollo-retro-${i}`} />
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {lastResult.retroalimentacionDetallada && (
+          <div className="space-y-4 mt-6">
+            <h2 className="text-2xl font-semibold text-slate-700 mb-4">Revisión Detallada</h2>
+            {lastResult.retroalimentacionDetallada.items.map((item, index) => {
+              logSuspiciousObject(item, `feedback-item-${index}`);
+              const isPending = item.esCorrecta === null;
+              const cardClass = isPending
+                ? 'border-slate-400 bg-slate-50'
+                : item.esCorrecta
+                  ? 'border-green-500 bg-green-50'
+                  : 'border-red-500 bg-red-50';
+              const mark = isPending ? '🕓' : (item.esCorrecta ? '✅' : '❌');
+
+              return (
+                <div key={index} className={`p-4 border-l-4 rounded-r-lg ${cardClass}`}>
+                  <div className="flex justify-between items-start">
+                    <p className="font-semibold text-slate-800 flex-1 pr-4">
+                      {index + 1}. <UltraSafeRenderer content={item.pregunta} context={`feedback-item-pregunta-${index}`} />
+                    </p>
+                    <span className="font-bold text-lg">{mark}</span>
+                  </div>
+                  <div className="mt-2 text-sm pl-4">
+                    <p className="text-slate-700">
+                      Tu respuesta: <span className="font-medium">
+                        <UltraSafeRenderer content={item.respuestaUsuario} context={`feedback-item-respuesta-${index}`} />
+                      </span>
+                    </p>
+                    {!isPending && !item.esCorrecta && (
+                      <p className="text-slate-700">
+                        Respuesta correcta: <span className="font-medium text-green-700">
+                          <UltraSafeRenderer content={item.respuestaCorrecta} context={`feedback-item-correcta-${index}`} />
+                        </span>
+                      </p>
+                    )}
+                    {isPending && (
+                      <p className="text-slate-600 italic">Pendiente de revisión docente.</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <button
+          onClick={() => { setView('list'); setSelectedActividad(null); setLastResult(null); }}
+          className="mt-8 w-full bg-slate-800 text-white font-bold py-3 rounded-lg hover:bg-slate-700 transition-colors"
+        >
+          Volver a la Lista de Actividades
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white p-6 md:p-8 rounded-xl shadow-md space-y-10">
+      <div>
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">Actividades Pendientes</h2>
+        <p className="text-slate-500 mb-6">Completa las actividades asignadas por tus profesores.</p>
+        {error && <p className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</p>}
+        <div className="space-y-4">
+          {actividadesPendientes.length > 0 ? (
+            actividadesPendientes.map(act => {
+              logSuspiciousObject(act, `render-actividad-pendiente-${act.id}`);
+              return (
+                <div key={act.id} className="p-4 border rounded-lg bg-slate-50 flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:bg-slate-100 transition-colors">
+                  <div>
+                    <p className="font-bold text-slate-800">
+                      <UltraSafeRenderer content={act.asignatura} context={`actividad-asignatura-${act.id}`} /> - {act.tipos.join(', ')}
+                    </p>
+                    <p className="text-sm text-slate-500">
+                      Plazo: <UltraSafeRenderer content={typeof act.plazoEntrega === 'string' ? act.plazoEntrega : ''} context={`actividad-plazo-${act.id}`} />
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleStartActivity(act)}
+                    className="bg-amber-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-amber-600 w-full sm:w-auto"
+                  >
+                    Comenzar
+                  </button>
+                </div>
+              );
+            })
+          ) : (
+            <div className="text-center py-12 border-2 border-dashed rounded-lg">
+              <div className="text-6xl mb-4">🎉</div>
+              <h3 className="text-xl font-semibold text-slate-700">¡Todo al día!</h3>
+              <p className="text-slate-500 mt-1">No tienes actividades pendientes.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">Historial de Actividades</h2>
+        <p className="text-slate-500 mb-6">Revisa tus resultados y la retroalimentación de las actividades que ya completaste.</p>
+        <div className="space-y-4">
+          {respuestas.length > 0 ? (
+            actividadesCompletadas.map(resp => {
+              logSuspiciousObject(resp, `render-actividad-completada-${resp.id}`);
+              return (
+                <div key={resp.id} className="p-4 border rounded-lg bg-white flex flex-col sm:flex-row justify-between sm:items-center gap-4 shadow-sm">
+                  <div>
+                    <p className="font-bold text-slate-800">
+                      <UltraSafeRenderer content={resp.asignatura} context={`completada-asignatura-${resp.id}`} /> - {resp.tipos.join(', ')}
+                    </p>
+                    <p className="text-sm text-slate-500">
+                      Completado: {new Date(resp.fechaCompletado).toLocaleDateString('es-CL')}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <p className="text-sm font-semibold">
+                      Nota: <span className={`font-bold text-lg ${parseFloat(resp.nota) >= 4.0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {resp.nota}
+                      </span>
+                    </p>
+                    <button
+                      onClick={() => handleViewResult(resp)}
+                      className="bg-sky-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-sky-700 w-full sm:w-auto"
+                    >
+                      Ver Resultados
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="text-center py-12 border-2 border-dashed rounded-lg">
+              <div className="text-6xl mb-4">📚</div>
+              <h3 className="text-xl font-semibold text-slate-700">Aún no hay historial</h3>
+              <p className="text-slate-500 mt-1">Tus actividades completadas aparecerán aquí.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default Autoaprendizaje;

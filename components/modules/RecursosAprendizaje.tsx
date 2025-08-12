@@ -3,7 +3,7 @@ import MapasMentales from './recursos/MapasMentales';
 import SopaDeLetras from './recursos/SopaDeLetras';
 import LineasDeTiempo from './recursos/LineasDeTiempo';
 import Crucigramas from './recursos/Crucigramas';
-import { useAuth } from '@/src/hooks/useAuth'; // ✅ Añade 'src/' después del alias // ✅ Usa el alias '@/' para apuntar a 'src/' // ✅ 1. IMPORTA EL HOOK
+import { useAuth } from '@/hooks/useAuth'; // ✅ Añade 'src/' después del alias // ✅ Usa el alias '@/' para apuntar a 'src/' // ✅ 1. IMPORTA EL HOOK
 
 interface Recurso {
     id: 'sopaDeLetras' | 'mapasMentales' | 'crucigramas' | 'lineasDeTiempo';
