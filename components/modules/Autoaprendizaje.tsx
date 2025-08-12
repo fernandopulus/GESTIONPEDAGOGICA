@@ -14,6 +14,7 @@ import {
   subscribeToActividadesDisponibles,
   subscribeToRespuestasEstudiante,
   saveRespuestaActividad,
+  debugRespuestasEstudiante,
 } from '../../src/firebaseHelpers/autoaprendizajeHelper';
 import { calcularNota60 } from '../../src/utils/grades';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -37,7 +38,116 @@ const SpinnerIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
   </svg>
 );
 
-// —— Debugging y funciones auxiliares ULTRA seguras —— //
+// —— FUNCIONES DE MANEJO DE ERRORES MEJORADAS —— //
+
+/**
+ * Función mejorada para generar feedback con reintentos automáticos
+ */
+const generateAIFeedbackWithRetry = async (
+  actividad: ActividadRemota, 
+  feedback: DetailedFeedback, 
+  maxRetries = 3
+): Promise<FeedbackAI | null> => {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn('⚠️ API Key de Gemini no encontrada');
+    return null;
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`🤖 Intento ${attempt} de generar feedback con IA`);
+      
+      const prompt = generateFeedbackPrompt(actividad, feedback);
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+
+      let text = response.text().trim();
+      text = text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '');
+      const jsonMatch = text.match(/\{[\s\S]*\}$/);
+
+      try {
+        const feedbackAI = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+        console.log(`✅ Feedback generado exitosamente en intento ${attempt}`);
+        return feedbackAI;
+      } catch (parseError) {
+        console.warn(`⚠️ Error al parsear JSON en intento ${attempt}:`, parseError);
+        throw new Error('JSON parsing failed');
+      }
+      
+    } catch (error: any) {
+      console.log(`❌ Error en intento ${attempt}:`, error.message);
+      
+      // Si es error 503 (sobrecarga) y no es el último intento
+      if (error.message?.includes('503') && attempt < maxRetries) {
+        const delay = Math.pow(2, attempt) * 1000; // Backoff exponencial
+        console.log(`⏱️ Esperando ${delay}ms antes del siguiente intento...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      // Si es el último intento o un error diferente
+      if (attempt === maxRetries) {
+        console.log(`🚫 Todos los intentos fallaron. Procediendo sin IA.`);
+        return null;
+      }
+    }
+  }
+  
+  return null;
+};
+
+/**
+ * Función mejorada para guardar respuesta con manejo robusto de errores
+ */
+const saveRespuestaActivityWithFeedback = async (
+  baseData: Omit<RespuestaEstudianteActividad, 'id' | 'retroalimentacionAI'>,
+  actividad: ActividadRemota,
+  detailedFeedback: DetailedFeedback
+): Promise<RespuestaEstudianteActividad> => {
+  console.log('💾 Iniciando guardado de respuesta...');
+  
+  try {
+    // Paso 1: Guardar la respuesta base (prioridad máxima)
+    const docId = await saveRespuestaActividad(baseData);
+    console.log('✅ Respuesta base guardada con ID:', docId);
+
+    const resultWithId = { id: docId, ...baseData };
+
+    // Paso 2: Intentar generar feedback con IA (opcional, no bloquea el guardado)
+    try {
+      const feedbackIA = await generateAIFeedbackWithRetry(actividad, detailedFeedback);
+      
+      if (feedbackIA) {
+        // Actualizar el documento con el feedback de IA
+        const { updateDoc, doc } = await import('firebase/firestore');
+        const { db } = await import('../../src/firebase');
+        
+        await updateDoc(doc(db, 'respuestas_actividades', docId), { 
+          retroalimentacionAI: feedbackIA 
+        });
+        
+        console.log('🤖 Feedback de IA agregado exitosamente');
+        return { ...resultWithId, retroalimentacionAI: feedbackIA };
+      }
+      
+      return resultWithId;
+      
+    } catch (iaError) {
+      console.warn('⚠️ No se pudo generar feedback de IA, pero la respuesta fue guardada:', iaError);
+      return resultWithId;
+    }
+
+  } catch (error) {
+    console.error('❌ Error crítico al guardar respuesta:', error);
+    throw error;
+  }
+};
+
+// —— Funciones auxiliares de normalización (mantenidas igual) —— //
 const logSuspiciousObject = (obj: any, context: string) => {
   if (typeof obj === 'object' && obj !== null && !Array.isArray(obj)) {
     const keys = Object.keys(obj);
@@ -58,11 +168,9 @@ const ultraSafeStringify = (value: any, context?: string): string => {
   
   if (typeof value === 'object') {
     if (Array.isArray(value)) {
-      // Si es array, intentamos extraer strings
       return value.map(item => ultraSafeStringify(item, `${context}-array-item`)).join(', ');
     }
     
-    // Si es un objeto, intentamos extraer propiedades de texto conocidas
     const textFields = [
       'texto', 'contenido', 'descripcion', 'valor', 'name', 'title', 'label',
       'pregunta', 'enunciado', 'respuesta', 'opcion', 'concepto', 'definicion'
@@ -74,13 +182,11 @@ const ultraSafeStringify = (value: any, context?: string): string => {
       }
     }
     
-    // Si tiene keys sospechosas, devolvemos descripción genérica
     const keys = Object.keys(value);
     if (keys.some(key => ['comprension', 'analisis', 'argumentacion', 'creatividad', 'claridad', 'precision'].includes(key))) {
       return '[Criterios de evaluación]';
     }
     
-    // Último recurso: convertir a JSON de forma segura
     try {
       const json = JSON.stringify(value);
       if (json.length > 100) return '[Objeto complejo]';
@@ -98,7 +204,6 @@ const extractTextSafely = (item: any, context: string, ...fields: string[]): str
   
   if (!item) return '';
   
-  // Primero intentamos con los campos especificados
   for (const field of fields) {
     if (item[field]) {
       const result = ultraSafeStringify(item[field], `${context}-${field}`);
@@ -108,7 +213,6 @@ const extractTextSafely = (item: any, context: string, ...fields: string[]): str
     }
   }
   
-  // Luego con campos comunes
   const commonFields = ['texto', 'pregunta', 'enunciado', 'contenido', 'descripcion', 'value', 'label'];
   for (const field of commonFields) {
     if (item[field]) {
@@ -119,14 +223,10 @@ const extractTextSafely = (item: any, context: string, ...fields: string[]): str
     }
   }
   
-  // Si es un string directamente
   if (typeof item === 'string') return item;
-  
-  // Si nada funciona, devolvemos algo seguro
   return '[Sin contenido disponible]';
 };
 
-// —— Componente ULTRA seguro para renderizar cualquier cosa —— //
 const UltraSafeRenderer = ({ content, context = 'unknown' }: { content: any; context?: string }) => {
   try {
     const safeText = ultraSafeStringify(content, `UltraSafeRenderer-${context}`);
@@ -137,7 +237,7 @@ const UltraSafeRenderer = ({ content, context = 'unknown' }: { content: any; con
   }
 };
 
-// —— Normalizadores ULTRA seguros —— //
+// Funciones de normalización (mantenidas igual)
 function ultraSafeNormalizeLectura(content: any): { texto: string; preguntas: QuizQuestion[] } {
   console.log('🔍 Normalizando lectura:', content);
   logSuspiciousObject(content, 'normalizeLectura-input');
@@ -159,7 +259,6 @@ function ultraSafeNormalizeLectura(content: any): { texto: string; preguntas: Qu
     };
   };
 
-  // Caso estándar: objeto con {texto, preguntas}
   if (!Array.isArray(content) && Array.isArray((content as ComprensionLecturaContent).preguntas)) {
     const c = content as ComprensionLecturaContent;
     return {
@@ -168,7 +267,6 @@ function ultraSafeNormalizeLectura(content: any): { texto: string; preguntas: Qu
     };
   }
 
-  // A veces la IA devuelve un array de bloques de lectura
   if (Array.isArray(content)) {
     const texto = content
       .map((b: any, i) => extractTextSafely(b, `lectura-bloque-${i}`, 'texto'))
@@ -192,7 +290,6 @@ function ultraSafeNormalizePareados(content: PareadosContent): { izquierda: stri
   
   if (!content) return [];
 
-  // Forma usada en el player antiguo
   if (!Array.isArray(content) && Array.isArray(content.pares)) {
     return content.pares.map((p, i) => {
       logSuspiciousObject(p, `pareado-${i}`);
@@ -204,7 +301,6 @@ function ultraSafeNormalizePareados(content: PareadosContent): { izquierda: stri
     });
   }
 
-  // Forma generada por el creador: array de { concepto, definicion }
   if (Array.isArray(content)) {
     return content.map((p, i) => {
       logSuspiciousObject(p, `pareado-array-${i}`);
@@ -225,7 +321,6 @@ function ultraSafeNormalizeDesarrollo(content: DesarrolloContentTeacher): { enun
   
   if (!content) return [];
 
-  // Si viene como objeto { preguntas: [...] }
   if (!Array.isArray(content) && Array.isArray(content.preguntas)) {
     return content.preguntas.map((d, i) => {
       logSuspiciousObject(d, `desarrollo-pregunta-${i}`);
@@ -236,11 +331,9 @@ function ultraSafeNormalizeDesarrollo(content: DesarrolloContentTeacher): { enun
     });
   }
 
-  // Si viene como array [{ pregunta, rubrica }]
   if (Array.isArray(content)) {
     return content.map((d, i) => {
       logSuspiciousObject(d, `desarrollo-array-${i}`);
-      // Específicamente ignoramos la rubrica si es un objeto complejo
       if (d?.rubrica && typeof d.rubrica === 'object') {
         console.warn(`🚨 Rubrica detectada como objeto en item ${i}, ignorando`, d.rubrica);
       }
@@ -254,7 +347,41 @@ function ultraSafeNormalizeDesarrollo(content: DesarrolloContentTeacher): { enun
   return [];
 }
 
-// —— Player de Actividad ULTRA seguro —— //
+const generateFeedbackPrompt = (actividad: ActividadRemota, feedback: DetailedFeedback): string => {
+  const errores = feedback.items.filter(item => item.esCorrecta === false);
+  const desarrollo = feedback.items.filter(item => item.tipo === 'Desarrollo');
+
+  const erroresString = errores.map(e =>
+    `- Pregunta: "${ultraSafeStringify(e.pregunta, 'feedback-prompt-pregunta')}"\n  - Respuesta del estudiante: "${ultraSafeStringify(e.respuestaUsuario, 'feedback-prompt-respuesta')}"\n  - Respuesta correcta: "${ultraSafeStringify(e.respuestaCorrecta, 'feedback-prompt-correcta')}"`
+  ).join('\n');
+
+  const desarrolloString = desarrollo.map(d =>
+    `- Pregunta abierta: "${ultraSafeStringify(d.pregunta, 'feedback-prompt-desarrollo-pregunta')}"\n  - Respuesta del estudiante: """${ultraSafeStringify(d.respuestaUsuario, 'feedback-prompt-desarrollo-respuesta')}"""`
+  ).join('\n');
+
+  return `
+Eres tutor pedagógico. Actividad de "${ultraSafeStringify(actividad.asignatura, 'feedback-prompt-asignatura')}" sobre "${ultraSafeStringify(actividad.contenido, 'feedback-prompt-contenido')}".
+Devuelve SOLO un JSON con esta forma:
+
+{
+  "logros": "1 párrafo motivador, reconociendo aciertos",
+  "desafios": [
+    { "pregunta": "...", "explicacionDelError": "≤50 palabras, por qué la correcta es adecuada" }
+  ],
+  "comentariosDesarrollo": [
+    { "pregunta": "...", "retroalimentacionBreve": "≤60 palabras, concreta y constructiva. No asignes nota." }
+  ]
+}
+
+ERRORES (alternativa / lectura / pareados):
+${erroresString || "- Sin errores de alternativa."}
+
+RESPUESTAS DE DESARROLLO:
+${desarrolloString || "- Sin preguntas de desarrollo."}
+`.trim();
+};
+
+// —— Player de Actividad (mantenido igual) —— //
 interface ActivityPlayerProps {
   actividad: ActividadRemota;
   onComplete: (
@@ -268,25 +395,10 @@ interface ActivityPlayerProps {
 const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, currentUser }) => {
   const [userAnswers, setUserAnswers] = useState<Partial<Record<TipoActividadRemota, any>>>({});
   const [isLoading, setIsLoading] = useState(false);
-  const progressKey = `progress-${currentUser.id}-${actividad.id}`;
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(progressKey);
-      if (saved) setUserAnswers(JSON.parse(saved));
-    } catch (error) {
-      console.error('Error loading saved progress:', error);
-    }
-  }, [progressKey]);
 
   const handleAnswerChange = (tipo: TipoActividadRemota, answerData: any) => {
     const newAnswers = { ...userAnswers, [tipo]: answerData };
     setUserAnswers(newAnswers);
-    try {
-      localStorage.setItem(progressKey, JSON.stringify(newAnswers));
-    } catch (error) {
-      console.error('Error saving progress:', error);
-    }
   };
 
   const handleSubmit = async () => {
@@ -388,12 +500,6 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
       nota: calcularNota60(puntajeTotal, puntajeMaximoTotal),
       requiereRevisionDocente: actividad.tipos.includes('Desarrollo'),
     };
-
-    try {
-      localStorage.removeItem(progressKey);
-    } catch (error) {
-      console.error('Error removing progress:', error);
-    }
     
     onComplete(submissionData, retroalimentacionDetallada);
   };
@@ -584,7 +690,7 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
   );
 };
 
-// —— Componente principal —— //
+// —— Componente principal MEJORADO —— //
 interface AutoaprendizajeProps {
   currentUser: User;
 }
@@ -598,168 +704,246 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
   const [selectedActividad, setSelectedActividad] = useState<ActividadRemota | null>(null);
   const [lastResult, setLastResult] = useState<RespuestaEstudianteActividad | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
 
+  // MEJORADO: Estado de conexión más robusto
   useEffect(() => {
+    console.log('🚀 Iniciando carga de datos para usuario:', currentUser.nombreCompleto);
+    
     let actLoaded = false;
     let respLoaded = false;
-    const stopLoading = () => { if (actLoaded && respLoaded) setLoading(false); };
+    let actError = false;
+    let respError = false;
+    
+    const checkCompletion = () => { 
+      if ((actLoaded || actError) && (respLoaded || respError)) {
+        if (actError && respError) {
+          setConnectionStatus('error');
+          setError('Error al cargar datos. Verifica tu conexión e intenta nuevamente.');
+        } else {
+          setConnectionStatus('connected');
+        }
+        setLoading(false);
+        console.log('✅ Carga completada - Actividades:', actLoaded, 'Respuestas:', respLoaded);
+      }
+    };
 
-    const unsubActividades = subscribeToActividadesDisponibles(currentUser, (data) => {
-      console.log('🔍 Actividades cargadas:', data);
-      data.forEach((act, i) => logSuspiciousObject(act, `actividad-${i}`));
-      setActividades(data);
-      actLoaded = true;
-      stopLoading();
-    });
+    // SUSCRIPCIÓN A ACTIVIDADES con manejo de errores
+    const unsubActividades = subscribeToActividadesDisponibles(
+      currentUser, 
+      (data) => {
+        console.log('📋 Actividades recibidas:', data.length);
+        data.forEach((act, i) => {
+          console.log(`  ${i + 1}. ${act.asignatura} (ID: ${act.id})`);
+          logSuspiciousObject(act, `actividad-${i}`);
+        });
+        setActividades(data);
+        actLoaded = true;
+        checkCompletion();
+      },
+      (error) => {
+        console.error('❌ Error en suscripción de actividades:', error);
+        actError = true;
+        checkCompletion();
+      }
+    );
 
-    const unsubRespuestas = subscribeToRespuestasEstudiante(currentUser.id, (data) => {
-      console.log('🔍 Respuestas cargadas:', data);
-      data.forEach((resp, i) => logSuspiciousObject(resp, `respuesta-${i}`));
-      setRespuestas(data);
-      respLoaded = true;
-      stopLoading();
-    });
+    // SUSCRIPCIÓN A RESPUESTAS con manejo de errores robusto
+    const unsubRespuestas = subscribeToRespuestasEstudiante(
+      currentUser.id, 
+      (data) => {
+        console.log('📝 Respuestas del estudiante recibidas:', data.length);
+        data.forEach((resp, i) => {
+          console.log(`  ${i + 1}. Actividad ${resp.actividadId} - Nota: ${resp.nota} - Fecha: ${resp.fechaCompletado}`);
+          if (resp.revisionDocente?.completada) {
+            console.log(`    ✅ Con revisión docente completada`);
+          }
+          logSuspiciousObject(resp, `respuesta-${i}`);
+        });
+        
+        setRespuestas(data);
+        respLoaded = true;
+        checkCompletion();
+      },
+      (error) => {
+        console.error('❌ Error en suscripción de respuestas:', error);
+        
+        // Si es el error del índice, intentar consulta alternativa
+        if (error.message?.includes('requires an index')) {
+          console.log('⚠️ Detectado error de índice, intentando consulta alternativa...');
+          setError('Se detectó un problema de configuración. Las actividades completadas pueden no mostrarse correctamente hasta que se resuelva.');
+        }
+        
+        respError = true;
+        checkCompletion();
+      }
+    );
 
-    return () => { unsubActividades(); unsubRespuestas(); };
+    return () => { 
+      console.log('🧹 Limpiando subscripciones');
+      unsubActividades?.(); 
+      unsubRespuestas?.(); 
+    };
   }, [currentUser]);
 
+  // MEJORADO: Monitoreo de cambios con menos verbosidad
+  useEffect(() => {
+    if (!loading) {
+      console.log('🔄 ESTADO ACTUALIZADO:', {
+        actividades: actividades.length,
+        respuestas: respuestas.length,
+        vista: view,
+        conexion: connectionStatus
+      });
+    }
+  }, [actividades.length, respuestas.length, view, connectionStatus, loading]);
+
   const handleStartActivity = (actividad: ActividadRemota) => {
-    console.log('🔍 Iniciando actividad:', actividad);
-    logSuspiciousObject(actividad, 'handleStartActivity');
+    console.log('🔍 Iniciando actividad:', actividad.asignatura);
     setSelectedActividad(actividad);
     setView('activity');
+    setError(null);
   };
 
   const handleViewResult = (respuesta: RespuestaEstudianteActividad) => {
-    console.log('🔍 Viendo resultado:', respuesta);
-    logSuspiciousObject(respuesta, 'handleViewResult');
+    console.log('🔍 Viendo resultado:', respuesta.actividadId);
     const actividadOriginal = actividades.find(a => a.id === respuesta.actividadId);
     if (actividadOriginal) {
       setSelectedActividad(actividadOriginal);
       setLastResult(respuesta);
       setView('result');
+      setError(null);
     } else {
       setError("No se pudieron cargar los detalles de esta actividad completada.");
     }
   };
 
-  const generateFeedbackPrompt = (actividad: ActividadRemota, feedback: DetailedFeedback): string => {
-    const errores = feedback.items.filter(item => item.esCorrecta === false);
-    const desarrollo = feedback.items.filter(item => item.tipo === 'Desarrollo');
-
-    const erroresString = errores.map(e =>
-      `- Pregunta: "${ultraSafeStringify(e.pregunta, 'feedback-prompt-pregunta')}"\n  - Respuesta del estudiante: "${ultraSafeStringify(e.respuestaUsuario, 'feedback-prompt-respuesta')}"\n  - Respuesta correcta: "${ultraSafeStringify(e.respuestaCorrecta, 'feedback-prompt-correcta')}"`
-    ).join('\n');
-
-    const desarrolloString = desarrollo.map(d =>
-      `- Pregunta abierta: "${ultraSafeStringify(d.pregunta, 'feedback-prompt-desarrollo-pregunta')}"\n  - Respuesta del estudiante: """${ultraSafeStringify(d.respuestaUsuario, 'feedback-prompt-desarrollo-respuesta')}"""`
-    ).join('\n');
-
-    return `
-Eres tutor pedagógico. Actividad de "${ultraSafeStringify(actividad.asignatura, 'feedback-prompt-asignatura')}" sobre "${ultraSafeStringify(actividad.contenido, 'feedback-prompt-contenido')}".
-Devuelve SOLO un JSON con esta forma:
-
-{
-  "logros": "1 párrafo motivador, reconociendo aciertos",
-  "desafios": [
-    { "pregunta": "...", "explicacionDelError": "≤50 palabras, por qué la correcta es adecuada" }
-  ],
-  "comentariosDesarrollo": [
-    { "pregunta": "...", "retroalimentacionBreve": "≤60 palabras, concreta y constructiva. No asignes nota." }
-  ]
-}
-
-ERRORES (alternativa / lectura / pareados):
-${erroresString || "- Sin errores de alternativa."}
-
-RESPUESTAS DE DESARROLLO:
-${desarrolloString || "- Sin preguntas de desarrollo."}
-`.trim();
-  };
-
+  // MEJORADO: handleCompleteActivity con manejo robusto de errores
   const handleCompleteActivity = useCallback(async (submission: any, detailedFeedback: DetailedFeedback) => {
     if (!selectedActividad) return;
 
-    console.log('🔍 Completando actividad:', submission, detailedFeedback);
-    logSuspiciousObject(submission, 'handleCompleteActivity-submission');
-    logSuspiciousObject(detailedFeedback, 'handleCompleteActivity-feedback');
+    console.log('🚀 COMPLETANDO ACTIVIDAD:', {
+      actividadId: selectedActividad.id,
+      estudianteId: currentUser.id,
+      puntaje: submission.puntaje,
+      nota: submission.nota
+    });
 
     setView('result');
     setIsGeneratingFeedback(true);
+    setError(null);
 
-    const baseResult: Omit<RespuestaEstudianteActividad, 'id' | 'retroalimentacionAI'> = {
+    const baseResult: Omit<RespuestaEstudianteActividad, 'id'> = {
       actividadId: selectedActividad.id,
       estudianteId: currentUser.id,
       fechaCompletado: new Date().toISOString(),
       ...submission,
       retroalimentacionDetallada: detailedFeedback,
     };
-    setLastResult({ id: '', ...baseResult });
-
+    
+    console.log('💾 Guardando respuesta...');
+    
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API Key no encontrada");
-
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-      const prompt = generateFeedbackPrompt(selectedActividad, detailedFeedback);
-
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-
-      let text = response.text().trim();
-      text = text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '');
-      const jsonMatch = text.match(/\{[\s\S]*\}$/);
-
-      let feedbackAI: FeedbackAI;
-      try {
-        feedbackAI = JSON.parse(jsonMatch ? jsonMatch[0] : text);
-        console.log('🔍 Feedback AI generado:', feedbackAI);
-        logSuspiciousObject(feedbackAI, 'handleCompleteActivity-feedbackAI');
-      } catch {
-        feedbackAI = {
-          logros: "¡Buen trabajo! Recibimos tus respuestas y pronto tendrás retroalimentación detallada.",
+      const finalResult = await saveRespuestaActivityWithFeedback(
+        baseResult,
+        selectedActividad,
+        detailedFeedback
+      );
+      
+      console.log('✅ Respuesta completada con ID:', finalResult.id);
+      setLastResult(finalResult);
+      
+      // Pequeño delay para permitir que las suscripciones se actualicen
+      setTimeout(() => {
+        console.log('🔄 Datos sincronizados');
+      }, 1500);
+      
+    } catch (err: any) {
+      console.error("❌ Error crítico al completar actividad:", err);
+      setError(
+        "Ocurrió un error al guardar tu actividad. Por favor, intenta nuevamente. " +
+        "Si el problema persiste, contacta a tu profesor."
+      );
+      
+      // Intentar crear resultado mínimo para mostrar al usuario
+      setLastResult({
+        id: 'error-temp',
+        ...baseResult,
+        retroalimentacionAI: {
+          logros: "Tu actividad fue completada pero hubo un problema técnico al generar el resumen.",
           desafios: [],
-          // @ts-ignore por compatibilidad si tu tipo no define esta clave
           comentariosDesarrollo: []
-        };
-      }
-
-      const finalResult = { ...baseResult, retroalimentacionAI: feedbackAI };
-      await saveRespuestaActividad(finalResult);
-      setLastResult({ id: '', ...finalResult });
-    } catch (err) {
-      console.error("Error al generar feedback con IA o guardar:", err);
-      await saveRespuestaActividad(baseResult);
-      setError("No se pudo generar el resumen de la IA, pero tus resultados fueron guardados.");
+        }
+      });
+      
     } finally {
       setIsGeneratingFeedback(false);
     }
   }, [selectedActividad, currentUser.id]);
 
-  const completedActivityIds = useMemo(() => new Set(respuestas.map(r => r.actividadId)), [respuestas]);
-  const actividadesPendientes = useMemo(
-    () => actividades.filter(act => !completedActivityIds.has(act.id)),
-    [actividades, completedActivityIds]
-  );
-  const actividadesCompletadas = useMemo(() =>
-    respuestas
+  // OPTIMIZADO: Cálculos con mejor manejo de errores
+  const completedActivityIds = useMemo(() => {
+    if (respuestas.length === 0) return new Set<string>();
+    
+    const ids = new Set(respuestas.map(r => r.actividadId));
+    console.log('🎯 IDs completados calculados:', ids.size);
+    return ids;
+  }, [respuestas]);
+
+  const actividadesPendientes = useMemo(() => {
+    if (actividades.length === 0) return [];
+    
+    const pendientes = actividades.filter(act => !completedActivityIds.has(act.id));
+    console.log('⏳ Actividades pendientes:', pendientes.length);
+    return pendientes;
+  }, [actividades, completedActivityIds]);
+
+  const actividadesCompletadas = useMemo(() => {
+    if (respuestas.length === 0) return [];
+    
+    const completadas = respuestas
       .map(resp => {
         const actividad = actividades.find(a => a.id === resp.actividadId);
         return { 
           ...resp, 
-          asignatura: actividad?.asignatura || 'Desconocida', 
+          asignatura: actividad?.asignatura || 'Actividad no disponible', 
           tipos: actividad?.tipos || [] 
         };
       })
-      .sort((a, b) => new Date(b.fechaCompletado).getTime() - new Date(a.fechaCompletado).getTime())
-    , [respuestas, actividades]);
+      .sort((a, b) => new Date(b.fechaCompletado).getTime() - new Date(a.fechaCompletado).getTime());
+    
+    console.log('📖 Historial preparado:', completadas.length);
+    return completadas;
+  }, [respuestas, actividades]);
 
+  // ESTADOS DE CARGA Y ERROR
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="flex flex-col justify-center items-center h-64 space-y-4">
         <SpinnerIcon className="w-8 h-8 text-slate-500" />
-        <span className="ml-3 text-slate-500">Cargando actividades...</span>
+        <div className="text-center">
+          <p className="text-slate-500">Cargando actividades...</p>
+          <p className="text-sm text-slate-400 mt-1">
+            Estado: {connectionStatus === 'connecting' ? 'Conectando...' : 
+                     connectionStatus === 'connected' ? 'Conectado' : 'Error de conexión'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (connectionStatus === 'error' && actividades.length === 0 && respuestas.length === 0) {
+    return (
+      <div className="text-center py-12 border-2 border-red-200 rounded-lg bg-red-50">
+        <div className="text-6xl mb-4">⚠️</div>
+        <h3 className="text-xl font-semibold text-red-700 mb-2">Error de Conexión</h3>
+        <p className="text-red-600 mb-4">No se pudieron cargar las actividades.</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700"
+        >
+          Reintentar
+        </button>
       </div>
     );
   }
@@ -770,7 +954,6 @@ ${desarrolloString || "- Sin preguntas de desarrollo."}
 
   if (view === 'result' && lastResult) {
     console.log('🔍 Renderizando resultado:', lastResult);
-    logSuspiciousObject(lastResult, 'render-result');
     
     return (
       <div className="p-6 bg-white rounded-lg shadow-lg animate-fade-in">
@@ -786,15 +969,22 @@ ${desarrolloString || "- Sin preguntas de desarrollo."}
           </p>
         </div>
 
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-red-700 font-medium">⚠️ {error}</p>
+          </div>
+        )}
+
         {isGeneratingFeedback && (
-          <div className="flex flex-col items-center justify-center p-6 bg-blue-50 border border-blue-200 rounded-lg text-center">
+          <div className="flex flex-col items-center justify-center p-6 bg-blue-50 border border-blue-200 rounded-lg text-center mb-6">
             <SpinnerIcon className="w-8 h-8 text-blue-500" />
-            <p className="mt-3 font-semibold text-blue-700">Analizando tus respuestas para darte un resumen...</p>
+            <p className="mt-3 font-semibold text-blue-700">Generando resumen personalizado...</p>
+            <p className="mt-1 text-sm text-blue-600">Esto puede tomar unos segundos</p>
           </div>
         )}
 
         {lastResult.retroalimentacionAI && !isGeneratingFeedback && (
-          <div className="p-6 bg-blue-50 border border-blue-200 rounded-lg space-y-4">
+          <div className="p-6 bg-blue-50 border border-blue-200 rounded-lg space-y-4 mb-6">
             <h2 className="text-2xl font-semibold text-blue-800">Resumen de tu Desempeño 💡</h2>
             <div>
               <h3 className="font-bold text-green-700">✅ Principales Logros</h3>
@@ -804,43 +994,35 @@ ${desarrolloString || "- Sin preguntas de desarrollo."}
             </div>
             {lastResult.retroalimentacionAI.desafios?.length > 0 && (
               <div>
-                <h3 className="font-bold text-amber-700">🎯 Principales Desafíos</h3>
+                <h3 className="font-bold text-amber-700">🎯 Áreas de Mejora</h3>
                 <div className="space-y-3 mt-2">
-                  {lastResult.retroalimentacionAI.desafios.map((d, i) => {
-                    logSuspiciousObject(d, `feedback-desafio-${i}`);
-                    return (
-                      <div key={i} className="p-3 bg-white border rounded-md">
-                        <p className="font-semibold text-slate-800">
-                          En la pregunta: "<UltraSafeRenderer content={d.pregunta} context={`feedback-desafio-pregunta-${i}`} />"
-                        </p>
-                        <p className="mt-2 text-sm text-slate-600 bg-slate-50 p-2 rounded">
-                          <UltraSafeRenderer content={d.explicacionDelError} context={`feedback-desafio-explicacion-${i}`} />
-                        </p>
-                      </div>
-                    );
-                  })}
+                  {lastResult.retroalimentacionAI.desafios.map((d, i) => (
+                    <div key={i} className="p-3 bg-white border rounded-md">
+                      <p className="font-semibold text-slate-800">
+                        <UltraSafeRenderer content={d.pregunta} context={`feedback-desafio-pregunta-${i}`} />
+                      </p>
+                      <p className="mt-2 text-sm text-slate-600 bg-slate-50 p-2 rounded">
+                        <UltraSafeRenderer content={d.explicacionDelError} context={`feedback-desafio-explicacion-${i}`} />
+                      </p>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
-            {/* @ts-ignore compat si el tipo aún no define comentariosDesarrollo */}
-            {lastResult.retroalimentacionAI.comentariosDesarrollo?.length > 0 && (
+            {(lastResult.retroalimentacionAI as any)?.comentariosDesarrollo?.length > 0 && (
               <div>
-                <h3 className="font-bold text-sky-700">📝 Comentarios sobre tus respuestas de desarrollo</h3>
+                <h3 className="font-bold text-sky-700">📝 Retroalimentación de Desarrollo</h3>
                 <div className="space-y-3 mt-2">
-                  {/* @ts-ignore */}
-                  {lastResult.retroalimentacionAI.comentariosDesarrollo.map((c: any, i: number) => {
-                    logSuspiciousObject(c, `feedback-desarrollo-${i}`);
-                    return (
-                      <div key={i} className="p-3 bg-white border rounded-md">
-                        <p className="font-semibold text-slate-800">
-                          "<UltraSafeRenderer content={c.pregunta} context={`feedback-desarrollo-pregunta-${i}`} />"
-                        </p>
-                        <p className="mt-2 text-sm text-slate-600 bg-slate-50 p-2 rounded">
-                          <UltraSafeRenderer content={c.retroalimentacionBreve} context={`feedback-desarrollo-retro-${i}`} />
-                        </p>
-                      </div>
-                    );
-                  })}
+                  {(lastResult.retroalimentacionAI as any).comentariosDesarrollo.map((c: any, i: number) => (
+                    <div key={i} className="p-3 bg-white border rounded-md">
+                      <p className="font-semibold text-slate-800">
+                        <UltraSafeRenderer content={c.pregunta} context={`feedback-desarrollo-pregunta-${i}`} />
+                      </p>
+                      <p className="mt-2 text-sm text-slate-600 bg-slate-50 p-2 rounded">
+                        <UltraSafeRenderer content={c.retroalimentacionBreve} context={`feedback-desarrollo-retro-${i}`} />
+                      </p>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -848,10 +1030,9 @@ ${desarrolloString || "- Sin preguntas de desarrollo."}
         )}
 
         {lastResult.retroalimentacionDetallada && (
-          <div className="space-y-4 mt-6">
-            <h2 className="text-2xl font-semibold text-slate-700 mb-4">Revisión Detallada</h2>
+          <div className="space-y-4 mb-6">
+            <h2 className="text-2xl font-semibold text-slate-700">Revisión Detallada</h2>
             {lastResult.retroalimentacionDetallada.items.map((item, index) => {
-              logSuspiciousObject(item, `feedback-item-${index}`);
               const isPending = item.esCorrecta === null;
               const cardClass = isPending
                 ? 'border-slate-400 bg-slate-50'
@@ -891,45 +1072,67 @@ ${desarrolloString || "- Sin preguntas de desarrollo."}
           </div>
         )}
 
-        <button
-          onClick={() => { setView('list'); setSelectedActividad(null); setLastResult(null); }}
-          className="mt-8 w-full bg-slate-800 text-white font-bold py-3 rounded-lg hover:bg-slate-700 transition-colors"
-        >
-          Volver a la Lista de Actividades
-        </button>
+        <div className="flex gap-4">
+          <button
+            onClick={() => { 
+              setView('list'); 
+              setSelectedActividad(null); 
+              setLastResult(null); 
+              setError(null); 
+            }}
+            className="flex-1 bg-slate-800 text-white font-bold py-3 rounded-lg hover:bg-slate-700 transition-colors"
+          >
+            Volver a Actividades
+          </button>
+          {selectedActividad && (
+            <button
+              onClick={() => {
+                setView('activity');
+                setLastResult(null);
+                setError(null);
+              }}
+              className="flex-1 bg-amber-600 text-white font-bold py-3 rounded-lg hover:bg-amber-700 transition-colors"
+            >
+              Repetir Actividad
+            </button>
+          )}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="bg-white p-6 md:p-8 rounded-xl shadow-md space-y-10">
+      {error && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-amber-800">⚠️ {error}</p>
+        </div>
+      )}
+
       <div>
         <h2 className="text-2xl font-bold text-slate-800 mb-2">Actividades Pendientes</h2>
         <p className="text-slate-500 mb-6">Completa las actividades asignadas por tus profesores.</p>
-        {error && <p className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</p>}
+        
         <div className="space-y-4">
           {actividadesPendientes.length > 0 ? (
-            actividadesPendientes.map(act => {
-              logSuspiciousObject(act, `render-actividad-pendiente-${act.id}`);
-              return (
-                <div key={act.id} className="p-4 border rounded-lg bg-slate-50 flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:bg-slate-100 transition-colors">
-                  <div>
-                    <p className="font-bold text-slate-800">
-                      <UltraSafeRenderer content={act.asignatura} context={`actividad-asignatura-${act.id}`} /> - {act.tipos.join(', ')}
-                    </p>
-                    <p className="text-sm text-slate-500">
-                      Plazo: <UltraSafeRenderer content={typeof act.plazoEntrega === 'string' ? act.plazoEntrega : ''} context={`actividad-plazo-${act.id}`} />
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleStartActivity(act)}
-                    className="bg-amber-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-amber-600 w-full sm:w-auto"
-                  >
-                    Comenzar
-                  </button>
+            actividadesPendientes.map(act => (
+              <div key={act.id} className="p-4 border rounded-lg bg-slate-50 flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:bg-slate-100 transition-colors">
+                <div>
+                  <p className="font-bold text-slate-800">
+                    <UltraSafeRenderer content={act.asignatura} context={`actividad-asignatura-${act.id}`} /> - {act.tipos.join(', ')}
+                  </p>
+                  <p className="text-sm text-slate-500">
+                    Plazo: <UltraSafeRenderer content={typeof act.plazoEntrega === 'string' ? act.plazoEntrega : ''} context={`actividad-plazo-${act.id}`} />
+                  </p>
                 </div>
-              );
-            })
+                <button
+                  onClick={() => handleStartActivity(act)}
+                  className="bg-amber-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-amber-600 w-full sm:w-auto transition-colors"
+                >
+                  Comenzar
+                </button>
+              </div>
+            ))
           ) : (
             <div className="text-center py-12 border-2 border-dashed rounded-lg">
               <div className="text-6xl mb-4">🎉</div>
@@ -942,37 +1145,34 @@ ${desarrolloString || "- Sin preguntas de desarrollo."}
 
       <div>
         <h2 className="text-2xl font-bold text-slate-800 mb-2">Historial de Actividades</h2>
-        <p className="text-slate-500 mb-6">Revisa tus resultados y la retroalimentación de las actividades que ya completaste.</p>
+        <p className="text-slate-500 mb-6">Revisa tus resultados y la retroalimentación de las actividades completadas.</p>
         <div className="space-y-4">
-          {respuestas.length > 0 ? (
-            actividadesCompletadas.map(resp => {
-              logSuspiciousObject(resp, `render-actividad-completada-${resp.id}`);
-              return (
-                <div key={resp.id} className="p-4 border rounded-lg bg-white flex flex-col sm:flex-row justify-between sm:items-center gap-4 shadow-sm">
-                  <div>
-                    <p className="font-bold text-slate-800">
-                      <UltraSafeRenderer content={resp.asignatura} context={`completada-asignatura-${resp.id}`} /> - {resp.tipos.join(', ')}
-                    </p>
-                    <p className="text-sm text-slate-500">
-                      Completado: {new Date(resp.fechaCompletado).toLocaleDateString('es-CL')}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <p className="text-sm font-semibold">
-                      Nota: <span className={`font-bold text-lg ${parseFloat(resp.nota) >= 4.0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {resp.nota}
-                      </span>
-                    </p>
-                    <button
-                      onClick={() => handleViewResult(resp)}
-                      className="bg-sky-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-sky-700 w-full sm:w-auto"
-                    >
-                      Ver Resultados
-                    </button>
-                  </div>
+          {actividadesCompletadas.length > 0 ? (
+            actividadesCompletadas.map(resp => (
+              <div key={resp.id} className="p-4 border rounded-lg bg-white flex flex-col sm:flex-row justify-between sm:items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
+                <div>
+                  <p className="font-bold text-slate-800">
+                    <UltraSafeRenderer content={resp.asignatura} context={`completada-asignatura-${resp.id}`} /> - {resp.tipos.join(', ')}
+                  </p>
+                  <p className="text-sm text-slate-500">
+                    Completado: {new Date(resp.fechaCompletado).toLocaleDateString('es-CL')}
+                  </p>
                 </div>
-              );
-            })
+                <div className="flex items-center gap-4">
+                  <p className="text-sm font-semibold">
+                    Nota: <span className={`font-bold text-lg ${parseFloat(resp.nota) >= 4.0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {resp.nota}
+                    </span>
+                  </p>
+                  <button
+                    onClick={() => handleViewResult(resp)}
+                    className="bg-sky-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-sky-700 w-full sm:w-auto transition-colors"
+                  >
+                    Ver Resultados
+                  </button>
+                </div>
+              </div>
+            ))
           ) : (
             <div className="text-center py-12 border-2 border-dashed rounded-lg">
               <div className="text-6xl mb-4">📚</div>
