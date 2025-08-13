@@ -1,8 +1,8 @@
+// components/modules/ActividadesRemotas.tsx
 import React, {
   useState,
   useEffect,
   useMemo,
-  useCallback,
   FormEvent,
   ChangeEvent,
 } from 'react';
@@ -19,9 +19,7 @@ import {
 } from '../../types';
 import {
   ASIGNATURAS,
-  NIVELES,
   TIPOS_ACTIVIDAD_REMOTA,
-  CURSOS,
 } from '../../constants';
 
 import {
@@ -36,6 +34,19 @@ import {
 } from '../../src/firebaseHelpers/actividadesRemotasHelper';
 
 import { GoogleGenerativeAI as GoogleGenAI } from '@google/generative-ai';
+
+// Íconos Lucide
+import {
+  FolderOpen,
+  FileText,
+  CheckCircle2,
+  Clock,
+  Search,
+  User as UserIcon,
+  ArrowLeft,
+  PlusCircle,
+  BarChart2,
+} from 'lucide-react';
 
 /* ============================================================
    Helpers de UI
@@ -173,6 +184,8 @@ const HABILIDADES_SIMCE = [
 /* ============================================================
    Componente principal
 ============================================================ */
+type TabKey = 'carpetas' | 'actividades' | 'pruebas';
+
 const ActividadesRemotas: React.FC = () => {
   // Datos
   const [actividades, setActividades] = useState<ActividadRemota[]>([]);
@@ -194,7 +207,10 @@ const ActividadesRemotas: React.FC = () => {
   const [previewData, setPreviewData] = useState<ActividadRemota | null>(null);
   const [previewPrueba, setPreviewPrueba] = useState<PruebaEstandarizada | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [activeTab, setActiveTab] = useState<'actividades' | 'pruebas'>('actividades');
+  const [activeTab, setActiveTab] = useState<TabKey>('carpetas');
+
+  // NUEVO: carpeta/historial por estudiante
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
   // Revisión docente (Desarrollo)
   const [revisionTarget, setRevisionTarget] = useState<RespuestaEstudianteActividad | null>(null);
@@ -207,7 +223,8 @@ const ActividadesRemotas: React.FC = () => {
     'id' | 'fechaCreacion' | 'generatedContent' | 'introduccion'
   > = {
     asignatura: ASIGNATURAS[0],
-    nivel: NIVELES[0],
+    // nivel y cursosDestino se mantienen en el modelo pero NO se piden por UI
+    nivel: '—', 
     contenido: '',
     plazoEntrega: new Date().toISOString().split('T')[0],
     tipos: [],
@@ -224,7 +241,7 @@ const ActividadesRemotas: React.FC = () => {
     'id' | 'fechaCreacion' | 'preguntas' | 'titulo' | 'instrucciones' | 'textos'
   > = {
     asignatura: ASIGNATURAS[0],
-    nivel: NIVELES[0],
+    nivel: '—',
     contenido: '',
     objetivosAprendizaje: '',
     plazoEntrega: new Date().toISOString().split('T')[0],
@@ -286,14 +303,6 @@ const ActividadesRemotas: React.FC = () => {
       cantidadPreguntas: { ...prev.cantidadPreguntas, [tipo]: cantidad },
     }));
   };
-  const handleCursoDestinoChange = (curso: string, isPrueba = false) => {
-    const updater = isPrueba ? setPruebaFormData : setFormData;
-    updater((prev: any) => {
-      const current = prev.cursosDestino || [];
-      const newCursos = current.includes(curso) ? current.filter((c: string) => c !== curso) : [...current, curso];
-      return { ...prev, cursosDestino: newCursos };
-    });
-  };
   const handleEstudianteDestinoChange = (nombre: string, isPrueba = false) => {
     const updater = isPrueba ? setPruebaFormData : setFormData;
     updater((prev: any) => {
@@ -322,7 +331,7 @@ Genera los siguientes elementos:
           prompt += `- "Quiz": Array de ${cantidad} objetos { pregunta, opciones[4], respuestaCorrecta, puntaje(1) }\n`;
           break;
         case 'Comprensión de Lectura':
-          prompt += `- "Comprensión de Lectura": Objeto { texto(150-200 palabras), preguntas: Array de ${cantidad} { pregunta, opciones[4], respuestaCorrecta, puntaje } }\n`;
+          prompt += `- "Comprensión de Lectura": Objeto { texto(150-200 palabras), preguntas: Array de ${cantidad} { pregunta, opciones[4], respuestaCorrecta, puntaje } }\n`; // prettier-ignore
           break;
         case 'Términos Pareados':
           prompt += `- "Términos Pareados": Array de ${cantidad} { concepto, definicion }\n`;
@@ -382,14 +391,9 @@ Reglas:
 
   /* ---------------------- Adaptación de contenido IA ULTRA SEGURA ---------------------- */
   function ultraSafeAutoAdaptContent(tipo: TipoActividadRemota, content: any) {
-    console.log(`🔍 Adaptando contenido para ${tipo}:`, content);
-    logSuspiciousObject(content, `autoAdaptContent-${tipo}`);
-    
     if (tipo === 'Desarrollo') {
       if (Array.isArray(content)) {
         return content.map((item, index) => {
-          logSuspiciousObject(item, `desarrollo-item-${index}`);
-          
           if (typeof item === 'string') {
             const match = item.match(/^(.*?)(?:R[úu]brica:|RUBRICA:|Rubrica:)(.*)$/is);
             if (match) {
@@ -405,7 +409,6 @@ Reglas:
           }
           
           if (item && typeof item === 'object') {
-            // CRÍTICO: Aquí puede estar el problema - la rúbrica puede ser un objeto complejo
             const preguntaText = extractTextSafely(item, `desarrollo-obj-pregunta-${index}`, 'pregunta', 'Pregunta', 'texto');
             let rubricaText = '';
             
@@ -431,8 +434,6 @@ Reglas:
     if (tipo === 'Términos Pareados') {
       if (Array.isArray(content)) {
         return content.map((it, idx) => {
-          logSuspiciousObject(it, `pareados-item-${idx}`);
-          
           if (typeof it === 'string') {
             const m = it.match(/^(.+?)[\s:-–]+(.+)$/);
             if (m) {
@@ -467,61 +468,41 @@ Reglas:
     }
     
     if (tipo === 'Comprensión de Lectura') {
-      logSuspiciousObject(content, 'comprension-lectura-input');
-      
       if (content && typeof content === 'object' && !Array.isArray(content) && Array.isArray(content.preguntas)) {
         return {
           texto: extractTextSafely(content, 'comprension-texto', 'texto'),
-          preguntas: content.preguntas.map((q: any, i: number) => {
-            logSuspiciousObject(q, `comprension-pregunta-${i}`);
-            return {
-              pregunta: extractTextSafely(q, `comprension-pregunta-${i}`, 'pregunta'),
-              opciones: Array.isArray(q.opciones) ? q.opciones.map((op: any, j: number) => 
-                ultraSafeStringify(op, `comprension-opcion-${i}-${j}`)
-              ) : [],
-              respuestaCorrecta: ultraSafeStringify(q.respuestaCorrecta, `comprension-respuesta-${i}`),
-              puntaje: typeof q.puntaje === 'number' ? q.puntaje : 1,
-            };
-          }),
+          preguntas: content.preguntas.map((q: any, i: number) => ({
+            pregunta: extractTextSafely(q, `comprension-pregunta-${i}`, 'pregunta'),
+            opciones: Array.isArray(q.opciones) ? q.opciones.map((op: any) => ultraSafeStringify(op, `comprension-opcion-${i}`)) : [],
+            respuestaCorrecta: ultraSafeStringify(q.respuestaCorrecta, `comprension-respuesta-${i}`),
+            puntaje: typeof q.puntaje === 'number' ? q.puntaje : 1,
+          })),
         };
       }
       
       if (Array.isArray(content)) {
         const combinedText = content.map((c, i) => extractTextSafely(c, `comprension-bloque-${i}`, 'texto')).join('\n\n---\n\n');
-        const combinedQuestions = content.flatMap((c, i) => {
-          logSuspiciousObject(c, `comprension-bloque-preguntas-${i}`);
-          return Array.isArray(c.preguntas) ? c.preguntas : [];
-        });
+        const combinedQuestions = content.flatMap((c) => (Array.isArray(c.preguntas) ? c.preguntas : []));
         
         return {
           texto: combinedText,
-          preguntas: combinedQuestions.map((q: any, i: number) => {
-            logSuspiciousObject(q, `comprension-combined-pregunta-${i}`);
-            return {
-              pregunta: extractTextSafely(q, `comprension-combined-pregunta-${i}`, 'pregunta'),
-              opciones: Array.isArray(q.opciones) ? q.opciones.map((op: any, j: number) => 
-                ultraSafeStringify(op, `comprension-combined-opcion-${i}-${j}`)
-              ) : [],
-              respuestaCorrecta: ultraSafeStringify(q.respuestaCorrecta, `comprension-combined-respuesta-${i}`),
-              puntaje: typeof q.puntaje === 'number' ? q.puntaje : 1,
-            };
-          }),
+          preguntas: combinedQuestions.map((q: any, i: number) => ({
+            pregunta: extractTextSafely(q, `comprension-combined-pregunta-${i}`, 'pregunta'),
+            opciones: Array.isArray(q.opciones) ? q.opciones.map((op: any) => ultraSafeStringify(op, `comprension-combined-opcion-${i}`)) : [],
+            respuestaCorrecta: ultraSafeStringify(q.respuestaCorrecta, `comprension-combined-respuesta-${i}`),
+            puntaje: typeof q.puntaje === 'number' ? q.puntaje : 1,
+          })),
         };
       }
     }
     
     if (tipo === 'Quiz' && Array.isArray(content)) {
-      return content.map((q, i) => {
-        logSuspiciousObject(q, `quiz-item-${i}`);
-        return { 
-          pregunta: extractTextSafely(q, `quiz-pregunta-${i}`, 'pregunta'),
-          opciones: Array.isArray(q.opciones) ? q.opciones.map((op: any, j: number) => 
-            ultraSafeStringify(op, `quiz-opcion-${i}-${j}`)
-          ) : [],
-          respuestaCorrecta: ultraSafeStringify(q.respuestaCorrecta, `quiz-respuesta-${i}`),
-          puntaje: typeof q.puntaje === 'number' ? q.puntaje : 1 
-        };
-      });
+      return content.map((q, i) => ({
+        pregunta: extractTextSafely(q, `quiz-pregunta-${i}`, 'pregunta'),
+        opciones: Array.isArray(q.opciones) ? q.opciones.map((op: any) => ultraSafeStringify(op, `quiz-opcion-${i}`)) : [],
+        respuestaCorrecta: ultraSafeStringify(q.respuestaCorrecta, `quiz-respuesta-${i}`),
+        puntaje: typeof q.puntaje === 'number' ? q.puntaje : 1,
+      }));
     }
     
     return content;
@@ -559,19 +540,11 @@ Reglas:
       if (!jsonMatch) throw new Error('La IA no devolvió JSON válido.');
       
       const generatedData = JSON.parse(jsonMatch[0]);
-      console.log('🔍 Datos generados por IA:', generatedData);
-      logSuspiciousObject(generatedData, 'generated-data');
 
       const adaptedContent: Record<string, any> = {};
       for (const tipo of formData.tipos) {
         const rawContent = generatedData.actividades?.[tipo];
-        console.log(`🔍 Contenido crudo para ${tipo}:`, rawContent);
-        logSuspiciousObject(rawContent, `raw-content-${tipo}`);
-        
         adaptedContent[tipo] = ultraSafeAutoAdaptContent(tipo, rawContent);
-        
-        console.log(`🔍 Contenido adaptado para ${tipo}:`, adaptedContent[tipo]);
-        logSuspiciousObject(adaptedContent[tipo], `adapted-content-${tipo}`);
       }
 
       const newActividad: ActividadRemota = {
@@ -582,9 +555,6 @@ Reglas:
         introduccion: ultraSafeStringify(generatedData.introduccion, 'introduccion') || 'Actividad generada para reforzar el aprendizaje.',
         generatedContent: adaptedContent,
       };
-
-      console.log('🔍 Actividad final:', newActividad);
-      logSuspiciousObject(newActividad, 'new-actividad');
 
       setPreviewData(newActividad);
     } catch (e: any) {
@@ -715,16 +685,9 @@ Reglas:
     if (!actividad || !allUsers.length) return [];
     const mapa = new Map<string, User>();
     if (!actividad.cursosDestino?.length && !actividad.estudiantesDestino?.length) {
-      const nivelNum = actividad.nivel.charAt(0);
-      allUsers
-        .filter((u) => u.profile === Profile.ESTUDIANTE && u.curso?.startsWith(nivelNum))
-        .forEach((u) => mapa.set(u.id, u));
+      // En este módulo sólo trabajamos por estudiante; si no hay destino explícito no mostramos nada
+      return [];
     } else {
-      if (actividad.cursosDestino?.length) {
-        allUsers
-          .filter((u) => u.profile === Profile.ESTUDIANTE && actividad.cursosDestino.includes(u.curso || ''))
-          .forEach((u) => mapa.set(u.id, u));
-      }
       if (actividad.estudiantesDestino?.length) {
         allUsers
           .filter((u) => u.profile === Profile.ESTUDIANTE && actividad.estudiantesDestino.includes(u.nombreCompleto))
@@ -748,30 +711,205 @@ Reglas:
     return students.filter((s) => s.nombreCompleto.toLowerCase().includes(studentSearch.toLowerCase()));
   }, [students, studentSearch]);
 
+  // NUEVO: conjunto de estudiantes que pertenecen a este programa (tienen actividades/pruebas/entregas)
+  const programStudents = useMemo(() => {
+    const set = new Set<string>(); // ids
+    // por nombre en destinos
+    actividades.forEach(a => {
+      (a.estudiantesDestino || []).forEach(nombre => {
+        const u = allUsers.find(x => x.profile === Profile.ESTUDIANTE && x.nombreCompleto === nombre);
+        if (u) set.add(u.id);
+      });
+    });
+    pruebasEstandarizadas.forEach(p => {
+      (p.estudiantesDestino || []).forEach(nombre => {
+        const u = allUsers.find(x => x.profile === Profile.ESTUDIANTE && x.nombreCompleto === nombre);
+        if (u) set.add(u.id);
+      });
+    });
+    // por respuestas
+    respuestas.forEach(r => set.add(r.estudianteId));
+    return allUsers.filter(u => u.profile === Profile.ESTUDIANTE && set.has(u.id))
+      .sort((a,b)=>a.nombreCompleto.localeCompare(b.nombreCompleto));
+  }, [actividades, pruebasEstandarizadas, respuestas, allUsers]);
+
+  const selectedStudent = useMemo(
+    () => allUsers.find(u => u.id === selectedStudentId) || null,
+    [allUsers, selectedStudentId]
+  );
+
+  const studentHistory = useMemo(() => {
+    if (!selectedStudent) return { asignadas: [], respuestas: [] as RespuestaEstudianteActividad[] };
+    const asignadas = [
+      ...actividades
+        .filter(a => (a.estudiantesDestino || []).includes(selectedStudent.nombreCompleto))
+        .map(a => ({ tipo: 'Actividad', item: a })),
+      ...pruebasEstandarizadas
+        .filter(p => (p.estudiantesDestino || []).includes(selectedStudent.nombreCompleto))
+        .map(p => ({ tipo: 'Prueba', item: p })),
+    ] as Array<{ tipo: 'Actividad'|'Prueba'; item: any }>;
+    const resp = respuestas.filter(r => r.estudianteId === selectedStudent.id);
+    return { asignadas, respuestas: resp };
+  }, [selectedStudent, actividades, pruebasEstandarizadas, respuestas]);
+
   /* ============================================================
      Render
   ============================================================ */
   const renderTabs = () => (
-    <div className="flex space-x-1 mb-6">
-      <button
-        onClick={() => setActiveTab('actividades')}
-        className={`px-4 py-2 rounded-lg font-semibold ${
-          activeTab === 'actividades' ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
-        }`}
-      >
-        Actividades Remotas
-      </button>
-      <button
-        onClick={() => setActiveTab('pruebas')}
-        className={`px-4 py-2 rounded-lg font-semibold ${
-          activeTab === 'pruebas' ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
-        }`}
-      >
-        Pruebas Estandarizadas
-      </button>
+    <div className="flex flex-wrap gap-2 mb-6">
+      {(['carpetas','actividades','pruebas'] as TabKey[]).map(tab => (
+        <button
+          key={tab}
+          onClick={() => { setActiveTab(tab); setSelectedActividad(null); setSelectedPrueba(null); setSelectedStudentId(null); }}
+          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition
+            ${activeTab === tab ? 'bg-amber-500 text-white shadow' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}
+        >
+          {tab === 'carpetas' && <FolderOpen size={18} />}
+          {tab === 'actividades' && <FileText size={18} />}
+          {tab === 'pruebas' && <BarChart2 size={18} />}
+          {tab === 'carpetas' ? 'Carpetas de Estudiantes' : tab === 'actividades' ? 'Actividades Remotas' : 'Pruebas Estandarizadas'}
+        </button>
+      ))}
+      <div className="ml-auto flex items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 opacity-60" size={18} />
+          <input
+            type="text"
+            placeholder="Buscar estudiante..."
+            value={studentSearch}
+            onChange={(e) => setStudentSearch(e.target.value)}
+            className="pl-10 pr-3 py-2 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          />
+        </div>
+        {activeTab === 'actividades' && !previewData && !selectedActividad && (
+          <button onClick={() => setIsCreating(true)} className="inline-flex items-center gap-2 bg-amber-500 text-white font-semibold py-2 px-3 rounded-xl hover:bg-amber-600">
+            <PlusCircle size={18} /> Nueva
+          </button>
+        )}
+        {activeTab === 'pruebas' && !previewPrueba && !selectedPrueba && (
+          <button onClick={() => setIsCreatingPrueba(true)} className="inline-flex items-center gap-2 bg-amber-500 text-white font-semibold py-2 px-3 rounded-xl hover:bg-amber-600">
+            <PlusCircle size={18} /> Nueva
+          </button>
+        )}
+      </div>
     </div>
   );
 
+  /* ---------------------- Carpetas por Estudiante ---------------------- */
+  const renderStudentFolders = () => {
+    const list = (studentSearch ? filteredStudents : programStudents);
+    if (!list.length) {
+      return (
+        <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow text-center text-slate-500">
+          No hay estudiantes asignados aún.
+        </div>
+      );
+    }
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+        {list.map((s) => {
+          const entregas = respuestas.filter(r => r.estudianteId === s.id);
+          const completadas = entregas.length;
+          const asignadas = actividades.filter(a => (a.estudiantesDestino || []).includes(s.nombreCompleto)).length
+            + pruebasEstandarizadas.filter(p => (p.estudiantesDestino || []).includes(s.nombreCompleto)).length;
+          return (
+            <button
+              key={s.id}
+              onClick={() => setSelectedStudentId(s.id)}
+              className="group text-left rounded-2xl border border-slate-200 bg-white hover:shadow-md transition overflow-hidden"
+            >
+              <div className="flex items-center gap-3 p-4 bg-gradient-to-br from-amber-50 to-white">
+                <div className="rounded-xl p-3 bg-amber-100 text-amber-700">
+                  <FolderOpen />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-800 truncate">{s.nombreCompleto}</p>
+                  <p className="text-xs text-slate-500 flex items-center gap-1"><UserIcon size={14}/> {s.curso || '—'}</p>
+                </div>
+              </div>
+              <div className="p-4 grid grid-cols-3 text-center text-sm text-slate-600">
+                <div><p className="font-semibold">{asignadas}</p><p className="text-xs">Asignadas</p></div>
+                <div><p className="font-semibold">{completadas}</p><p className="text-xs">Entregas</p></div>
+                <div className="flex flex-col items-center">
+                  <Clock size={16} className="opacity-70" />
+                  <span className="text-xs mt-1">
+                    {entregas.length ? formatDateOnly(entregas.sort((a,b)=> (a.fechaCompletado || '').localeCompare(b.fechaCompletado || '')).slice(-1)[0].fechaCompletado) : '—'}
+                  </span>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderStudentHistory = () => {
+    if (!selectedStudent) return null;
+    const { asignadas, respuestas: resp } = studentHistory;
+
+    return (
+      <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={() => setSelectedStudentId(null)}
+            className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
+          >
+            <ArrowLeft size={18}/> Volver
+          </button>
+          <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+            Historial — {selectedStudent.nombreCompleto}
+          </h2>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+            <thead className="bg-slate-50 dark:bg-slate-700">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Tipo</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Título / Asignatura</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Plazo</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Estado</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Puntaje</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Nota</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
+              {asignadas.map(({ tipo, item }) => {
+                const r = resp.find(x => x.actividadId === item.id);
+                const titulo = tipo === 'Actividad' ? `${item.asignatura} — ${item.tipos?.join(', ')}` : item.titulo;
+                const plazo = item.plazoEntrega ? formatDateOnly(item.plazoEntrega) : '—';
+                return (
+                  <tr key={item.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 text-sm">{tipo}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-slate-800">
+                      <UltraSafeRenderer content={titulo} context="hist-titulo"/>
+                    </td>
+                    <td className="px-4 py-3 text-sm">{plazo}</td>
+                    <td className="px-4 py-3 text-sm">
+                      {r ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                          <CheckCircle2 size={14}/> Completado
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                          <Clock size={14}/> Pendiente
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm">{r ? `${r.puntaje}/${r.puntajeMaximo}` : '—'}</td>
+                    <td className="px-4 py-3 text-sm font-semibold">{r ? r.nota : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  /* ---------------------- Vista Actividad seleccionada ---------------------- */
   const renderActivityView = () => (
     <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
       <div className="flex justify-between items-start">
@@ -786,7 +924,7 @@ Reglas:
             )}
           </h2>
           <p className="text-slate-500 dark:text-slate-400">
-            Nivel: {selectedActividad?.nivel || selectedPrueba?.nivel} | Plazo:{' '}
+            Plazo:{' '}
             {formatDateOnly(selectedActividad?.plazoEntrega || selectedPrueba?.plazoEntrega)}
             {selectedPrueba && ` | Duración: ${selectedPrueba.duracionMinutos} min`}
           </p>
@@ -796,9 +934,9 @@ Reglas:
             setSelectedActividad(null);
             setSelectedPrueba(null);
           }}
-          className="text-slate-600 hover:text-slate-900 font-semibold"
+          className="text-slate-600 hover:text-slate-900 font-semibold inline-flex items-center gap-2"
         >
-          &larr; Volver al listado
+          <ArrowLeft size={18}/> Volver al listado
         </button>
       </div>
 
@@ -852,7 +990,6 @@ Reglas:
                           <button
                             onClick={() => {
                               setRevisionTarget(resultado);
-                              // inicializar detalle con 0s si no hay
                               const devItems: Array<{ index: number; puntaje: number; observacion?: string }> =
                                 Array.from({ length: (selectedActividad.generatedContent?.['Desarrollo']?.length || 0) }, (_, i) => ({
                                   index: i,
@@ -888,9 +1025,6 @@ Reglas:
             <div className="space-y-4 max-h-[50vh] overflow-y-auto">
               {(selectedActividad.generatedContent?.['Desarrollo'] || []).map(
                 (item: { pregunta: string; rubrica?: string }, idx: number) => {
-                  console.log(`🔍 Renderizando item desarrollo ${idx}:`, item);
-                  logSuspiciousObject(item, `revision-item-${idx}`);
-                  
                   return (
                     <div key={idx} className="p-3 border rounded-lg">
                       <p className="font-semibold">
@@ -966,21 +1100,17 @@ Reglas:
                   try {
                     setIsSavingReview(true);
 
-                    // 1) Puntaje autocorregido y máximo existentes
                     const puntajeAuto = Number(revisionTarget.puntaje) || 0;
                     const puntajeMaximo = Number(revisionTarget.puntajeMaximo) || 0;
 
-                    // 2) Puntaje docente (solo desarrollo)
                     const puntajeDocente = (revisionDetalle || []).reduce(
                       (acc, d) => acc + (Number(d.puntaje) || 0),
                       0
                     );
 
-                    // 3) Total y nota nueva
                     const nuevoPuntajeTotal = puntajeAuto + puntajeDocente;
                     const nuevaNota = calcularNota60(nuevoPuntajeTotal, puntajeMaximo);
 
-                    // 4) Persistir
                     await updateRespuestaActividadDocente(revisionTarget.id, {
                       puntaje: nuevoPuntajeTotal,
                       puntajeMaximo,
@@ -993,7 +1123,6 @@ Reglas:
                       },
                     });
 
-                    // 5) Reset
                     setRevisionTarget(null);
                     setRevisionDetalle([]);
                     setRevisionObsGeneral('');
@@ -1016,12 +1145,13 @@ Reglas:
     </div>
   );
 
+  /* ---------------------- Formularios: sólo por ESTUDIANTES ---------------------- */
   const renderCreationForm = () => (
     <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
       <div className="flex justify-between items-start">
         <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Nueva Actividad Remota</h2>
-        <button onClick={() => setIsCreating(false)} className="text-slate-600 hover:text-slate-900 font-semibold">
-          &larr; Volver al listado
+        <button onClick={() => setIsCreating(false)} className="text-slate-600 hover:text-slate-900 font-semibold inline-flex items-center gap-2">
+          <ArrowLeft size={18}/> Volver
         </button>
       </div>
       <p className="text-slate-500 mt-1 mb-6">Complete el formulario y la IA generará una actividad.</p>
@@ -1044,21 +1174,7 @@ Reglas:
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Nivel</label>
-            <select
-              name="nivel"
-              value={formData.nivel}
-              onChange={handleFieldChange}
-              className="w-full border-slate-300 rounded-md shadow-sm"
-            >
-              {NIVELES.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Nivel y Cursos REMOVIDOS de la UI por requerimiento */}
 
           <div className="md:col-span-2 p-4 border rounded-lg space-y-4 bg-slate-50 dark:bg-slate-700/50">
             <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300">Recursos (Opcional)</h3>
@@ -1096,39 +1212,17 @@ Reglas:
           </div>
 
           <div className="md:col-span-2 p-4 border rounded-lg space-y-4 bg-slate-50 dark:bg-slate-700/50">
-            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300">Destinatarios</h3>
-            <p className="text-sm text-slate-500">
-              Si no seleccionas nada, será visible para todo el nivel.
-            </p>
-
+            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300">Destinatarios (Sólo estudiantes)</h3>
             <div>
-              <label className="block text-sm font-medium text-slate-600 mb-2">Cursos</label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-h-40 overflow-y-auto p-2 bg-white rounded">
-                {CURSOS.map((curso) => (
-                  <label key={curso} className="flex items-center gap-2 p-2 rounded hover:bg-slate-100 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.cursosDestino?.includes(curso)}
-                      onChange={() => handleCursoDestinoChange(curso)}
-                      className="h-4 w-4 rounded text-amber-500 focus:ring-amber-400"
-                    />
-                    <span className="text-sm font-medium text-slate-700">{curso}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-600 mb-2">Estudiantes</label>
               <input
                 type="text"
-                placeholder="Buscar..."
+                placeholder="Buscar estudiante..."
                 value={studentSearch}
                 onChange={(e) => setStudentSearch(e.target.value)}
                 className="w-full border-slate-300 rounded-md shadow-sm mb-2"
               />
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-40 overflow-y-auto p-2 bg-white rounded">
-                {filteredStudents.map((student) => (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-56 overflow-y-auto p-2 bg-white rounded">
+                {(studentSearch ? filteredStudents : students).map((student) => (
                   <label key={student.id} className="flex items-center gap-2 p-2 rounded hover:bg-slate-100 cursor-pointer">
                     <input
                       type="checkbox"
@@ -1143,6 +1237,35 @@ Reglas:
                 ))}
               </div>
             </div>
+          </div>
+
+          <div className="md:col-span-2">
+            <label htmlFor="contenido" className="block text-sm font-medium text-slate-600 mb-1">
+              Contenido <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              name="contenido"
+              value={formData.contenido}
+              onChange={handleFieldChange}
+              required
+              rows={4}
+              placeholder="Temas, conceptos clave o texto base..."
+              className="w-full border-slate-300 rounded-md shadow-sm"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="plazoEntrega" className="block text-sm font-medium text-slate-600 mb-1">
+              Plazo de Entrega
+            </label>
+            <input
+              type="date"
+              name="plazoEntrega"
+              value={formData.plazoEntrega}
+              onChange={handleFieldChange}
+              required
+              className="w-full border-slate-300 rounded-md shadow-sm"
+            />
           </div>
 
           <div className="md:col-span-2">
@@ -1180,45 +1303,17 @@ Reglas:
               ))}
             </div>
           </div>
-
-          <div className="md:col-span-2">
-            <label htmlFor="contenido" className="block text-sm font-medium text-slate-600 mb-1">
-              Contenido <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              name="contenido"
-              value={formData.contenido}
-              onChange={handleFieldChange}
-              required
-              rows={4}
-              placeholder="Temas, conceptos clave o texto base..."
-              className="w-full border-slate-300 rounded-md shadow-sm"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="plazoEntrega" className="block text-sm font-medium text-slate-600 mb-1">
-              Plazo de Entrega
-            </label>
-            <input
-              type="date"
-              name="plazoEntrega"
-              value={formData.plazoEntrega}
-              onChange={handleFieldChange}
-              required
-              className="w-full border-slate-300 rounded-md shadow-sm"
-            />
-          </div>
         </div>
 
-        {error && <p className="text-red-600 bg-red-100 p-3 rounded-md mt-4">{error}</p>}
+        {error && <p className="text-red-600 bg-red-100 p-3 rounded-md mt-2">{error}</p>}
 
-        <div className="pt-4 text-right">
+        <div className="pt-2 text-right">
           <button
             type="submit"
             disabled={isGenerating}
-            className="bg-slate-800 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-700 disabled:bg-slate-400 flex items-center justify-center min-w-[180px]"
+            className="bg-slate-800 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-700 disabled:bg-slate-400 inline-flex items-center justify-center gap-2"
           >
+            {isGenerating ? <Clock className="animate-spin" size={18}/> : null}
             {isGenerating ? 'Generando...' : 'Generar y Previsualizar'}
           </button>
         </div>
@@ -1274,9 +1369,6 @@ Reglas:
 
         {previewData?.tipos.map((tipo) => {
           const content = (previewData as any).generatedContent[tipo];
-          console.log(`🔍 Renderizando preview para ${tipo}:`, content);
-          logSuspiciousObject(content, `preview-${tipo}`);
-          
           if (!content) return null;
           return (
             <div key={tipo} className="p-4 border rounded-lg bg-white">
@@ -1284,26 +1376,23 @@ Reglas:
               <div className="space-y-4 text-sm">
                 {tipo === 'Quiz' &&
                   Array.isArray(content) &&
-                  content.map((q: QuizQuestion, i: number) => {
-                    logSuspiciousObject(q, `preview-quiz-${i}`);
-                    return (
-                      <div key={i} className="border-t pt-3 first:border-t-0">
-                        <p className="font-semibold">
-                          {i + 1}. <UltraSafeRenderer content={q.pregunta} context={`preview-quiz-pregunta-${i}`} />
-                        </p>
-                        <ul className="list-none pl-5 mt-2 space-y-1">
-                          {q.opciones.map((o: string, idx: number) => (
-                            <li key={idx}>
-                              <strong>{String.fromCharCode(65 + idx)}.</strong> <UltraSafeRenderer content={o} context={`preview-quiz-opcion-${i}-${idx}`} />
-                            </li>
-                          ))}
-                        </ul>
-                        <p className="text-xs text-green-600 font-semibold mt-2 p-1 bg-green-50 rounded inline-block">
-                          R: <UltraSafeRenderer content={q.respuestaCorrecta} context={`preview-quiz-respuesta-${i}`} />
-                        </p>
-                      </div>
-                    );
-                  })}
+                  content.map((q: QuizQuestion, i: number) => (
+                    <div key={i} className="border-t pt-3 first:border-t-0">
+                      <p className="font-semibold">
+                        {i + 1}. <UltraSafeRenderer content={q.pregunta} context={`preview-quiz-pregunta-${i}`} />
+                      </p>
+                      <ul className="list-none pl-5 mt-2 space-y-1">
+                        {q.opciones.map((o: string, idx: number) => (
+                          <li key={idx}>
+                            <strong>{String.fromCharCode(65 + idx)}.</strong> <UltraSafeRenderer content={o} context={`preview-quiz-opcion-${i}-${idx}`} />
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-xs text-green-600 font-semibold mt-2 p-1 bg-green-50 rounded inline-block">
+                        R: <UltraSafeRenderer content={q.respuestaCorrecta} context={`preview-quiz-respuesta-${i}`} />
+                      </p>
+                    </div>
+                  ))}
 
                 {tipo === 'Comprensión de Lectura' &&
                   content &&
@@ -1314,26 +1403,23 @@ Reglas:
                       <p className="whitespace-pre-wrap bg-slate-100 p-3 rounded-md mb-4">
                         <UltraSafeRenderer content={content.texto} context="preview-lectura-texto" />
                       </p>
-                      {content.preguntas.map((q: QuizQuestion, i: number) => {
-                        logSuspiciousObject(q, `preview-lectura-pregunta-${i}`);
-                        return (
-                          <div key={i} className="border-t pt-3 first:border-t-0">
-                            <p className="font-semibold">
-                              {i + 1}. <UltraSafeRenderer content={q.pregunta} context={`preview-lectura-pregunta-${i}`} />
-                            </p>
-                            <ul className="list-none pl-5 mt-2 space-y-1">
-                              {q.opciones.map((o: string, idx: number) => (
-                                <li key={idx}>
-                                  <strong>{String.fromCharCode(65 + idx)}.</strong> <UltraSafeRenderer content={o} context={`preview-lectura-opcion-${i}-${idx}`} />
-                                </li>
-                              ))}
-                            </ul>
-                            <p className="text-xs text-green-600 font-semibold mt-2 p-1 bg-green-50 rounded inline-block">
-                              R: <UltraSafeRenderer content={q.respuestaCorrecta} context={`preview-lectura-respuesta-${i}`} />
-                            </p>
-                          </div>
-                        );
-                      })}
+                      {content.preguntas.map((q: QuizQuestion, i: number) => (
+                        <div key={i} className="border-t pt-3 first:border-t-0">
+                          <p className="font-semibold">
+                            {i + 1}. <UltraSafeRenderer content={q.pregunta} context={`preview-lectura-pregunta-${i}`} />
+                          </p>
+                          <ul className="list-none pl-5 mt-2 space-y-1">
+                            {q.opciones.map((o: string, idx: number) => (
+                              <li key={idx}>
+                                <strong>{String.fromCharCode(65 + idx)}.</strong> <UltraSafeRenderer content={o} context={`preview-lectura-opcion-${i}-${idx}`} />
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="text-xs text-green-600 font-semibold mt-2 p-1 bg-green-50 rounded inline-block">
+                            R: <UltraSafeRenderer content={q.respuestaCorrecta} context={`preview-lectura-respuesta-${i}`} />
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   )}
 
@@ -1347,19 +1433,16 @@ Reglas:
                         </tr>
                       </thead>
                       <tbody>
-                        {content.map((p: PareadoItem, i: number) => {
-                          logSuspiciousObject(p, `preview-pareado-${i}`);
-                          return (
-                            <tr key={p.id} className="border-b last:border-b-0 hover:bg-slate-50">
-                              <td className="p-2 align-top font-semibold text-slate-800">
-                                <UltraSafeRenderer content={p.concepto} context={`preview-pareado-concepto-${i}`} />
-                              </td>
-                              <td className="p-2 align-top text-slate-700">
-                                <UltraSafeRenderer content={p.definicion} context={`preview-pareado-definicion-${i}`} />
-                              </td>
-                            </tr>
-                          );
-                        })}
+                        {content.map((p: PareadoItem, i: number) => (
+                          <tr key={p.id} className="border-b last:border-b-0 hover:bg-slate-50">
+                            <td className="p-2 align-top font-semibold text-slate-800">
+                              <UltraSafeRenderer content={p.concepto} context={`preview-pareado-concepto-${i}`} />
+                            </td>
+                            <td className="p-2 align-top text-slate-700">
+                              <UltraSafeRenderer content={p.definicion} context={`preview-pareado-definicion-${i}`} />
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -1367,32 +1450,17 @@ Reglas:
 
                 {tipo === 'Desarrollo' &&
                   Array.isArray(content) &&
-                  content.map((d: any, i: number) => {
-                    console.log(`🔍 Renderizando desarrollo ${i}:`, d);
-                    logSuspiciousObject(d, `preview-desarrollo-${i}`);
-                    return (
-                      <div key={i} className="border-t pt-3 first:border-t-0">
-                        <p className="font-semibold">
-                          {i + 1}. <UltraSafeRenderer content={d.pregunta} context={`preview-desarrollo-pregunta-${i}`} />
-                        </p>
-                        <p className="text-sm text-slate-600 mt-2 p-2 bg-slate-100 rounded-md">
-                          <strong className="font-semibold">Rúbrica:</strong> <UltraSafeRenderer content={d.rubrica} context={`preview-desarrollo-rubrica-${i}`} />
-                        </p>
-                      </div>
-                    );
-                  })}
-
-                {((tipo === 'Quiz' || tipo === 'Términos Pareados' || tipo === 'Desarrollo') && !Array.isArray(content)) && (
-                  <div className="text-red-600 text-sm p-3 bg-red-50 border border-red-200 rounded-md">
-                    El contenido para <strong>{tipo}</strong> no tiene el formato esperado.
-                  </div>
-                )}
-                {tipo === 'Comprensión de Lectura' &&
-                  (!content || typeof content !== 'object' || !Array.isArray((content as any).preguntas)) && (
-                    <div className="text-red-600 text-sm p-3 bg-red-50 border border-red-200 rounded-md">
-                      El contenido de <strong>Comprensión de Lectura</strong> no tiene el formato esperado.
+                  content.map((d: any, i: number) => (
+                    <div key={i} className="border-t pt-3 first:border-t-0">
+                      <p className="font-semibold">
+                        {i + 1}. <UltraSafeRenderer content={d.pregunta} context={`preview-desarrollo-pregunta-${i}`} />
+                      </p>
+                      <p className="text-sm text-slate-600 mt-2 p-2 bg-slate-100 rounded-md">
+                        <strong className="font-semibold">Rúbrica:</strong> <UltraSafeRenderer content={d.rubrica} context={`preview-desarrollo-rubrica-${i}`} />
+                      </p>
                     </div>
-                  )}
+                  ))}
+
               </div>
             </div>
           );
@@ -1414,54 +1482,13 @@ Reglas:
     </div>
   );
 
-  const renderActivityList = () => (
-    <div className="bg-white p-6 md:p-8 rounded-xl shadow-md">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-slate-800">Actividades Remotas</h1>
-        <button onClick={() => setIsCreating(true)} className="bg-amber-500 text-white font-bold py-2 px-5 rounded-lg hover:bg-amber-600">
-          Crear Nueva
-        </button>
-      </div>
-
-      <div className="space-y-4">
-        {actividades.length > 0 ? (
-          actividades.map((act) => {
-            logSuspiciousObject(act, `lista-actividad-${act.id}`);
-            const destinations: string[] = [];
-            if (act.cursosDestino?.length) destinations.push(`Cursos: ${act.cursosDestino.join(', ')}`);
-            if (act.estudiantesDestino?.length) destinations.push(`Estudiantes: ${act.estudiantesDestino.length}`);
-            const destinationText = destinations.length ? destinations.join(' | ') : `Todo ${act.nivel}`;
-            return (
-              <div key={act.id} className="p-4 border rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="font-bold text-slate-800">
-                      <UltraSafeRenderer content={act.asignatura} context={`lista-asignatura-${act.id}`} /> — {act.tipos.join(', ')}
-                    </p>
-                    <p className="text-sm text-slate-500">
-                      Destino: {destinationText} | Creado: {formatDateOnly(act.fechaCreacion)}
-                    </p>
-                  </div>
-                  <button onClick={() => setSelectedActividad(act)} className="text-blue-600 hover:text-blue-800 font-semibold text-sm">
-                    Ver Resultados
-                  </button>
-                </div>
-              </div>
-            );
-          })
-        ) : (
-          <p className="text-slate-500 text-center py-6">No hay actividades creadas. Use "Crear Nueva".</p>
-        )}
-      </div>
-    </div>
-  );
-
+  /* ---------------------- PRUEBAS ---------------------- */
   const renderPruebaCreationForm = () => (
     <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
-      <div className="flex justify-between items-start">
+      <div className="flex justify_between items-start">
         <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Nueva Prueba Estandarizada</h2>
-        <button onClick={() => setIsCreatingPrueba(false)} className="text-slate-600 hover:text-slate-900 font-semibold">
-          &larr; Volver
+        <button onClick={() => setIsCreatingPrueba(false)} className="text-slate-600 hover:text-slate-900 font-semibold inline-flex items-center gap-2">
+          <ArrowLeft size={18}/> Volver
         </button>
       </div>
 
@@ -1483,21 +1510,7 @@ Reglas:
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Nivel</label>
-            <select
-              name="nivel"
-              value={pruebaFormData.nivel}
-              onChange={handlePruebaFieldChange}
-              className="w-full border-slate-300 rounded-md shadow-sm"
-            >
-              {NIVELES.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Nivel/Cursos removidos de UI */}
 
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-slate-600 mb-1">Objetivos de Aprendizaje</label>
@@ -1532,6 +1545,34 @@ Reglas:
               className="w-full border-slate-300 rounded-md shadow-sm"
             />
           </div>
+
+          <div className="md:col-span-2 p-4 border rounded-lg space-y-4 bg-slate-50 dark:bg-slate-700/50">
+            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300">Destinatarios (Sólo estudiantes)</h3>
+            <div>
+              <input
+                type="text"
+                placeholder="Buscar estudiante..."
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                className="w-full border-slate-300 rounded-md shadow-sm mb-2"
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-56 overflow-y-auto p-2 bg-white rounded">
+                {(studentSearch ? filteredStudents : students).map((student) => (
+                  <label key={student.id} className="flex items-center gap-2 p-2 rounded hover:bg-slate-100 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={pruebaFormData.estudiantesDestino?.includes(student.nombreCompleto)}
+                      onChange={() => handleEstudianteDestinoChange(student.nombreCompleto, true)}
+                      className="h-4 w-4 rounded text-amber-500 focus:ring-amber-400"
+                    />
+                    <span className="text-sm font-medium text-slate-700 truncate" title={student.nombreCompleto}>
+                      {student.nombreCompleto}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
 
         {error && <p className="text-red-600 bg-red-100 p-3 rounded-md">{error}</p>}
@@ -1540,8 +1581,9 @@ Reglas:
           <button
             type="submit"
             disabled={isGenerating}
-            className="bg-slate-800 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-700 disabled:bg-slate-400"
+            className="bg-slate-800 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-700 disabled:bg-slate-400 inline-flex items-center gap-2"
           >
+            {isGenerating ? <Clock className="animate-spin" size={18}/> : null}
             {isGenerating ? 'Generando...' : 'Generar y Previsualizar'}
           </button>
         </div>
@@ -1568,20 +1610,17 @@ Reglas:
           <div className="p-4 bg-indigo-50 border-l-4 border-indigo-400 rounded-r-lg">
             <h3 className="font-bold text-indigo-800 mb-2">Textos</h3>
             <ol className="space-y-2 list-decimal list-inside">
-              {previewPrueba.textos.map((t, i) => {
-                logSuspiciousObject(t, `preview-texto-${i}`);
-                return (
-                  <li key={t.id}>
-                    <p className="font-semibold">
-                      <UltraSafeRenderer content={t.titulo} context={`preview-texto-titulo-${i}`} /> 
-                      <span className="text-xs text-slate-500">({t.tipo})</span>
-                    </p>
-                    <p className="text-sm text-slate-700 whitespace-pre-wrap mt-1">
-                      <UltraSafeRenderer content={t.contenido} context={`preview-texto-contenido-${i}`} />
-                    </p>
-                  </li>
-                );
-              })}
+              {previewPrueba.textos.map((t, i) => (
+                <li key={t.id}>
+                  <p className="font-semibold">
+                    <UltraSafeRenderer content={t.titulo} context={`preview-texto-titulo-${i}`} /> 
+                    <span className="text-xs text-slate-500">({t.tipo})</span>
+                  </p>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap mt-1">
+                    <UltraSafeRenderer content={t.contenido} context={`preview-texto-contenido-${i}`} />
+                  </p>
+                </li>
+              ))}
             </ol>
           </div>
         ) : null}
@@ -1589,24 +1628,21 @@ Reglas:
         {previewPrueba?.preguntas?.length ? (
           <div className="p-4 border rounded-lg bg-white">
             <h3 className="text-xl font-bold mb-4">Preguntas (muestra)</h3>
-            {previewPrueba.preguntas.slice(0, 10).map((p, i) => {
-              logSuspiciousObject(p, `preview-pregunta-${i}`);
-              return (
-                <div key={p.numero} className="border-t pt-3 first:border-t-0">
-                  <p className="font-semibold">
-                    {p.numero}. <UltraSafeRenderer content={p.pregunta} context={`preview-pregunta-texto-${i}`} />
-                  </p>
-                  <ul className="list-disc pl-6 text-sm mt-1">
-                    {p.opciones.map((o: string, j: number) => (
-                      <li key={j}>
-                        <UltraSafeRenderer content={o} context={`preview-pregunta-opcion-${i}-${j}`} />
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-xs text-green-600 font-semibold mt-1">Correcta: {p.respuestaCorrecta}</p>
-                </div>
-              );
-            })}
+            {previewPrueba.preguntas.slice(0, 10).map((p, i) => (
+              <div key={p.numero} className="border-t pt-3 first:border-t-0">
+                <p className="font-semibold">
+                  {p.numero}. <UltraSafeRenderer content={p.pregunta} context={`preview-pregunta-texto-${i}`} />
+                </p>
+                <ul className="list-disc pl-6 text-sm mt-1">
+                  {p.opciones.map((o: string, j: number) => (
+                    <li key={j}>
+                      <UltraSafeRenderer content={o} context={`preview-pregunta-opcion-${i}-${j}`} />
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-green-600 font-semibold mt-1">Correcta: {p.respuestaCorrecta}</p>
+              </div>
+            ))}
           </div>
         ) : null}
       </div>
@@ -1626,37 +1662,75 @@ Reglas:
     </div>
   );
 
-  const renderPruebasList = () => (
+  /* ---------------------- Listados ---------------------- */
+  const renderActivityList = () => (
     <div className="bg-white p-6 md:p-8 rounded-xl shadow-md">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-slate-800">Pruebas Estandarizadas</h1>
-        <button onClick={() => setIsCreatingPrueba(true)} className="bg-amber-500 text-white font-bold py-2 px-5 rounded-lg hover:bg-amber-600">
-          Crear Nueva
+        <h1 className="text-3xl font-bold text-slate-800">Actividades Remotas</h1>
+        <button onClick={() => setIsCreating(true)} className="inline-flex items-center gap-2 bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600">
+          <PlusCircle size={18}/> Crear Nueva
         </button>
       </div>
 
       <div className="space-y-4">
-        {pruebasEstandarizadas.length > 0 ? (
-          pruebasEstandarizadas.map((p) => {
-            logSuspiciousObject(p, `lista-prueba-${p.id}`);
+        {actividades.length > 0 ? (
+          actividades.map((act) => {
+            const destinations: string[] = [];
+            if (act.estudiantesDestino?.length) destinations.push(`Estudiantes: ${act.estudiantesDestino.length}`);
+            const destinationText = destinations.length ? destinations.join(' | ') : `Estudiantes seleccionados`;
             return (
-              <div key={p.id} className="p-4 border rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors">
+              <div key={act.id} className="p-4 border rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors">
                 <div className="flex justify-between items-center">
                   <div>
                     <p className="font-bold text-slate-800">
-                      <UltraSafeRenderer content={p.titulo} context={`lista-prueba-titulo-${p.id}`} />
+                      <UltraSafeRenderer content={act.asignatura} context={`lista-asignatura-${act.id}`} /> — {act.tipos.join(', ')}
                     </p>
                     <p className="text-sm text-slate-500">
-                      Nivel: {p.nivel} | Creado: {formatDateOnly(p.fechaCreacion)}
+                      Destino: {destinationText} | Creado: {formatDateOnly(act.fechaCreacion)}
                     </p>
                   </div>
-                  <button onClick={() => setSelectedPrueba(p)} className="text-blue-600 hover:text-blue-800 font-semibold text-sm">
+                  <button onClick={() => setSelectedActividad(act)} className="text-blue-600 hover:text-blue-800 font-semibold text-sm">
                     Ver Resultados
                   </button>
                 </div>
               </div>
             );
           })
+        ) : (
+          <p className="text-slate-500 text-center py-6">No hay actividades creadas. Use "Crear Nueva".</p>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderPruebasList = () => (
+    <div className="bg-white p-6 md:p-8 rounded-xl shadow-md">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold text-slate-800">Pruebas Estandarizadas</h1>
+        <button onClick={() => setIsCreatingPrueba(true)} className="inline-flex items-center gap-2 bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600">
+          <PlusCircle size={18}/> Crear Nueva
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        {pruebasEstandarizadas.length > 0 ? (
+          pruebasEstandarizadas.map((p) => (
+            <div key={p.id} className="p-4 border rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="font-bold text-slate-800">
+                    <UltraSafeRenderer content={p.titulo} context={`lista-prueba-titulo-${p.id}`} />
+                  </p>
+                  <p className="text-sm text-slate-500">
+                    Creado: {formatDateOnly(p.fechaCreacion)}
+                  </p>
+                </div>
+                <button onClick={() => setSelectedPrueba(p)} className="text-blue-600 hover:text-blue-800 font-semibold text-sm">
+                  Ver Resultados
+                </button>
+              </div>
+            </div>
+          ))
         ) : (
           <p className="text-slate-500 text-center py-6">No hay pruebas creadas.</p>
         )}
@@ -1669,19 +1743,22 @@ Reglas:
   return (
     <div className="animate-fade-in">
       {renderTabs()}
-      {previewPrueba
-        ? renderPruebaPreview()
-        : previewData
-        ? renderPreview()
-        : selectedActividad || selectedPrueba
-        ? renderActivityView()
-        : activeTab === 'pruebas'
-        ? isCreatingPrueba
-          ? renderPruebaCreationForm()
-          : renderPruebasList()
-        : isCreating
-        ? renderCreationForm()
-        : renderActivityList()}
+      {/* Vistas por prioridad */}
+      {selectedStudentId ? (
+        renderStudentHistory()
+      ) : previewPrueba ? (
+        renderPruebaPreview()
+      ) : previewData ? (
+        renderPreview()
+      ) : selectedActividad || selectedPrueba ? (
+        renderActivityView()
+      ) : activeTab === 'pruebas' ? (
+        isCreatingPrueba ? renderPruebaCreationForm() : renderPruebasList()
+      ) : activeTab === 'actividades' ? (
+        isCreating ? renderCreationForm() : renderActivityList()
+      ) : (
+        renderStudentFolders()
+      )}
     </div>
   );
 };

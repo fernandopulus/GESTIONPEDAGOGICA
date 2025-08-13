@@ -92,9 +92,12 @@ const dataUrlToUint8Array = (dataUrl: string): { bytes: Uint8Array; contentType:
   const base64 = match[2];
 
   let binary = '';
+  // @ts-ignore
   if (typeof atob === 'function') {
+    // @ts-ignore
     binary = atob(base64);
   } else {
+    // Node fallback (por si se usa en SSR)
     // @ts-ignore
     const Buf = typeof Buffer !== 'undefined' ? Buffer : null;
     if (Buf) {
@@ -212,6 +215,7 @@ export const createActividad = async (actividad: ActividadRemota): Promise<strin
   const { id: _omit, fechaCreacion, plazoEntrega, ...rest } = actividad || ({} as ActividadRemota);
   const payload = stripUndefined({
     ...rest,
+    // El módulo actual prioriza asignación por estudiantes; nivel puede llegar como '—'
     fechaCreacion: toTimestampFromISO(fechaCreacion),
     plazoEntrega: fromYYYYMMDDToTimestamp(plazoEntrega),
   });
@@ -328,7 +332,8 @@ export const uploadRecursos = async (
 
   for (const file of files) {
     const clean = file.name.replace(/\s+/g, '_');
-    const path = `recursos/${nivel}/${stamp}/${clean}`;
+    const safeNivel = (nivel && nivel !== '—') ? nivel : 'general';
+    const path = `recursos/${safeNivel}/${stamp}/${clean}`;
     const storageRef = ref(storage, path);
     await uploadBytes(storageRef, file);
     const url = await getDownloadURL(storageRef);
@@ -345,7 +350,8 @@ export const uploadDataUrl = async (
   const { bytes, contentType } = dataUrlToUint8Array(dataUrl);
   const stamp = Date.now();
   const clean = nombre.replace(/\s+/g, '_');
-  const path = `recursos/${nivel}/${stamp}/${clean}`;
+  const safeNivel = (nivel && nivel !== '—') ? nivel : 'general';
+  const path = `recursos/${safeNivel}/${stamp}/${clean}`;
   const storageRef = ref(storage, path);
   await uploadBytes(storageRef, bytes, { contentType });
   const url = await getDownloadURL(storageRef);
@@ -356,6 +362,7 @@ export const uploadDataUrl = async (
  * Guarda una actividad proveniente de la previsualización:
  * - Si `recursos.archivos` contiene `data:` URLs (base64), las sube a Storage
  * - Sustituye por URLs https y crea el documento en Firestore
+ * - Este módulo trabaja SÓLO por estudiantes (sin cursos/niveles en UI)
  */
 export const saveActividadFromPreview = async (preview: ActividadRemota): Promise<string> => {
   const nivel = preview.nivel || 'general';
@@ -364,7 +371,7 @@ export const saveActividadFromPreview = async (preview: ActividadRemota): Promis
   const archivosNormalizados = await Promise.all(
     archivos.map(async (a: any, idx: number) => {
       if (isDataUrl(a?.url)) {
-        const nombre = a?.nombre || `archivo_${idx}.bin`;
+        const nombre = a?.nombre || `archivo_${idx}.bin`
         return uploadDataUrl(a.url, nombre, nivel);
       }
       return { nombre: a?.nombre || `archivo_${idx}`, url: a?.url };

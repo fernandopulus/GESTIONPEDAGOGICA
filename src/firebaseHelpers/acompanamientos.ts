@@ -1,4 +1,4 @@
-// src/firebaseHelpers/acompanamientos.ts - VERSIÓN COMPLETA Y CORREGIDA
+// src/firebaseHelpers/acompanamientos.ts - VERSIÓN COMPLETA Y CORREGIDA CON SOPORTE PARA CICLOS OPR INDEPENDIENTES
 
 import {
   collection,
@@ -13,6 +13,9 @@ import {
   where,
   Timestamp,
   writeBatch,
+  onSnapshot,
+  QuerySnapshot,
+  DocumentData,
 } from 'firebase/firestore';
 
 import {
@@ -27,7 +30,7 @@ import {
 import { auth, db } from './config';
 import { AcompanamientoDocente, CicloOPR } from '../../types';
 
-// ✅ CRÍTICO: Obtener storage desde la configuración correcta
+// ✅ Storage inicializado desde la app configurada
 const storage = getStorage();
 
 // =========================
@@ -89,8 +92,15 @@ export const storagePathFromDownloadURL = (url: string): string | null => {
   }
 };
 
+/** Prefijo de carpeta para los archivos de un ciclo */
+export const getCicloStoragePrefix = (acompanamientoId: string, cicloId: string) => {
+  const a = (acompanamientoId || 'general').replace(/[^a-zA-Z0-9-]/g, '_');
+  const c = (cicloId || 'temp').replace(/[^a-zA-Z0-9-]/g, '_');
+  return `videos_opr/${a}/${c}/`;
+};
+
 // =========================
-// SUBIDA DE ARCHIVOS COMPLETAMENTE CORREGIDA
+// SUBIDA DE ARCHIVOS
 // =========================
 
 export const uploadFileImproved = async (
@@ -99,14 +109,7 @@ export const uploadFileImproved = async (
   onProgress?: (progressPercent: number) => void
 ): Promise<string> => {
   try {
-    // 🔍 DEBUG: Verificar configuración de Storage
-    console.log('🔍 DEBUG - Storage configurado:', {
-      bucket: storage.app.options.storageBucket,
-      app: storage.app.name
-    });
-    console.log('🔍 DEBUG - Path solicitado:', requestedPath);
-    
-    // Validaciones de autenticación y archivo
+    // Validaciones mínimas
     if (!auth.currentUser) {
       throw new Error('Usuario no autenticado. Por favor, inicia sesión nuevamente.');
     }
@@ -114,7 +117,6 @@ export const uploadFileImproved = async (
       throw new Error('No se proporcionó un archivo válido.');
     }
 
-    // Validaciones de archivo
     const allowedTypes = [
       'video/mp4',
       'video/quicktime',  // .mov
@@ -126,19 +128,11 @@ export const uploadFileImproved = async (
     if (file.size > MAX_SIZE) {
       throw new Error(`El archivo es demasiado grande. Máximo permitido: ${(MAX_SIZE / 1024 / 1024).toFixed(0)}MB`);
     }
-    
     if (!allowedTypes.includes(file.type)) {
       throw new Error('Tipo de archivo no permitido. Solo se aceptan MP4, MOV, AVI o M4V.');
     }
 
-    console.log('📹 Iniciando subida:', {
-      nombre: file.name,
-      tamaño: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
-      tipo: file.type,
-      pathSolicitado: requestedPath
-    });
-
-    // Resolver ruta final
+    // Resolver ruta final: requiere acompanamientoId y cicloId en requestedPath
     let finalPath = '';
     const parts = (requestedPath || '').split('/');
     if (parts.length >= 4 && parts[0] === 'videos_opr') {
@@ -147,25 +141,13 @@ export const uploadFileImproved = async (
       const fileName = parts.slice(3).join('/');
       finalPath = buildSecurePath(acompId, cicloId, fileName);
     } else {
+      // Fallback: solo en caso de que se intente subir antes de tener IDs
       const timestamp = Date.now();
       const sanitizedName = sanitizeFileName(file.name);
       finalPath = `videos_opr/general/${timestamp}_${sanitizedName}`;
     }
 
-    console.log('📁 Path final sanitizado:', finalPath);
-
-    // ✅ CRÍTICO: Crear referencia usando Firebase Storage SDK
     const storageRef = ref(storage, finalPath);
-    
-    // 🔍 DEBUG: Verificar referencia creada
-    console.log('🔍 Storage ref creado:', {
-      bucket: storageRef.bucket,
-      fullPath: storageRef.fullPath,
-      name: storageRef.name,
-      toString: storageRef.toString()
-    });
-
-    // Metadata optimizada
     const metadata = {
       contentType: file.type,
       cacheControl: 'public, max-age=31536000',
@@ -177,7 +159,6 @@ export const uploadFileImproved = async (
       },
     };
 
-    // ✅ CRÍTICO: Usar uploadBytesResumable del Firebase SDK
     const uploadTask = uploadBytesResumable(storageRef, file, metadata);
 
     return new Promise<string>((resolve, reject) => {
@@ -186,21 +167,15 @@ export const uploadFileImproved = async (
       uploadTask.on(
         'state_changed',
         (snapshot) => {
-          // Reportar progreso
           const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
           const progressRounded = Math.floor(progress);
-          
           if (onProgress && progressRounded !== lastReportedProgress) {
             lastReportedProgress = progressRounded;
             onProgress(progressRounded);
-            console.log(`📊 Progreso: ${progressRounded}%`);
           }
         },
         (error: any) => {
-          console.error('❌ Error en la subida:', error);
-          
           let errorMessage = 'Error desconocido durante la subida.';
-          
           switch (error?.code) {
             case 'storage/unauthorized':
               errorMessage = 'No tienes permisos para subir archivos. Verifica las reglas de Firebase Storage.';
@@ -214,53 +189,25 @@ export const uploadFileImproved = async (
             case 'storage/retry-limit-exceeded':
               errorMessage = 'Se agotaron los reintentos. Verifica tu conexión a internet.';
               break;
-            case 'storage/invalid-format':
-              errorMessage = 'El formato del archivo no es válido para Firebase Storage.';
-              break;
-            case 'storage/unknown':
-              errorMessage = 'Error desconocido del servidor de Firebase Storage.';
-              break;
             default:
-              const errorMsg = error?.message?.toLowerCase() || '';
-              if (errorMsg.includes('cors')) {
-                errorMessage = 'Error de configuración CORS. Verifica las reglas de Firebase Storage.';
-              } else if (errorMsg.includes('network') || errorMsg.includes('connection')) {
-                errorMessage = 'Error de conexión. Verifica tu internet e intenta nuevamente.';
-              } else if (errorMsg.includes('permission') || errorMsg.includes('forbidden')) {
-                errorMessage = 'Permisos insuficientes. Contacta al administrador del sistema.';
-              } else if (error?.message) {
-                errorMessage = `Error del servidor: ${error.message}`;
-              }
+              if (error?.message) errorMessage = error.message;
               break;
           }
-          
           reject(new Error(errorMessage));
         },
         async () => {
           try {
-            // ✅ CRÍTICO: Obtener URL usando getDownloadURL del SDK
             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-            
-            console.log('✅ Archivo subido exitosamente:', {
-              path: finalPath,
-              url: downloadURL,
-              bucket: uploadTask.snapshot.ref.bucket,
-              size: `${(uploadTask.snapshot.totalBytes / 1024 / 1024).toFixed(2)} MB`
-            });
-            
             resolve(downloadURL);
-            
           } catch (urlError: any) {
-            console.error('❌ Error al obtener URL de descarga:', urlError);
-            reject(new Error('El archivo se subió correctamente, pero no se pudo obtener la URL de descarga. Intenta recargar la página.'));
+            reject(new Error('El archivo se subió, pero no se pudo obtener la URL de descarga.'));
           }
         }
       );
     });
 
   } catch (error: any) {
-    console.error('❌ Error general en uploadFileImproved:', error);
-    const errorMessage = error?.message || 'Error inesperado al procesar el archivo. Intenta nuevamente.';
+    const errorMessage = error?.message || 'Error inesperado al procesar el archivo.';
     throw new Error(errorMessage);
   }
 };
@@ -271,13 +218,8 @@ export const deleteFile = async (filePath: string): Promise<void> => {
     if (!auth.currentUser) throw new Error('Usuario no autenticado');
     const storageRef = ref(storage, filePath);
     await deleteObject(storageRef);
-    console.log('🗑️ Archivo eliminado:', filePath);
   } catch (error: any) {
-    if (error?.code === 'storage/object-not-found') {
-      console.warn('⚠️ El archivo no existe en Storage:', filePath);
-      return;
-    }
-    console.error('❌ Error al eliminar archivo:', error);
+    if (error?.code === 'storage/object-not-found') return;
     throw new Error('Error al eliminar el archivo del almacenamiento');
   }
 };
@@ -289,19 +231,17 @@ const listAndDeleteFolder = async (prefix: string): Promise<void> => {
     const { items, prefixes } = await listAll(folderRef);
     await Promise.all(items.map((it) => deleteObject(it)));
     await Promise.all(prefixes.map((p) => listAndDeleteFolder(p.fullPath)));
-  } catch (error) {
-    console.warn('⚠️ Error al eliminar carpeta:', prefix, error);
+  } catch (_err) {
+    // swallow
   }
 };
 
 // =========================
-// ACOMPAÑAMIENTOS (CRUD) - TODAS LAS FUNCIONES EXPORTADAS
+// ACOMPAÑAMIENTOS (CRUD)
 // =========================
 
 export const getAllAcompanamientos = async (): Promise<AcompanamientoDocente[]> => {
   try {
-    console.log('📋 Obteniendo todos los acompañamientos...');
-    
     const q = query(collection(db, ACOMPANAMIENTOS_COLLECTION), orderBy('fecha', 'desc'));
     const querySnapshot = await getDocs(q);
     const acompanamientos = querySnapshot.docs.map((d) => {
@@ -312,11 +252,8 @@ export const getAllAcompanamientos = async (): Promise<AcompanamientoDocente[]> 
         fecha: normalizeFecha(data?.fecha),
       } as AcompanamientoDocente;
     });
-    
-    console.log('✅ Acompañamientos obtenidos:', acompanamientos.length);
     return acompanamientos.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
-  } catch (error) {
-    console.error('❌ Error al obtener acompañamientos:', error);
+  } catch (_err) {
     throw new Error('No se pudieron cargar los acompañamientos');
   }
 };
@@ -325,30 +262,19 @@ export const createAcompanamiento = async (
   acompanamiento: Omit<AcompanamientoDocente, 'id'>
 ): Promise<AcompanamientoDocente> => {
   try {
-    console.log('💾 Creando nuevo acompañamiento:', {
-      docente: acompanamiento.docente,
-      curso: acompanamiento.curso,
-      asignatura: acompanamiento.asignatura
-    });
-
     const dataToSave = {
       ...acompanamiento,
       fecha: Timestamp.fromDate(new Date(acompanamiento.fecha)),
       fechaCreacion: Timestamp.now(),
     };
-    
     const docRef = await addDoc(collection(db, ACOMPANAMIENTOS_COLLECTION), dataToSave);
-    
     const newAcompanamiento: AcompanamientoDocente = {
       ...acompanamiento,
       id: docRef.id,
       fecha: normalizeFecha(acompanamiento.fecha),
     };
-
-    console.log('✅ Acompañamiento creado con ID:', docRef.id);
     return newAcompanamiento;
-  } catch (error) {
-    console.error('❌ Error al crear acompañamiento:', error);
+  } catch (_err) {
     throw new Error('No se pudo crear el acompañamiento');
   }
 };
@@ -358,30 +284,22 @@ export const updateAcompanamiento = async (
   updates: Partial<Omit<AcompanamientoDocente, 'id'>>
 ): Promise<void> => {
   try {
-    console.log('🔄 Actualizando acompañamiento:', id);
-
     const dataToUpdate = {
       ...updates,
       ...(updates.fecha ? { fecha: Timestamp.fromDate(new Date(updates.fecha)) } : {}),
       fechaModificacion: Timestamp.now(),
     };
-    
     await updateDoc(doc(db, ACOMPANAMIENTOS_COLLECTION, id), dataToUpdate);
-    console.log('✅ Acompañamiento actualizado exitosamente');
-  } catch (error) {
-    console.error('❌ Error al actualizar acompañamiento:', error);
+  } catch (_err) {
     throw new Error('No se pudo actualizar el acompañamiento');
   }
 };
 
 export const deleteAcompanamiento = async (id: string): Promise<void> => {
   try {
-    console.log('🗑️ Eliminando acompañamiento:', id);
-
     // 1) Eliminar ciclos asociados
     const ciclosQ = query(collection(db, CICLOS_OPR_COLLECTION), where('acompanamientoId', '==', id));
     const snap = await getDocs(ciclosQ);
-
     const batch = writeBatch(db);
     snap.forEach((d) => batch.delete(doc(db, CICLOS_OPR_COLLECTION, d.id)));
     await batch.commit();
@@ -391,51 +309,46 @@ export const deleteAcompanamiento = async (id: string): Promise<void> => {
 
     // 3) Eliminar el acompañamiento
     await deleteDoc(doc(db, ACOMPANAMIENTOS_COLLECTION, id));
-
-    console.log('✅ Acompañamiento eliminado con sus ciclos y archivos');
-  } catch (error) {
-    console.error('❌ Error al eliminar acompañamiento:', error);
+  } catch (_err) {
     throw new Error('No se pudo eliminar el acompañamiento y sus datos asociados');
   }
 };
 
 // =========================
-// CICLOS OPR (CRUD) - TODAS LAS FUNCIONES EXPORTADAS
+// CICLOS OPR (CRUD)
 // =========================
 
 export const createCicloOPR = async (ciclo: Omit<CicloOPR, 'id'>): Promise<CicloOPR> => {
   try {
-    console.log('💾 Creando nuevo ciclo OPR:', {
-      nombre: ciclo.nombreCiclo,
-      docente: ciclo.docenteInfo,
-      acompanamientoId: ciclo.acompanamientoId
-    });
+    if (!ciclo?.fecha) {
+      throw new Error('Falta fecha al crear ciclo OPR.');
+    }
 
     const dataToSave: any = {
       ...ciclo,
+      acompanamientoId: String(ciclo.acompanamientoId || ''), // Puede ser string vacío para ciclos independientes
       fecha: Timestamp.fromDate(new Date(ciclo.fecha)),
       fechaCreacion: Timestamp.now(),
     };
 
-    if (ciclo.seguimiento?.fecha) {
+    if ((ciclo as any)?.seguimiento?.fecha) {
       dataToSave.seguimiento = {
-        ...ciclo.seguimiento,
-        fecha: Timestamp.fromDate(new Date(ciclo.seguimiento.fecha)),
+        ...(ciclo as any).seguimiento,
+        fecha: Timestamp.fromDate(new Date((ciclo as any).seguimiento.fecha)),
       };
     }
 
     const docRef = await addDoc(collection(db, CICLOS_OPR_COLLECTION), dataToSave);
-    
+
     const newCiclo: CicloOPR = {
       ...ciclo,
       id: docRef.id,
-      fecha: normalizeFecha(ciclo.fecha)
+      acompanamientoId: String(ciclo.acompanamientoId || ''),
+      fecha: normalizeFecha(ciclo.fecha),
     };
 
-    console.log('✅ Ciclo OPR creado con ID:', docRef.id);
     return newCiclo;
-  } catch (error) {
-    console.error('❌ Error al crear ciclo OPR:', error);
+  } catch (_err) {
     throw new Error('No se pudo crear el ciclo OPR');
   }
 };
@@ -445,8 +358,6 @@ export const updateCicloOPR = async (
   updates: Partial<Omit<CicloOPR, 'id'>>
 ): Promise<void> => {
   try {
-    console.log('🔄 Actualizando ciclo OPR:', id);
-
     const dataToUpdate: any = { ...updates };
     if (updates.fecha) dataToUpdate.fecha = Timestamp.fromDate(new Date(updates.fecha));
     if (updates.seguimiento?.fecha) {
@@ -456,19 +367,14 @@ export const updateCicloOPR = async (
       };
     }
     dataToUpdate.fechaModificacion = Timestamp.now();
-    
     await updateDoc(doc(db, CICLOS_OPR_COLLECTION, id), dataToUpdate);
-    console.log('✅ Ciclo OPR actualizado exitosamente');
-  } catch (error) {
-    console.error('❌ Error al actualizar ciclo OPR:', error);
+  } catch (_err) {
     throw new Error('No se pudo actualizar el ciclo OPR');
   }
 };
 
 export const getCiclosOPRByAcompanamiento = async (acompanamientoId: string): Promise<CicloOPR[]> => {
   try {
-    console.log('📋 Obteniendo ciclos OPR para acompañamiento:', acompanamientoId);
-
     const q = query(
       collection(db, CICLOS_OPR_COLLECTION),
       where('acompanamientoId', '==', acompanamientoId),
@@ -491,19 +397,114 @@ export const getCiclosOPRByAcompanamiento = async (acompanamientoId: string): Pr
       }
       return base;
     });
-    
-    console.log('✅ Ciclos OPR obtenidos:', ciclos.length);
+    return ciclos;
+  } catch (_err) {
+    // Posible falta de índice compuesto
+    throw new Error('No se pudieron cargar los ciclos OPR. Revisa el índice compuesto (acompanamientoId + fecha).');
+  }
+};
+
+/** Get all standalone OPR cycles (cycles without acompanamientoId) */
+export const getStandaloneCiclosOPR = async (): Promise<CicloOPR[]> => {
+  try {
+    const q = query(
+      collection(db, CICLOS_OPR_COLLECTION),
+      where('acompanamientoId', '==', ''), // Empty string for standalone cycles
+      orderBy('fecha', 'desc')
+    );
+
+    const snapshot = await getDocs(q);
+    const ciclos = snapshot.docs.map((d) => {
+      const data = d.data() as any;
+      const base: CicloOPR = {
+        id: d.id,
+        ...data,
+        fecha: normalizeFecha(data?.fecha),
+      };
+      if (data?.seguimiento?.fecha) {
+        base.seguimiento = {
+          ...data.seguimiento,
+          fecha: normalizeFecha(data.seguimiento.fecha),
+        };
+      }
+      return base;
+    });
     return ciclos;
   } catch (error) {
-    console.error('❌ Error al obtener ciclos OPR:', error);
-    throw new Error('No se pudieron cargar los ciclos OPR');
+    console.error('Error fetching standalone OPR cycles:', error);
+    throw new Error('No se pudieron cargar los ciclos OPR independientes.');
   }
+};
+
+/** Get all OPR cycles (both standalone and associated) */
+export const getAllCiclosOPR = async (): Promise<CicloOPR[]> => {
+  try {
+    const q = query(
+      collection(db, CICLOS_OPR_COLLECTION),
+      orderBy('fecha', 'desc')
+    );
+
+    const snapshot = await getDocs(q);
+    const ciclos = snapshot.docs.map((d) => {
+      const data = d.data() as any;
+      const base: CicloOPR = {
+        id: d.id,
+        ...data,
+        fecha: normalizeFecha(data?.fecha),
+      };
+      if (data?.seguimiento?.fecha) {
+        base.seguimiento = {
+          ...data.seguimiento,
+          fecha: normalizeFecha(data.seguimiento.fecha),
+        };
+      }
+      return base;
+    });
+    return ciclos;
+  } catch (error) {
+    console.error('Error fetching all OPR cycles:', error);
+    throw new Error('No se pudieron cargar los ciclos OPR.');
+  }
+};
+
+/** Suscripción en tiempo real opcional */
+export const subscribeToCiclosOPRByAcompanamiento = (
+  acompanamientoId: string,
+  onChange: (ciclos: CicloOPR[]) => void,
+  onError?: (err: any) => void
+) => {
+  const qy = query(
+    collection(db, CICLOS_OPR_COLLECTION),
+    where('acompanamientoId', '==', acompanamientoId),
+    orderBy('fecha', 'desc')
+  );
+
+  return onSnapshot(
+    qy,
+    (snapshot: QuerySnapshot<DocumentData>) => {
+      const ciclos = snapshot.docs.map((d) => {
+        const data = d.data() as any;
+        const base: CicloOPR = {
+          id: d.id,
+          ...data,
+          fecha: normalizeFecha(data?.fecha),
+        };
+        if (data?.seguimiento?.fecha) {
+          base.seguimiento = {
+            ...data.seguimiento,
+            fecha: normalizeFecha(data.seguimiento.fecha),
+          };
+        }
+        return base;
+      });
+      onChange(ciclos);
+    },
+    (err) => onError?.(err)
+  );
 };
 
 export const deleteCicloOPR = async (id: string): Promise<void> => {
   try {
-    console.log('🗑️ Eliminando ciclo OPR:', id);
-
     const d = await getDoc(doc(db, CICLOS_OPR_COLLECTION, id));
     if (!d.exists()) return;
 
@@ -512,16 +513,13 @@ export const deleteCicloOPR = async (id: string): Promise<void> => {
 
     await listAndDeleteFolder(`videos_opr/${acompanamientoId}/${id}`);
     await deleteDoc(doc(db, CICLOS_OPR_COLLECTION, id));
-
-    console.log('✅ Ciclo OPR eliminado con sus archivos');
-  } catch (error) {
-    console.error('❌ Error al eliminar ciclo OPR:', error);
+  } catch (_err) {
     throw new Error('No se pudo eliminar el ciclo OPR');
   }
 };
 
 // =========================
-// FUNCIONES DE UTILIDAD EXPORTADAS
+// UTILIDADES EXPORTADAS
 // =========================
 
 export const getFileInfo = (file: File) => ({
@@ -561,8 +559,7 @@ export const getAcompanamientosByDocente = async (
         fecha: normalizeFecha(data?.fecha),
       } as AcompanamientoDocente;
     });
-  } catch (error) {
-    console.error('❌ Error en getAcompanamientosByDocente:', error);
+  } catch (_err) {
     throw new Error('No se pudieron cargar los acompañamientos del docente');
   }
 };
@@ -581,24 +578,22 @@ export const getRubricaPersonalizada = async (
 
     const data = snap.docs[0].data() as any;
     return data?.rubrica ?? null;
-  } catch (error) {
-    console.error('❌ Error en getRubricaPersonalizada:', error);
+  } catch (_err) {
     return null;
   }
 };
 
-// =========================
-// FUNCIONES DE DEPURACIÓN TEMPORAL
-// =========================
-
-/** Función para verificar configuración de Storage */
+/** Depurar configuración de Storage/Firestore */
 export const debugStorageConfig = () => {
-  console.log('🔍 DEBUG Storage Config:', {
-    bucket: storage.app.options.storageBucket,
-    projectId: storage.app.options.projectId,
-    appName: storage.app.name
-  });
-  return storage.app.options.storageBucket;
+  // @ts-ignore
+  const bucket = storage.app.options?.storageBucket;
+  // @ts-ignore
+  const projectId = storage.app.options?.projectId;
+  // @ts-ignore
+  const appName = storage.app.name;
+  const info = { bucket, projectId, appName };
+  console.log('DEBUG Storage Config:', info);
+  return info;
 };
 
 // Mantener compatibilidad con código existente
