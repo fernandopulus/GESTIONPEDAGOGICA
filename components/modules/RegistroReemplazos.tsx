@@ -1,3 +1,4 @@
+
 import React, {
   useState,
   useEffect,
@@ -36,6 +37,7 @@ import {
   Clock,
   UserMinus,
   UserPlus,
+  BarChart3
 } from "lucide-react";
 
 const BLOQUES = Array.from({ length: 12 }, (_, i) => i + 1);
@@ -166,7 +168,7 @@ const StatTile: React.FC<{
   icon: React.ReactNode;
 }> = ({ title, value, icon }) => (
   <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-    <div className="grid place-items-center h-12 w-12 rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+    <div className="grid place-items-center h-12 w-12 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 text-slate-700 dark:from-slate-700 dark:to-slate-600 dark:text-slate-200">
       {icon}
     </div>
     <div>
@@ -205,6 +207,54 @@ const MiniBars: React.FC<{ data: MiniBarDatum[] }> = ({ data }) => {
           </div>
         ))}
       </div>
+    </div>
+  );
+};
+
+// ===== NUEVO: BARRAS POR CURSO (PALETA MODERNA) =====
+type CourseDatum = { label: string; value: number };
+
+const CourseBars: React.FC<{ data: CourseDatum[] }> = ({ data }) => {
+  const max = Math.max(1, ...data.map((d) => d.value));
+  const palette = [
+    "from-indigo-500 to-sky-500",
+    "from-emerald-500 to-lime-500",
+    "from-amber-500 to-orange-600",
+    "from-fuchsia-500 to-pink-500",
+    "from-cyan-500 to-teal-500",
+    "from-rose-500 to-red-500",
+    "from-violet-500 to-purple-500",
+  ];
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+      <div className="mb-4 flex items-center gap-2">
+        <BarChart3 className="h-5 w-5 text-slate-400" />
+        <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+          Reemplazos / Inasistencias por curso (mes actual)
+        </h3>
+      </div>
+      {data.length === 0 ? (
+        <div className="text-sm text-slate-500 dark:text-slate-400">
+          No hay registros este mes.
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          {data.map((d, i) => (
+            <div key={d.label} className="w-full">
+              <div className="mb-1 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span className="font-medium">{d.label}</span>
+                <span>{d.value}</span>
+              </div>
+              <div className="h-3 w-full rounded-lg bg-slate-100 dark:bg-slate-700">
+                <div
+                  className={`h-3 rounded-lg bg-gradient-to-r ${palette[i % palette.length]}`}
+                  style={{ width: `${(d.value / max) * 100}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -486,6 +536,37 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
     );
   }
 
+  // ===== NUEVO: datos para gráfico por curso (mes actual) =====
+  const now = new Date();
+  const month = now.getMonth();
+  const year = now.getFullYear();
+  const reemplazosMes = useMemo(
+    () =>
+      (reemplazos || []).filter((r) => {
+        if (!r.diaAusencia) return false;
+        const d = new Date(r.diaAusencia + "T00:00:00");
+        return d.getMonth() === month && d.getFullYear() === year;
+      }),
+    [reemplazos, month, year]
+  );
+
+  const dataPorCurso: { [curso: string]: number } = useMemo(() => {
+    const acc: { [k: string]: number } = {};
+    for (const r of reemplazosMes) {
+      const key = r.curso || "Sin curso";
+      acc[key] = (acc[key] || 0) + 1;
+    }
+    return acc;
+  }, [reemplazosMes]);
+
+  const courseData = useMemo(
+    () =>
+      Object.entries(dataPorCurso)
+        .sort(([a], [b]) => a.localeCompare(b, "es"))
+        .map(([label, value]) => ({ label, value })),
+    [dataPorCurso]
+  );
+
   return (
     <div className="space-y-8">
       {/* ====== HEADER STATS ====== */}
@@ -495,6 +576,9 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
         </h1>
         <StatsCard userId={userId} reemplazos={reemplazos} />
       </div>
+
+      {/* ====== NUEVO: GRÁFICO POR CURSO ====== */}
+      <CourseBars data={courseData} />
 
       {/* ====== FORM ====== */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">

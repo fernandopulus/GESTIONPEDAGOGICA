@@ -546,3 +546,28 @@ export const OAS_MAP_TP: Record<string, Record<string, string[]>> = {
     ],
   },
 };
+export const PME_DIMENSIONES: Record<string, string[]> = {
+  "Liderazgo Curricular": [
+    "Planificación y organización del currículo",
+    "Asegurar la cobertura y secuenciación de los contenidos",
+    "Monitoreo del cumplimiento de los planes de estudio"
+  ],
+  "Prácticas Pedagógicas en el Aula": [
+    "Estrategias de enseñanza y metodologías activas",
+    "Evaluación de los aprendizajes para retroalimentar el proceso",
+    "Uso de recursos y tecnologías para apoyar la enseñanza"
+  ],
+  "Acompañamiento y Desarrollo Profesional Docente": [
+    "Observación de clases y retroalimentación",
+    "Planes de formación continua y actualización pedagógica",
+    "Fomento de comunidades de aprendizaje docente"
+  ],
+  "Monitoreo y Evaluación de los Aprendizajes": [
+    "Uso de datos e indicadores para tomar decisiones pedagógicas",
+    "Evaluaciones internas y externas",
+    "Ajuste de estrategias según resultados y metas de aprendizaje"
+  ]
+};
+
+export const ESTADOS_ACCION_PME = ["Pendiente", "En Proceso", "Cumplida"] as const;
+export type EstadoAccionPME = typeof ESTADOS_ACCION_PME[number];
