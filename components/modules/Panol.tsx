@@ -7,8 +7,12 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
   Wrench, Factory, Plus, Save, FileSpreadsheet, FileText,
-  Search, Filter, Edit3, Trash2, X, Calendar, Users, Gauge, BookOpen
+  Search, Filter, Edit3, Trash2, X, Calendar, Users, Gauge, BookOpen, BarChart3
 } from 'lucide-react';
+
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend
+} from 'recharts';
 
 import {
   subscribeToMaquinas,
@@ -22,15 +26,10 @@ import {
   seedDefaultMaquinasIfEmpty,
 } from '../../src/firebaseHelpers/panolHelper';
 
-/**
- * Pañol con integración a Firestore.
- * Mantiene la UI moderna y responsiva con lucide-react.
- */
 const Panol: React.FC = () => {
   const [maquinas, setMaquinas] = useState<Maquina[]>([]);
   const [registros, setRegistros] = useState<RegistroPañol[]>([]);
 
-  // Formularios
   const initialRegistroState: Omit<RegistroPañol, 'id'> = {
     fecha: new Date().toISOString().split('T')[0],
     curso: '',
@@ -46,14 +45,10 @@ const Panol: React.FC = () => {
   const [formMaquina, setFormMaquina] = useState(initialMaquinaState);
   const [editingMaquina, setEditingMaquina] = useState<Maquina | null>(null);
 
-  // Filtros UI
   const [filters, setFilters] = useState({ maquinaId: '', curso: '', profesor: '', fecha: '' });
 
-  // Suscripciones Firestore
   useEffect(() => {
-    // Seed de máquinas por única vez si está vacío
     seedDefaultMaquinasIfEmpty().catch(console.error);
-
     const unsubM = subscribeToMaquinas(setMaquinas);
     const unsubR = subscribeToRegistros(setRegistros);
     return () => {
@@ -62,7 +57,6 @@ const Panol: React.FC = () => {
     };
   }, []);
 
-  // CRUD Máquinas
   const handleSaveMaquina = async (e: FormEvent) => {
     e.preventDefault();
     if (!formMaquina.nombre.trim()) return;
@@ -87,7 +81,6 @@ const Panol: React.FC = () => {
     }
   }, []);
 
-  // CRUD Registros
   const handleSaveRegistro = async (e: FormEvent) => {
     e.preventDefault();
     const dataToSave = editingRegistro || formRegistro;
@@ -117,7 +110,6 @@ const Panol: React.FC = () => {
     }
   }, []);
 
-  // Derivados
   const filteredRegistros = useMemo(() => {
     return registros
       .filter(
@@ -133,7 +125,17 @@ const Panol: React.FC = () => {
   const maquinasMap = useMemo(() => new Map(maquinas.map((m) => [m.id, m])), [maquinas]);
   const totalHoras = useMemo(() => filteredRegistros.reduce((acc, r) => acc + (Number(r.totalHoras) || 0), 0), [filteredRegistros]);
 
-  // Exportaciones
+  const usageByMachine = useMemo(() => {
+    const map = new Map<string, number>();
+    filteredRegistros.forEach(r => {
+      const nombre = maquinasMap.get(r.maquinaId)?.nombre || 'N/A';
+      map.set(nombre, (map.get(nombre) || 0) + (Number(r.totalHoras) || 0));
+    });
+    const arr = Array.from(map.entries()).map(([maquina, horas]) => ({ maquina, horas: Number(horas.toFixed(2)) }));
+    arr.sort((a, b) => b.horas - a.horas);
+    return arr;
+  }, [filteredRegistros, maquinasMap]);
+
   const handleExportExcel = () => {
     const dataToExport = filteredRegistros.map((r) => ({
       Fecha: r.fecha,
@@ -177,32 +179,45 @@ const Panol: React.FC = () => {
   };
 
   const inputStyles =
-    'w-full border border-slate-300 rounded-xl px-3 py-2 shadow-sm focus:ring-2 focus:ring-slate-500/30 focus:border-slate-400 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder-slate-400';
+    'w-full border border-slate-300 rounded-xl px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder-slate-400';
 
-  const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: React.ReactNode }> = ({ icon, label, value }) => (
-    <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 shadow-sm border border-slate-100 dark:border-slate-700 flex items-center gap-3">
-      <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700">{icon}</div>
-      <div>
-        <div className="text-xs text-slate-500">{label}</div>
-        <div className="text-xl font-semibold text-slate-800 dark:text-slate-100">{value}</div>
+  const chip = (text: string, color: string) => (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${color}`}>{text}</span>
+  );
+
+  const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: React.ReactNode; accent?: string }> = ({ icon, label, value, accent = 'from-indigo-500 to-sky-500' }) => (
+    <div className="relative rounded-2xl p-4 shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
+      <div className={`absolute inset-0 bg-gradient-to-tr ${accent} opacity-10`} />
+      <div className="relative flex items-center gap-3 bg-white/70 dark:bg-slate-800/60 rounded-xl p-3">
+        <div className="p-2 rounded-xl bg-white dark:bg-slate-700 shadow">
+          {icon}
+        </div>
+        <div>
+          <div className="text-xs text-slate-600 dark:text-slate-400">{label}</div>
+          <div className="text-xl font-semibold text-slate-900 dark:text-slate-100">{value}</div>
+        </div>
       </div>
     </div>
   );
 
-  const SectionCard: React.FC<{ title: string; icon?: React.ReactNode; children: React.ReactNode; right?: React.ReactNode }> = ({
+  const SectionCard: React.FC<{ title: string; icon?: React.ReactNode; children: React.ReactNode; right?: React.ReactNode; accent?: string }> = ({
     title,
     icon,
     children,
     right,
+    accent = 'from-indigo-600/10 via-sky-500/10 to-emerald-500/10',
   }) => (
-    <section className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100">
-          {icon} <span>{title}</span>
-        </h2>
-        {right}
+    <section className="rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 relative overflow-hidden">
+      <div className={`absolute inset-0 bg-gradient-to-br ${accent}`} />
+      <div className="relative">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-slate-100">
+            {icon} <span>{title}</span>
+          </h2>
+          {right}
+        </div>
+        {children}
       </div>
-      {children}
     </section>
   );
 
@@ -221,7 +236,7 @@ const Panol: React.FC = () => {
               name="fecha"
               type="date"
               value={data.fecha}
-              onChange={(e) => setData({ ...data as any, fecha: e.target.value })}
+              onChange={(e) => setData({ ...(data as any), fecha: e.target.value })}
               className={inputStyles}
               required
             />
@@ -233,7 +248,7 @@ const Panol: React.FC = () => {
             <select
               name="curso"
               value={data.curso}
-              onChange={(e) => setData({ ...data as any, curso: e.target.value })}
+              onChange={(e) => setData({ ...(data as any), curso: e.target.value })}
               className={inputStyles}
               required
             >
@@ -250,7 +265,7 @@ const Panol: React.FC = () => {
             <select
               name="profesorResponsable"
               value={data.profesorResponsable}
-              onChange={(e) => setData({ ...data as any, profesorResponsable: e.target.value })}
+              onChange={(e) => setData({ ...(data as any), profesorResponsable: e.target.value })}
               className={inputStyles}
               required
             >
@@ -269,7 +284,7 @@ const Panol: React.FC = () => {
             <select
               name="maquinaId"
               value={data.maquinaId}
-              onChange={(e) => setData({ ...data as any, maquinaId: e.target.value })}
+              onChange={(e) => setData({ ...(data as any), maquinaId: e.target.value })}
               className={inputStyles}
               required
             >
@@ -289,7 +304,7 @@ const Panol: React.FC = () => {
               name="totalHoras"
               type="number"
               value={data.totalHoras}
-              onChange={(e) => setData({ ...data as any, totalHoras: Number(e.target.value) })}
+              onChange={(e) => setData({ ...(data as any), totalHoras: Number(e.target.value) })}
               className={inputStyles}
               required
               min={0.5}
@@ -301,7 +316,7 @@ const Panol: React.FC = () => {
             <textarea
               name="observaciones"
               value={data.observaciones}
-              onChange={(e) => setData({ ...data as any, observaciones: e.target.value })}
+              onChange={(e) => setData({ ...(data as any), observaciones: e.target.value })}
               placeholder="Observaciones..."
               className={inputStyles + ' min-h-[40px]'}
               rows={2}
@@ -313,14 +328,14 @@ const Panol: React.FC = () => {
             <button
               type="button"
               onClick={() => setEditingRegistro(null)}
-              className="inline-flex items-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium py-2 px-4 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+              className="inline-flex items-center gap-2 bg-white text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 font-medium py-2 px-4 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition"
             >
               <X size={16} /> Cancelar
             </button>
           )}
           <button
             type="submit"
-            className="inline-flex items-center gap-2 bg-slate-900 text-white font-semibold py-2 px-4 rounded-xl hover:bg-slate-800 transition"
+            className="inline-flex items-center gap-2 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-xl hover:bg-indigo-500 transition"
           >
             {editingRegistro ? <Save size={16} /> : <Plus size={16} />}
             {editingRegistro ? 'Actualizar' : 'Registrar'}
@@ -334,8 +349,10 @@ const Panol: React.FC = () => {
     <div className="space-y-8 animate-fade-in">
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Pañol: Registro de Uso de Máquinas</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Administra máquinas, registra usos y exporta informes (Firestore).</p>
+          <h1 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-sky-500 to-emerald-500">
+            Pañol: Registro de Uso de Máquinas
+          </h1>
+          <p className="text-sm text-slate-600 dark:text-slate-400">Administra máquinas, registra usos y exporta informes (Firestore).</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -348,7 +365,7 @@ const Panol: React.FC = () => {
           </button>
           <button
             onClick={handleExportPDF}
-            className="inline-flex items-center gap-2 bg-slate-900 text-white px-3 py-2 rounded-xl hover:bg-slate-800 transition"
+            className="inline-flex items-center gap-2 bg-emerald-600 text-white px-3 py-2 rounded-xl hover:bg-emerald-500 transition"
             title="Exportar a PDF"
           >
             <FileText size={18} /> PDF
@@ -356,29 +373,49 @@ const Panol: React.FC = () => {
         </div>
       </header>
 
-      {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={<Wrench className="w-5 h-5" />} label="Máquinas registradas" value={maquinas.length} />
-        <StatCard icon={<FileText className="w-5 h-5" />} label="Registros" value={filteredRegistros.length} />
-        <StatCard icon={<Gauge className="w-5 h-5" />} label="Horas totales (filtradas)" value={totalHoras.toFixed(1)} />
+        <StatCard icon={<Wrench className="w-5 h-5 text-indigo-600" />} label="Máquinas registradas" value={maquinas.length} accent="from-indigo-500 to-sky-500" />
+        <StatCard icon={<FileText className="w-5 h-5 text-sky-600" />} label="Registros" value={filteredRegistros.length} accent="from-sky-500 to-cyan-500" />
+        <StatCard icon={<Gauge className="w-5 h-5 text-emerald-600" />} label="Horas totales (filtradas)" value={totalHoras.toFixed(1)} accent="from-emerald-500 to-lime-500" />
         <StatCard
-          icon={<Calendar className="w-5 h-5" />}
+          icon={<Calendar className="w-5 h-5 text-amber-600" />}
           label="Última actualización"
           value={registros[0]?.fecha ? new Date(registros[0].fecha).toLocaleDateString() : '—'}
+          accent="from-amber-500 to-rose-400"
         />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Registro de Uso */}
         <div className="xl:col-span-3">
           <SectionCard title={editingRegistro ? `Editando registro #${editingRegistro.id.slice(0, 4)}` : 'Nuevo registro de uso'} icon={<Factory size={18} />}>
             <RegistroForm />
           </SectionCard>
         </div>
 
-        {/* Administración de Máquinas */}
+        <div className="xl:col-span-2 order-1 xl:order-none">
+          <SectionCard
+            title="Uso por máquina (horas)"
+            icon={<BarChart3 size={18} />}
+            accent="from-indigo-600/10 via-sky-500/10 to-amber-500/10"
+            right={<div className="flex gap-2 items-center">{chip(`${usageByMachine.length} máquinas`, 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200')}</div>}
+          >
+            <div className="h-[320px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={usageByMachine} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="maquina" tick={{ fontSize: 12 }} interval={0} angle={0} height={50} />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="horas" name="Horas" fill="#6366F1" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </SectionCard>
+        </div>
+
         <div className="xl:col-span-1 order-2 xl:order-none">
-          <SectionCard title="Administrar máquinas" icon={<Wrench size={18} />}>
+          <SectionCard title="Administrar máquinas" icon={<Wrench size={18} />} accent="from-emerald-600/10 via-sky-500/10 to-indigo-600/10">
             <form onSubmit={handleSaveMaquina} className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-4">
               <input
                 value={formMaquina.nombre}
@@ -396,7 +433,7 @@ const Panol: React.FC = () => {
               </select>
               <button
                 type="submit"
-                className="inline-flex items-center justify-center gap-2 bg-slate-900 text-white font-semibold py-2 px-3 rounded-xl hover:bg-slate-800 transition md:col-span-1"
+                className="inline-flex items-center justify-center gap-2 bg-indigo-600 text-white font-semibold py-2 px-3 rounded-xl hover:bg-indigo-500 transition md:col-span-1"
               >
                 {editingMaquina ? <Save size={16} /> : <Plus size={16} />}
                 {editingMaquina ? 'Guardar' : 'Agregar'}
@@ -407,11 +444,15 @@ const Panol: React.FC = () => {
               {maquinas.map((m) => (
                 <li
                   key={m.id}
-                  className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 rounded-xl"
+                  className="flex justify-between items-center bg-gradient-to-r from-slate-50 to-white dark:from-slate-800/60 dark:to-slate-800/30 border border-slate-200 dark:border-slate-700 p-3 rounded-xl"
                 >
-                  <div>
-                    <div className="font-medium">{m.nombre}</div>
-                    <div className="text-xs text-slate-500">({m.especialidad})</div>
+                  <div className="space-y-0.5">
+                    <div className="font-medium text-slate-800 dark:text-slate-100">{m.nombre}</div>
+                    <div className="text-xs">
+                      {m.especialidad === 'Industrial'
+                        ? chip('Industrial', 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200')
+                        : chip('Automotriz', 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200')}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -434,14 +475,14 @@ const Panol: React.FC = () => {
           </SectionCard>
         </div>
 
-        {/* Historial */}
-        <div className="xl:col-span-2 order-1 xl:order-none">
+        <div className="xl:col-span-2 order-3">
           <SectionCard
             title="Historial de uso"
             icon={<FileText size={18} />}
+            accent="from-rose-500/10 via-amber-400/10 to-indigo-500/10"
             right={
               <div className="flex items-center gap-2">
-                <Filter size={16} className="text-slate-500" />
+                <Filter size={16} className="text-slate-600" />
               </div>
             }
           >
@@ -482,11 +523,11 @@ const Panol: React.FC = () => {
               <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
                 <thead className="bg-slate-50 dark:bg-slate-800 sticky top-0 z-10">
                   <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">Fecha</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">Máquina</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">Profesor / Curso</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">Total Horas</th>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-slate-500 uppercase">Acciones</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 uppercase">Fecha</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 uppercase">Máquina</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 uppercase">Profesor / Curso</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 uppercase">Total Horas</th>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-slate-600 uppercase">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-800">

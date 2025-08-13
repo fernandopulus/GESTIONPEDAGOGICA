@@ -12,7 +12,6 @@ import {
   getDocs,
   writeBatch,
   serverTimestamp,
-  Timestamp,
 } from 'firebase/firestore';
 import { db } from './config';
 import { RegistroPañol, Maquina } from '../../types';
@@ -20,12 +19,7 @@ import { RegistroPañol, Maquina } from '../../types';
 export const MAQUINAS_COLLECTION = 'panol_maquinas';
 export const REGISTROS_COLLECTION = 'panol_registros';
 
-/** -----------------------------
- *  Suscripciones (tiempo real)
- *  ----------------------------- */
-export const subscribeToMaquinas = (
-  cb: (items: Maquina[]) => void
-) => {
+export const subscribeToMaquinas = (cb: (items: Maquina[]) => void) => {
   const q = query(collection(db, MAQUINAS_COLLECTION), orderBy('nombre', 'asc'));
   return onSnapshot(q, (snap) => {
     const data: Maquina[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Maquina, 'id'>) }));
@@ -33,10 +27,7 @@ export const subscribeToMaquinas = (
   });
 };
 
-export const subscribeToRegistros = (
-  cb: (items: RegistroPañol[]) => void
-) => {
-  // Ordenamos por fecha (string YYYY-MM-DD) descendente y luego por createdAt
+export const subscribeToRegistros = (cb: (items: RegistroPañol[]) => void) => {
   const q = query(collection(db, REGISTROS_COLLECTION), orderBy('fecha', 'desc'));
   return onSnapshot(q, (snap) => {
     const data: RegistroPañol[] = snap.docs.map((d) => {
@@ -55,9 +46,6 @@ export const subscribeToRegistros = (
   });
 };
 
-/** -----------------------------
- *  CRUD Máquinas
- *  ----------------------------- */
 export const addMaquina = async (payload: Omit<Maquina, 'id'>) => {
   const ref = await addDoc(collection(db, MAQUINAS_COLLECTION), {
     ...payload,
@@ -75,7 +63,6 @@ export const updateMaquina = async (id: string, payload: Partial<Omit<Maquina, '
 };
 
 export const deleteMaquina = async (id: string) => {
-  // Evitar borrar si hay registros que la referencian
   const q = query(collection(db, REGISTROS_COLLECTION), where('maquinaId', '==', id));
   const hasRefs = await getDocs(q);
   if (!hasRefs.empty) {
@@ -84,9 +71,6 @@ export const deleteMaquina = async (id: string) => {
   await deleteDoc(doc(db, MAQUINAS_COLLECTION, id));
 };
 
-/** -----------------------------
- *  CRUD Registros
- *  ----------------------------- */
 export const addRegistro = async (payload: Omit<RegistroPañol, 'id'>) => {
   const ref = await addDoc(collection(db, REGISTROS_COLLECTION), {
     ...payload,
@@ -107,23 +91,18 @@ export const deleteRegistro = async (id: string) => {
   await deleteDoc(doc(db, REGISTROS_COLLECTION, id));
 };
 
-/** -----------------------------
- *  Utilidad: seed de máquinas si la colección está vacía
- *  ----------------------------- */
 export const seedDefaultMaquinasIfEmpty = async () => {
   const snap = await getDocs(collection(db, MAQUINAS_COLLECTION));
   if (!snap.empty) return;
 
   const batch = writeBatch(db);
   const defaults: Omit<Maquina, 'id'>[] = [
-    // Industrial
     { nombre: 'Torno', especialidad: 'Industrial' as any },
     { nombre: 'Fresadora', especialidad: 'Industrial' as any },
     { nombre: 'Rectificadora', especialidad: 'Industrial' as any },
     { nombre: 'Soldadora MIG', especialidad: 'Industrial' as any },
     { nombre: 'Soldadora TIG', especialidad: 'Industrial' as any },
     { nombre: 'Torno CNC', especialidad: 'Industrial' as any },
-    // Automotriz
     { nombre: 'Elevador', especialidad: 'Automotriz' as any },
     { nombre: 'Compresor', especialidad: 'Automotriz' as any },
     { nombre: 'Rectificadora', especialidad: 'Automotriz' as any },
