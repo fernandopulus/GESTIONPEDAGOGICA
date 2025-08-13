@@ -13,7 +13,7 @@ import {
 import {
   BarChart3, ClipboardList, Plus, Save, Search, Filter, Calendar,
   User, FileText, Link2, Target, Gauge, CheckCircle2, Hourglass, AlertCircle,
-  Trash2, Pencil, Download, LayoutGrid, ListChecks, LineChart, RefreshCcw
+  Trash2, Pencil, Download, LayoutGrid, ListChecks, LineChart, RefreshCcw, Sparkles, Palette
 } from "lucide-react";
 
 // Charts
@@ -41,19 +41,44 @@ const initial: Omit<AccionPME, "id"|"creadoTs"> = {
   enlaces: []
 };
 
-const inputBase = "w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/70 focus:border-amber-500/70 transition";
-const labelBase = "block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2";
-const card = "rounded-2xl border border-slate-100 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur shadow-sm";
+// ===== Styles (more color) =====
+const card = "rounded-2xl border border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-slate-900/60 shadow-sm backdrop-blur";
+const inputBase = "w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/70 focus:border-fuchsia-500/70 transition";
+const labelBase = "block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2";
+
+const tabBase = "inline-flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition";
+const tabActive = "bg-gradient-to-r from-fuchsia-600 to-rose-500 text-white shadow-sm";
+const tabInactive = "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 hover:bg-slate-200/80 dark:hover:bg-slate-700";
+
+const kpiCard = "rounded-2xl p-5 text-white shadow-md bg-gradient-to-br";
+const kpi1 = "from-sky-500 to-indigo-500";
+const kpi2 = "from-emerald-500 to-lime-500";
+const kpi3 = "from-amber-500 to-rose-500";
+const kpi4 = "from-fuchsia-500 to-purple-600";
+
+const statusMap: Record<EstadoAccionPME, { badge: string; icon: any; dot: string }> = {
+  "Pendiente": {
+    badge: "bg-rose-50 text-rose-700 ring-1 ring-rose-200 dark:bg-rose-900/30 dark:text-rose-200 dark:ring-rose-800",
+    icon: AlertCircle,
+    dot: "bg-rose-500"
+  },
+  "En Proceso": {
+    badge: "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:ring-amber-800",
+    icon: Hourglass,
+    dot: "bg-amber-500"
+  },
+  "Cumplida": {
+    badge: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-200 dark:ring-emerald-800",
+    icon: CheckCircle2,
+    dot: "bg-emerald-500"
+  },
+};
 
 const estadoBadge = (estado: EstadoAccionPME) => {
-  const map: Record<EstadoAccionPME, string> = {
-    "Pendiente": "bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-900/30 dark:text-red-200 dark:ring-red-800",
-    "En Proceso": "bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-200 dark:ring-yellow-800",
-    "Cumplida": "bg-green-50 text-green-700 ring-1 ring-green-200 dark:bg-green-900/30 dark:text-green-200 dark:ring-green-800",
-  };
-  const Icon = estado === "Pendiente" ? AlertCircle : estado === "En Proceso" ? Hourglass : CheckCircle2;
+  const Icon = statusMap[estado].icon;
   return (
-    <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${map[estado]}`}>
+    <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${statusMap[estado].badge}`}>
+      <span className={`h-2 w-2 rounded-full ${statusMap[estado].dot}`} />
       <Icon className="h-4 w-4" /> {estado}
     </span>
   );
@@ -201,27 +226,41 @@ const SeguimientoAcciones: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* Header colorful */}
+      <div className="relative overflow-hidden rounded-3xl border border-fuchsia-200/60 dark:border-fuchsia-700/30">
+        <div className="absolute inset-0 bg-gradient-to-r from-fuchsia-500/20 via-rose-500/20 to-amber-400/20 blur-3xl" />
+        <div className="relative p-6 md:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white/60 dark:bg-slate-900/40 backdrop-blur">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black bg-gradient-to-r from-fuchsia-600 via-rose-600 to-amber-600 bg-clip-text text-transparent flex items-center gap-3">
+              <Sparkles className="h-6 w-6 text-fuchsia-600" /> Seguimiento de Acciones (PME)
+            </h1>
+            <p className="text-slate-600 dark:text-slate-300 flex items-center gap-2">
+              <Palette className="h-4 w-4" /> Registro, seguimiento y dashboard por Dimensión/Subdimensión.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={fetchData} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-white">
+              <RefreshCcw className="h-4 w-4" /> Refrescar
+            </button>
+            <button onClick={exportCSV} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white bg-gradient-to-r from-fuchsia-600 to-rose-500 hover:opacity-90">
+              <Download className="h-4 w-4" /> CSV
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Tabs */}
       <div className="flex flex-wrap items-center gap-2">
-        <button onClick={()=>setTab("registro")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${tab==="registro" ? "bg-slate-900 text-white dark:bg-amber-500 dark:text-slate-900" : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"}`}>
+        <button onClick={()=>setTab("registro")} className={`${tabBase} ${tab==="registro" ? tabActive : tabInactive}`}>
           <ClipboardList className="h-4 w-4" /> Registro
         </button>
-        <button onClick={()=>setTab("seguimiento")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${tab==="seguimiento" ? "bg-slate-900 text-white dark:bg-amber-500 dark:text-slate-900" : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"}`}>
+        <button onClick={()=>setTab("seguimiento")} className={`${tabBase} ${tab==="seguimiento" ? tabActive : tabInactive}`}>
           <ListChecks className="h-4 w-4" /> Seguimiento
         </button>
-        <button onClick={()=>setTab("dashboard")} className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${tab==="dashboard" ? "bg-slate-900 text-white dark:bg-amber-500 dark:text-slate-900" : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"}`}>
+        <button onClick={()=>setTab("dashboard")} className={`${tabBase} ${tab==="dashboard" ? tabActive : tabInactive}`}>
           <LineChart className="h-4 w-4" /> Dashboard
         </button>
-
-        <div className="ml-auto flex items-center gap-2">
-          <button onClick={fetchData} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800">
-            <RefreshCcw className="h-4 w-4" /> Refrescar
-          </button>
-          <button onClick={exportCSV} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white dark:bg-amber-500 dark:text-slate-900">
-            <Download className="h-4 w-4" /> CSV
-          </button>
-        </div>
       </div>
 
       {/* Registro */}
@@ -229,7 +268,7 @@ const SeguimientoAcciones: React.FC = () => {
         <div className={card}>
           <form onSubmit={onSubmit} className="p-6 md:p-8 space-y-6">
             {error && (
-              <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-red-700 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800">
+              <div className="flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200 dark:border-rose-800">
                 <AlertCircle className="h-5 w-5" />
                 <span>{error}</span>
               </div>
@@ -239,7 +278,7 @@ const SeguimientoAcciones: React.FC = () => {
               <div>
                 <label className={labelBase}>Fecha de Registro</label>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fuchsia-500" />
                   <input type="date" name="fechaRegistro" value={form.fechaRegistro} onChange={onField} className={inputBase + " pl-10"} />
                 </div>
               </div>
@@ -247,7 +286,7 @@ const SeguimientoAcciones: React.FC = () => {
               <div>
                 <label className={labelBase}>Responsable</label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-rose-500" />
                   <input type="text" name="responsable" placeholder="Nombre" value={form.responsable} onChange={onField} className={inputBase + " pl-10"} />
                 </div>
               </div>
@@ -255,7 +294,7 @@ const SeguimientoAcciones: React.FC = () => {
               <div>
                 <label className={labelBase}>Cobertura (niveles/cursos)</label>
                 <div className="relative">
-                  <Target className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Target className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-amber-500" />
                   <input type="text" name="cobertura" placeholder="2°A, 2°B, 3°Mecánica..." value={form.cobertura ?? ""} onChange={onField} className={inputBase + " pl-10"} />
                 </div>
               </div>
@@ -263,7 +302,7 @@ const SeguimientoAcciones: React.FC = () => {
               <div>
                 <label className={labelBase}>Dimensión PME</label>
                 <div className="relative">
-                  <LayoutGrid className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <LayoutGrid className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-indigo-500" />
                   <select name="dimension" value={form.dimension} onChange={onField} className={inputBase + " pl-10"}>
                     <option value="">Selecciona una dimensión</option>
                     {Object.keys(PME_DIMENSIONES).map(k => <option key={k} value={k}>{k}</option>)}
@@ -274,7 +313,7 @@ const SeguimientoAcciones: React.FC = () => {
               <div className="md:col-span-2">
                 <label className={labelBase}>Subdimensión</label>
                 <div className="relative">
-                  <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-sky-500" />
                   <select name="subdimension" value={form.subdimension} onChange={onField} className={inputBase + " pl-10"} disabled={!form.dimension}>
                     <option value="">{form.dimension ? "Selecciona una subdimensión" : "Primero elige una dimensión"}</option>
                     {subOptions.map(s => <option key={s} value={s}>{s}</option>)}
@@ -285,7 +324,7 @@ const SeguimientoAcciones: React.FC = () => {
               <div className="md:col-span-3">
                 <label className={labelBase}>Descripción de la Acción</label>
                 <div className="relative">
-                  <FileText className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                  <FileText className="absolute left-3 top-3 h-4 w-4 text-fuchsia-500" />
                   <textarea name="descripcion" value={form.descripcion} onChange={onField} rows={3} placeholder="¿Qué se hará? ¿Dónde y con quién?" className={inputBase + " pl-10"} />
                 </div>
               </div>
@@ -303,7 +342,7 @@ const SeguimientoAcciones: React.FC = () => {
               <div>
                 <label className={labelBase}>Fecha de Inicio</label>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-violet-500" />
                   <input type="date" name="fechaInicio" value={form.fechaInicio ?? ""} onChange={onField} className={inputBase + " pl-10"} />
                 </div>
               </div>
@@ -311,7 +350,7 @@ const SeguimientoAcciones: React.FC = () => {
               <div>
                 <label className={labelBase}>Fecha de Cumplimiento</label>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500" />
                   <input type="date" name="fechaCumplimiento" value={form.fechaCumplimiento} onChange={onField} className={inputBase + " pl-10"} />
                 </div>
               </div>
@@ -326,7 +365,7 @@ const SeguimientoAcciones: React.FC = () => {
               <div>
                 <label className={labelBase}>Avance (%)</label>
                 <div className="relative">
-                  <Gauge className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Gauge className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500" />
                   <input type="number" min={0} max={100} name="avance" value={form.avance ?? 0} onChange={onField} className={inputBase + " pl-10"} />
                 </div>
               </div>
@@ -334,7 +373,7 @@ const SeguimientoAcciones: React.FC = () => {
               <div className="md:col-span-2">
                 <label className={labelBase}>Enlaces de evidencia (separados por coma)</label>
                 <div className="relative">
-                  <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-indigo-500" />
                   <input type="text" value={(form.enlaces ?? []).join(", ")} onChange={(e)=>onEnlaces(e.target.value)} placeholder="https://..., https://..." className={inputBase + " pl-10"} />
                 </div>
               </div>
@@ -342,11 +381,11 @@ const SeguimientoAcciones: React.FC = () => {
 
             <div className="flex items-center justify-end gap-3">
               {editingId && (
-                <button type="button" onClick={resetForm} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800">
+                <button type="button" onClick={resetForm} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700">
                   Cancelar
                 </button>
               )}
-              <button type="submit" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white dark:bg-amber-500 dark:text-slate-900">
+              <button type="submit" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white bg-gradient-to-r from-fuchsia-600 via-rose-500 to-amber-500 hover:opacity-90">
                 {editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                 {editingId ? "Guardar cambios" : "Registrar acción"}
               </button>
@@ -358,10 +397,10 @@ const SeguimientoAcciones: React.FC = () => {
       {/* Seguimiento */}
       {tab === "seguimiento" && (
         <div className={card}>
-          <div className="p-4 md:p-6 space-y-4">
+          <div className="p-4 md:p-6 space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div className="relative md:col-span-2">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fuchsia-600" />
                 <input className={inputBase + " pl-10"} placeholder="Buscar por responsable, descripción o subdimensión..." value={q} onChange={e=>setQ(e.target.value)} />
               </div>
               <select value={fDim} onChange={e=>{setFDim(e.target.value); setFSub("");}} className={inputBase}>
@@ -380,26 +419,33 @@ const SeguimientoAcciones: React.FC = () => {
 
             <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
               <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
-                <thead className="bg-slate-50/80 dark:bg-slate-800/80 backdrop-blur">
+                <thead className="bg-gradient-to-r from-fuchsia-50 to-rose-50 dark:from-slate-800 dark:to-slate-800">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Responsable</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Dimensión / Subdimensión</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Descripción</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Fechas</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Estado</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Avance</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Acciones</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-fuchsia-700 dark:text-fuchsia-300">Responsable</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">Dimensión / Subdimensión</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">Descripción</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Fechas</th>
+                    <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Estado</th>
+                    <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">Avance</th>
+                    <th className="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900/40">
                   {filtered.map(row => (
-                    <tr key={row.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/60 transition">
+                    <tr key={row.id} className="hover:bg-fuchsia-50/50 dark:hover:bg-slate-800/60 transition">
                       <td className="px-4 py-4 align-top text-sm">
-                        <div className="font-semibold">{row.responsable}</div>
-                        <div className="text-xs text-slate-500">{row.cobertura}</div>
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-fuchsia-500 to-rose-500 text-white flex items-center justify-center font-bold shadow-sm">
+                            {row.responsable?.slice(0,1)?.toUpperCase() || "?"}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-slate-900 dark:text-slate-100">{row.responsable}</div>
+                            <div className="text-xs text-slate-500">{row.cobertura}</div>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-4 align-top text-sm">
-                        <div className="font-semibold">{row.dimension}</div>
+                        <div className="font-semibold text-indigo-700 dark:text-indigo-300">{row.dimension}</div>
                         <div className="text-xs text-slate-500">{row.subdimension}</div>
                       </td>
                       <td className="px-4 py-4 align-top text-sm max-w-md">
@@ -407,7 +453,7 @@ const SeguimientoAcciones: React.FC = () => {
                         {row.enlaces && row.enlaces.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-2">
                             {row.enlaces.map((u,i)=>(
-                              <a key={i} href={u} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 dark:text-indigo-300">
+                              <a key={i} href={u} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-fuchsia-700 hover:text-fuchsia-900 dark:text-fuchsia-300">
                                 <Link2 className="h-3.5 w-3.5" /> Evidencia {i+1}
                               </a>
                             ))}
@@ -417,22 +463,22 @@ const SeguimientoAcciones: React.FC = () => {
                       <td className="px-4 py-4 align-top text-sm whitespace-nowrap">
                         <div className="text-xs text-slate-500">Reg: {row.fechaRegistro || "-"}</div>
                         <div className="text-xs text-slate-500">Ini: {row.fechaInicio || "-"}</div>
-                        <div className="text-xs font-semibold">Fin: {row.fechaCumplimiento}</div>
+                        <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Fin: {row.fechaCumplimiento}</div>
                       </td>
                       <td className="px-4 py-4 align-top text-center">{estadoBadge(row.estado)}</td>
                       <td className="px-4 py-4 align-top">
-                        <div className="w-28 h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-500" style={{ width: `${Math.min(Math.max(row.avance ?? 0, 0), 100)}%` }} />
+                        <div className="w-28 h-2.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-fuchsia-500 via-rose-500 to-amber-500" style={{ width: `${Math.min(Math.max(row.avance ?? 0, 0), 100)}%` }} />
                         </div>
                         <div className="text-xs text-center mt-1">{row.avance ?? 0}%</div>
                       </td>
                       <td className="px-4 py-4 align-top text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          <button onClick={()=>onEdit(row)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Editar">
-                            <Pencil className="h-5 w-5 text-yellow-600 dark:text-yellow-300" />
+                          <button onClick={()=>onEdit(row)} className="p-2 rounded-lg hover:bg-amber-50 dark:hover:bg-slate-800" title="Editar">
+                            <Pencil className="h-5 w-5 text-amber-600" />
                           </button>
-                          <button onClick={()=>onDelete(row.id)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Eliminar">
-                            <Trash2 className="h-5 w-5 text-red-600 dark:text-red-300" />
+                          <button onClick={()=>onDelete(row.id)} className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-slate-800" title="Eliminar">
+                            <Trash2 className="h-5 w-5 text-rose-600" />
                           </button>
                         </div>
                       </td>
@@ -453,32 +499,40 @@ const SeguimientoAcciones: React.FC = () => {
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* KPIs */}
           <div className="xl:col-span-3 grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className={card + " p-5 flex items-center gap-4"}>
-              <BarChart3 className="h-10 w-10" />
-              <div>
-                <div className="text-xs uppercase text-slate-500">Acciones totales</div>
-                <div className="text-2xl font-bold">{acciones.length}</div>
+            <div className={`${kpiCard} ${kpi1}`}>
+              <div className="flex items-center gap-4">
+                <BarChart3 className="h-10 w-10 opacity-90" />
+                <div>
+                  <div className="text-xs uppercase/relaxed">Acciones totales</div>
+                  <div className="text-2xl font-black">{acciones.length}</div>
+                </div>
               </div>
             </div>
-            <div className={card + " p-5 flex items-center gap-4"}>
-              <CheckCircle2 className="h-10 w-10" />
-              <div>
-                <div className="text-xs uppercase text-slate-500">Cumplidas</div>
-                <div className="text-2xl font-bold">{byEstado.find(x=>x.name==="Cumplida")?.value ?? 0}</div>
+            <div className={`${kpiCard} ${kpi2}`}>
+              <div className="flex items-center gap-4">
+                <CheckCircle2 className="h-10 w-10 opacity-90" />
+                <div>
+                  <div className="text-xs uppercase/relaxed">Cumplidas</div>
+                  <div className="text-2xl font-black">{byEstado.find(x=>x.name==="Cumplida")?.value ?? 0}</div>
+                </div>
               </div>
             </div>
-            <div className={card + " p-5 flex items-center gap-4"}>
-              <Hourglass className="h-10 w-10" />
-              <div>
-                <div className="text-xs uppercase text-slate-500">En proceso</div>
-                <div className="text-2xl font-bold">{byEstado.find(x=>x.name==="En Proceso")?.value ?? 0}</div>
+            <div className={`${kpiCard} ${kpi3}`}>
+              <div className="flex items-center gap-4">
+                <Hourglass className="h-10 w-10 opacity-90" />
+                <div>
+                  <div className="text-xs uppercase/relaxed">En proceso</div>
+                  <div className="text-2xl font-black">{byEstado.find(x=>x.name==="En Proceso")?.value ?? 0}</div>
+                </div>
               </div>
             </div>
-            <div className={card + " p-5 flex items-center gap-4"}>
-              <Gauge className="h-10 w-10" />
-              <div>
-                <div className="text-xs uppercase text-slate-500">Avance promedio</div>
-                <div className="text-2xl font-bold">{avancePromedio}%</div>
+            <div className={`${kpiCard} ${kpi4}`}>
+              <div className="flex items-center gap-4">
+                <Gauge className="h-10 w-10 opacity-90" />
+                <div>
+                  <div className="text-xs uppercase/relaxed">Avance promedio</div>
+                  <div className="text-2xl font-black">{avancePromedio}%</div>
+                </div>
               </div>
             </div>
           </div>
@@ -486,7 +540,7 @@ const SeguimientoAcciones: React.FC = () => {
           {/* Barras por dimensión */}
           <div className={card + " p-5"}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold">Acciones por dimensión</h3>
+              <h3 className="font-semibold text-slate-800 dark:text-slate-100">Acciones por dimensión</h3>
             </div>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
@@ -514,7 +568,7 @@ const SeguimientoAcciones: React.FC = () => {
 
           {/* Pie por estado */}
           <div className={card + " p-5"}>
-            <h3 className="font-semibold mb-4">Distribución por estado</h3>
+            <h3 className="font-semibold mb-4 text-slate-800 dark:text-slate-100">Distribución por estado</h3>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -530,7 +584,7 @@ const SeguimientoAcciones: React.FC = () => {
 
           {/* Top subdimensiones */}
           <div className={card + " p-5"}>
-            <h3 className="font-semibold mb-4">Subdimensiones más trabajadas</h3>
+            <h3 className="font-semibold mb-4 text-slate-800 dark:text-slate-100">Subdimensiones más trabajadas</h3>
             <ul className="space-y-2">
               {topSubdim.map((t,i)=>(
                 <li key={i} className="flex items-center justify-between text-sm">
