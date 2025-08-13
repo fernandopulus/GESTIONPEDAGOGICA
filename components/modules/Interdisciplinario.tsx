@@ -12,7 +12,6 @@ import {
 import { ASIGNATURAS, CURSOS } from '../../constants';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import html2canvas from 'html2canvas';
 
 import {
   subscribeToPlanificaciones,
@@ -473,9 +472,9 @@ const SubmissionsViewer: React.FC<{ plan: PlanificacionExtendida; onBack: () => 
     setIsGeneratingFeedbackFor(entrega.id);
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey) { alert('La API Key de Gemini no está configurada.'); setIsGeneratingFeedbackFor(null); return; }
-    const prompt = `Eres un profesor asistente. Genera una retroalimentación constructiva (2-3 frases) para la entrega de un estudiante.
+    const prompt = `Eres un profesor asistente. Genera una retroalimentación breve (2-3 frases) para la entrega de un estudiante.
 Instrucciones de la tarea: "${selectedTask?.instrucciones}"
-Comentario del estudiante: "${entrega.observacionesEstudiante || 'No dejó comentarios.'}"`.trim();
+Comentario del estudiante: "${entrega.observacionesEstudiante || 'Sin comentarios.'}"`.trim();
     try {
       const ai = new GoogleGenerativeAI(apiKey);
       const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
@@ -602,7 +601,7 @@ Comentario del estudiante: "${entrega.observacionesEstudiante || 'No dejó comen
 };
 
 /* =========================
-   Generador AI para objetivos/indicadores/estructura
+   Generador AI (objetivos, indicadores, estructura)
    ========================= */
 const AIButtons: React.FC<{
   descripcion: string;
@@ -1080,9 +1079,13 @@ const Interdisciplinario: React.FC = () => {
   const [editingPlan, setEditingPlan] = useState<PlanificacionExtendida | null>(null);
   const [isExportingId, setIsExportingId] = useState<string | null>(null);
   const [viewingSubmissionsForPlan, setViewingSubmissionsForPlan] = useState<PlanificacionExtendida | null>(null);
-
-  // Filtro del Gantt por proyecto
   const [timelineFilterId, setTimelineFilterId] = useState<'all' | string>('all');
+
+  // ✅ useMemo declarado ARRIBA (top-level), nunca tras returns condicionales
+  const filteredForGantt = useMemo(() => {
+    if (timelineFilterId === 'all') return planificaciones;
+    return planificaciones.filter(p => p.id === timelineFilterId);
+  }, [planificaciones, timelineFilterId]);
 
   useEffect(() => {
     setLoading(true);
@@ -1111,7 +1114,6 @@ const Interdisciplinario: React.FC = () => {
     await updatePlanificacion(planId, updated as any);
   }, [planificaciones]);
 
-  // Guardar: FIX anti-duplicado
   const handleSave = async (plan: Omit<PlanificacionExtendida, 'id'> | PlanificacionExtendida) => {
     try {
       const isEdit = (plan as any).id && String((plan as any).id).length > 0;
@@ -1144,32 +1146,12 @@ const Interdisciplinario: React.FC = () => {
     const doc = new jsPDF('p', 'mm', 'a4');
     const margin = 15;
     const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
     const contentWidth = pageWidth - margin * 2;
-    let y = margin;
+    let y = margin + 20;
 
-    const FONT_TITLE = 22; const FONT_HEADER = 14; const FONT_BODY = 11;
-    const addPageHeader = () => {
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(150);
-      doc.text('Proyecto Interdisciplinario', margin, 12); doc.text('Liceo Industrial de Recoleta', pageWidth - margin, 12, { align: 'right' });
-      doc.setDrawColor(220); doc.line(margin, 15, pageWidth - margin, 15);
-    };
-    const checkPageBreak = (needed: number) => { if (y + needed > pageHeight - margin) { doc.addPage(); addPageHeader(); y = margin + 15; } };
-    const addSection = (title: string, content?: string | string[]) => {
-      if (!content || (Array.isArray(content) && !content.length) || (typeof content === 'string' && !content.trim())) return;
-      const titleHeight = 10; doc.setFontSize(FONT_BODY);
-      const text = Array.isArray(content) ? content.join(', ') : String(content);
-      const lines = doc.splitTextToSize(text, contentWidth); const contentHeight = lines.length * (FONT_BODY * 0.35 * 1.15);
-      checkPageBreak(titleHeight + contentHeight + 12);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(FONT_HEADER); doc.setTextColor(40); doc.text(title, margin, y); y += 6;
-      doc.setDrawColor(200); doc.line(margin, y, margin + 30, y); y += 8;
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(FONT_BODY); doc.setTextColor(80); doc.text(lines, margin, y); y += contentHeight + 12;
-    };
-
-    addPageHeader(); y = margin + 20;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(FONT_TITLE); doc.setTextColor(0);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(0);
     const titleLines = doc.splitTextToSize(plan.nombreProyecto, contentWidth); doc.text(titleLines, margin, y);
-    y += titleLines.length * (FONT_TITLE * 0.4) + 10;
+    y += titleLines.length * 8 + 10;
 
     const getTeacherNames = (ids: string[]) => ids.map(id => (availableTeachers.find(t=>t.id===id)?.nombreCompleto || id)).join(', ');
     autoTable(doc, {
@@ -1180,59 +1162,52 @@ const Interdisciplinario: React.FC = () => {
         [{ content: 'Asignaturas:', styles: { fontStyle: 'bold' } }, plan.asignaturas.join(', ')]
       ],
       theme: 'grid',
-      styles: { fontSize: FONT_BODY, cellPadding: 3, lineColor: [220, 220, 220] },
+      styles: { fontSize: 11, cellPadding: 3, lineColor: [220, 220, 220] },
       columnStyles: { 0: { cellWidth: 50, fontStyle: 'bold' } }
     });
     // @ts-ignore
     y = (doc as any).lastAutoTable.finalY + 15;
+
+    const addSection = (title: string, content?: string | string[]) => {
+      if (!content || (Array.isArray(content) && !content.length) || (typeof content === 'string' && !content.trim())) return;
+      const text = Array.isArray(content) ? content.join(', ') : String(content);
+      const lines = doc.splitTextToSize(text, contentWidth);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(40); doc.text(title, margin, y); y += 8;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(80); doc.text(lines, margin, y); y += lines.length * 5 + 10;
+    };
 
     addSection('Descripción del Proyecto', plan.descripcionProyecto);
     addSection('Objetivos de Aprendizaje', plan.objetivos);
     addSection('Indicadores de Logro', plan.indicadoresLogro);
 
     if (plan.contenidosPorAsignatura && plan.contenidosPorAsignatura.length > 0) {
-      checkPageBreak(50);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(FONT_HEADER); doc.setTextColor(40); doc.text('Contenidos por Asignatura', margin, y); y += 10;
+      doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('Contenidos por Asignatura', margin, y); y += 10;
       plan.contenidosPorAsignatura.forEach(c => {
-        checkPageBreak(30);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(FONT_BODY); doc.text(`${c.asignatura}:`, margin, y); y += 6;
-        doc.setFont('helvetica', 'normal');
-        if (c.contenidos) { const lines = doc.splitTextToSize(`Contenidos: ${c.contenidos}`, contentWidth - 10); doc.text(lines, margin + 5, y); y += lines.length * 4 + 3; }
-        if (c.habilidades?.length) { const text = `Habilidades: ${c.habilidades.join(', ')}`; const lines = doc.splitTextToSize(text, contentWidth - 10); doc.text(lines, margin + 5, y); y += lines.length * 4 + 8; }
+        doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(`${c.asignatura}:`, margin, y); y += 6;
+        doc.setFont('helvetica','normal'); doc.setFontSize(11);
+        if (c.contenidos) { const lines = doc.splitTextToSize(`Contenidos: ${c.contenidos}`, contentWidth - 10); doc.text(lines, margin + 5, y); y += lines.length * 5 + 3; }
+        if (c.habilidades?.length) { const text = `Habilidades: ${c.habilidades.join(', ')}`; const lines = doc.splitTextToSize(text, contentWidth - 10); doc.text(lines, margin + 5, y); y += lines.length * 5 + 8; }
       });
       y += 10;
     }
 
     if (plan.actividades && plan.actividades.length > 0) {
-      checkPageBreak(20);
-      doc.setFont('helvetica','bold'); doc.setFontSize(FONT_HEADER); doc.text('Actividades', margin, y); y += 10;
-      autoTable(doc, {
-        startY: y,
-        head: [['Actividad','Inicio','Fin','Recurso']],
-        body: plan.actividades.map(a => [a.nombre, a.fechaInicio, a.fechaFin, a.recursoUrl || '—']),
-        theme: 'striped'
-      });
+      doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('Actividades', margin, y); y += 10;
+      autoTable(doc, { startY: y, head: [['Actividad','Inicio','Fin','Recurso']], body: plan.actividades.map(a => [a.nombre, a.fechaInicio, a.fechaFin, a.recursoUrl || '—']), theme: 'striped' });
       // @ts-ignore
       y = (doc as any).lastAutoTable.finalY + 10;
     }
 
     if (plan.fechasClave && plan.fechasClave.length > 0) {
-      checkPageBreak(20);
-      doc.setFont('helvetica','bold'); doc.setFontSize(FONT_HEADER); doc.text('Fechas Clave', margin, y); y += 10;
-      autoTable(doc, {
-        startY: y,
-        head: [['Hito','Fecha','Recurso']],
-        body: plan.fechasClave.map(f => [f.nombre, f.fecha, f.recursoUrl || '—']),
-        theme: 'striped'
-      });
+      doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('Fechas Clave', margin, y); y += 10;
+      autoTable(doc, { startY: y, head: [['Hito','Fecha','Recurso']], body: plan.fechasClave.map(f => [f.nombre, f.fecha, f.recursoUrl || '—']), theme: 'striped' });
       // @ts-ignore
       y = (doc as any).lastAutoTable.finalY + 10;
     }
 
     if (plan.tareas && plan.tareas.length > 0) {
       const tasksBody = plan.tareas.map((t: any) => [String(t.numero || ''), t.instrucciones, t.fechaEntrega, t.recursoUrl || '—']);
-      const approx = (tasksBody.length + 1) * 10 + 15; checkPageBreak(approx + 15);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(FONT_HEADER); doc.setTextColor(40); doc.text('Tareas para Estudiantes', margin, y); y += 10;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.text('Tareas para Estudiantes', margin, y); y += 10;
       autoTable(doc, { startY: y, head: [['#', 'Instrucciones', 'Entrega', 'Recurso']], body: tasksBody, theme: 'striped', headStyles: { fillColor: [52,73,94] } });
     }
 
@@ -1242,7 +1217,6 @@ const Interdisciplinario: React.FC = () => {
 
   const getTeacherNames = (ids: string[]) => ids.map(id => (availableTeachers.find(t=>t.id===id)?.nombreCompleto || id)).join(', ');
 
-  // ====== Render seguro según view ======
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -1293,11 +1267,6 @@ const Interdisciplinario: React.FC = () => {
   }
 
   // view === 'list'
-  const filteredForGantt = useMemo(() => {
-    if (timelineFilterId === 'all') return planificaciones;
-    return planificaciones.filter(p => p.id === timelineFilterId);
-  }, [planificaciones, timelineFilterId]);
-
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {/* Tabs */}
