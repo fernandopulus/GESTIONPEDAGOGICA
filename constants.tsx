@@ -571,3 +571,6 @@ export const PME_DIMENSIONES: Record<string, string[]> = {
 
 export const ESTADOS_ACCION_PME = ["Pendiente", "En Proceso", "Cumplida"] as const;
 export type EstadoAccionPME = typeof ESTADOS_ACCION_PME[number];
+/ Perfíles permitidos como creadores de actividades del módulo
+export const PERFILES_CREADORES_DPD = [ "PROFESORADO", "SUBDIRECCION" ] as const;
+export type PerfilCreadorDPD = typeof PERFILES_CREADORES_DPD[number];
