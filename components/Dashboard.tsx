@@ -31,8 +31,9 @@ import EvaluacionFormativaEstudiante from './modules/EvaluacionFormativaEstudian
 import TareasInterdisciplinariasEstudiante from './modules/TareasInterdisciplinariasEstudiante';
 import AcompanamientoDocenteProfesor from './modules/AcompanamientoDocenteProfesor';
 import SeguimientoCurricular from './modules/SeguimientoCurricular';
-import AnalisisTaxonomico from './modules/AnalisisTaxonomico';
-import GestionEmpresas from './modules/GestionEmpresas';
+import AnalisisTaxonomico from '../components/modules/AnalisisTaxonomico';
+import GestionEmpresas from '../components/modules/GestionEmpresas';
+import DesarrolloProfesionalDocente from '../components/modules/DesarrolloProfesionalDocente';
 import AlternanciaTP from './modules/AlternanciaTP';
 
 // UI
@@ -200,6 +201,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (activeModule.name === 'Muro de Anuncios') return <MuroAnuncios currentUser={currentUser} />;
     if (activeModule.name === 'Mensajería Interna') return <MensajeriaInterna currentUser={currentUser} refreshUnreadCount={refreshUnreadCount} />;
     if (activeModule.name === 'Generador de Actas') return <GeneradorActas />;
+    if (activeModule.name === 'Desarrollo Profesional') return <DesarrolloProfesionalDocente currentUser={currentUser} />;
 
     // ===== Por perfil =====
     if (profile === Profile.SUBDIRECCION) {

@@ -132,6 +132,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Actividades Remotas', icon: <BeakerIcon /> },
         { name: 'Evaluación de Aprendizajes', icon: <DocumentTextIcon /> },
         { name: 'Evaluaciones Formativas', icon: <TrendingUpIcon /> },
+        { name: 'Desarrollo Profesional', icon: <AcademicCapIcon /> },
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
         { name: 'Muro de Anuncios', icon: <BellIcon /> },
         { name: 'Mensajería Interna', icon: <MessageSquareIcon /> },
@@ -147,6 +148,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Muro de Anuncios', icon: <BellIcon /> },
         { name: 'Mensajería Interna', icon: <MessageSquareIcon /> },
         { name: 'Alternancia TP', icon: '🔄' }, // Ícono de ciclo o sincronización
+        { name: 'Desarrollo Profesional', icon: <AcademicCapIcon /> },
         { name: 'Generador de Actas', icon: <DocumentTextIcon /> },
     ],
     [Profile.ESTUDIANTE]: [
@@ -571,6 +573,6 @@ export const PME_DIMENSIONES: Record<string, string[]> = {
 
 export const ESTADOS_ACCION_PME = ["Pendiente", "En Proceso", "Cumplida"] as const;
 export type EstadoAccionPME = typeof ESTADOS_ACCION_PME[number];
-/ Perfíles permitidos como creadores de actividades del módulo
-export const PERFILES_CREADORES_DPD = [ "PROFESORADO", "SUBDIRECCION" ] as const;
+// Perfiles permitidos como creadores de actividades del módulo
+export const PERFILES_CREADORES_DPD = [ "PROFESORADO", "SUBDIRECCION", "COORDINACION_TP" ] as const;
 export type PerfilCreadorDPD = typeof PERFILES_CREADORES_DPD[number];

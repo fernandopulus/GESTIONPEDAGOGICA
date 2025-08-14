@@ -78,6 +78,7 @@ const ICONS: Record<string, JSX.Element> = {
   auto_aprendizaje: <BookOpen className="w-6 h-6" aria-hidden />,
   evaluacion_formativa: <LineChart className="w-6 h-6" aria-hidden />,
   tareas_interdisciplinarias: <Layers3 className="w-6 h-6" aria-hidden />,
+  desarrollo_profesional: <Shield className="w-6 h-6" aria-hidden />,
 };
 
 /** Gradientes por módulo (ligeros, accesibles) */
@@ -98,8 +99,9 @@ const ACCENTS: Record<string, string> = {
   seguimiento_dual: 'from-lime-500/20 to-green-500/10',
   asistencia_dual: 'from-red-500/20 to-rose-500/10',
   pañol: 'from-yellow-500/20 to-amber-500/10',
-  gestion_empresas: 'from-blue-500/20 to-sky-500/10',
-  administracion: 'from-stone-500/20 to-slate-500/10',
+  gestion_empresas: 'from-indigo-500/20 to-indigo-400/10',
+  administracion: 'from-violet-500/20 to-purple-500/10',
+  desarrollo_profesional: 'from-blue-500/20 to-indigo-500/10',
   seguimiento_curricular: 'from-indigo-500/20 to-blue-500/10',
   registro_inasistencias: 'from-fuchsia-500/20 to-pink-500/10',
   auto_aprendizaje: 'from-emerald-500/20 to-teal-500/10',
@@ -154,12 +156,13 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'actividades_remotas', name: 'Actividades Remotas', icon: ICONS.actividades_remotas, accent: ACCENTS.actividades_remotas },
         { id: 'evaluacion_aprendizajes', name: 'Evaluación de Aprendizajes', icon: ICONS.evaluacion_aprendizajes, accent: ACCENTS.evaluacion_aprendizajes },
         { id: 'evaluaciones_formativas', name: 'Evaluaciones Formativas', icon: ICONS.evaluaciones_formativas, accent: ACCENTS.evaluaciones_formativas },
+        { id: 'desarrollo_profesional', name: 'Desarrollo Profesional', icon: ICONS.desarrollo_profesional, accent: ACCENTS.desarrollo_profesional },
         ...commonModules,
         { id: 'actas', name: 'Generador de Actas', icon: ICONS.actas, accent: ACCENTS.actas },
         { id: 'mensajeria', name: 'Mensajería Interna', icon: ICONS.mensajeria, accent: ACCENTS.mensajeria },
       ];
 
-    case Profile.COORDINACION:
+    case Profile.COORDINACION_TP:
       return [
         { id: 'selector_completo', name: 'Vista Completa (Dashboard)', icon: ICONS.selector_completo, accent: ACCENTS.selector_completo, description: 'Acceso a todos los módulos con navegación lateral' },
         alternanciaTPModule,
@@ -167,6 +170,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'asistencia_dual', name: 'Asistencia Dual', icon: ICONS.asistencia_dual, accent: ACCENTS.asistencia_dual },
         { id: 'pañol', name: 'Pañol', icon: ICONS.pañol, accent: ACCENTS.pañol },
         { id: 'gestion_empresas', name: 'Gestión de Empresas', icon: ICONS.gestion_empresas, accent: ACCENTS.gestion_empresas },
+        { id: 'desarrollo_profesional', name: 'Desarrollo Profesional', icon: ICONS.desarrollo_profesional, accent: ACCENTS.desarrollo_profesional },
         ...commonModules,
         { id: 'mensajeria', name: 'Mensajería Interna', icon: ICONS.mensajeria, accent: ACCENTS.mensajeria },
         { id: 'actas', name: 'Generador de Actas', icon: ICONS.actas, accent: ACCENTS.actas },
@@ -188,7 +192,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         ...commonModules,
       ];
 
-    case Profile.ESTUDIANTES:
+    case Profile.ESTUDIANTE:
       return [
         { id: 'selector_completo', name: 'Vista Completa (Dashboard)', icon: ICONS.selector_completo, accent: ACCENTS.selector_completo, description: 'Acceso a todos los módulos con navegación lateral' },
         { id: 'auto_aprendizaje', name: 'Auto-aprendizaje', icon: ICONS.auto_aprendizaje, accent: ACCENTS.auto_aprendizaje },

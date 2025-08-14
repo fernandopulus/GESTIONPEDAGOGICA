@@ -41,6 +41,7 @@ import TareasInterdisciplinariasEstudiante from './components/modules/TareasInte
 import AcompanamientoDocenteProfesor from './components/modules/AcompanamientoDocenteProfesor';
 import SeguimientoCurricular from './components/modules/SeguimientoCurricular';
 import AnalisisTaxonomico from './components/modules/AnalisisTaxonomico';
+import DesarrolloProfesionalDocente from './components/modules/DesarrolloProfesionalDocente';
 
 interface DashboardProps {
     currentUser: User;
