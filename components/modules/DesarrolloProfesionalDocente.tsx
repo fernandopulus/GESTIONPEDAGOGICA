@@ -15,6 +15,16 @@ import {
   ChevronRight,
   CheckCircle2,
   Wand2,
+  BookOpen,
+  Brain,
+  Target,
+  Calendar,
+  PieChart,
+  UsersRound,
+  ListChecks,
+  ScrollText,
+  GraduationCap,
+  BrainCircuit,
 } from "lucide-react";
 
 // === Integraciones que ya existen en tu proyecto (NO cambiar rutas) ===
@@ -44,9 +54,20 @@ type Tab = "responder" | "dashboard" | "crear" | "respuestas_individuales";
 
 const MAX_WORDS = 500;
 
-interface ExtendedDPDQuestion extends Omit<DPDQuestion, "opciones"> {
-  opciones: Array<{ id: string; text: string }>;
-}
+type ExtendedDPDQuestion =
+  | {
+      id: string;
+      tipo: "abierta";
+      enunciado: string;
+      maxPalabras?: number;
+    }
+  | {
+      id: string;
+      tipo: "seleccion_multiple";
+      enunciado: string;
+      opciones: Array<{ id: string; text: string }>;
+      multiple?: boolean;
+    };
 
 interface Props {
   currentUser: User;
@@ -197,7 +218,26 @@ const InfoRow: React.FC<{ label: string; value: string; pill?: boolean }> = Reac
 );
 
 const StatBar: React.FC<{ label: string; value: number; total?: number }> = React.memo(
-  ({ label, value }) => {
+  ({ label, value, total = 0 }) => {
+    const percentage = total > 0 ? (value / total) * 100 : (value > 0 ? 100 : 0);
+    const gradientColor = percentage >= 75 ? 'from-emerald-500' :
+                         percentage >= 50 ? 'from-blue-500' :
+                         percentage >= 25 ? 'from-amber-500' : 'from-rose-500';
+    return (
+      <div className="relative mt-1">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-sm font-medium text-slate-700">{label}</span>
+          <span className="text-sm font-medium text-slate-700">{value}</span>
+        </div>
+        <div className="w-full bg-slate-100 rounded-full h-2.5">
+          <div
+            className={`h-2.5 rounded-full bg-gradient-to-r ${gradientColor} to-transparent transition-all duration-500`}
+            style={{ width: `${Math.min(100, percentage)}%` }}
+          >
+          </div>
+        </div>
+      </div>
+    );
     const pct = Math.min(100, value * 10);
     return (
       <div className="mb-2">
@@ -461,8 +501,7 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
       id: crypto.randomUUID(),
       tipo: "abierta",
       enunciado: "Escribe aquí tu pregunta abierta",
-      maxPalabras: MAX_WORDS,
-      opciones: [],
+      maxPalabras: MAX_WORDS
     };
     setForm((prev) => ({ ...prev, preguntas: [...prev.preguntas, q] }));
   }, []);
@@ -519,18 +558,32 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
     const run = async () => {
       if (!selectedActivity) return;
       const allOpen: string[] = [];
+      
       for (const r of respuestasActividad) {
-        for (const [qid, val] of Object.entries(r.respuestas || {})) {
+        if (!r.respuestas) continue;
+        
+        for (const [qid, val] of Object.entries(r.respuestas)) {
           const q = selectedActivity.preguntas.find((x) => x.id === qid);
-          const v = val as any;
-          if (q?.tipo === "abierta" && typeof v?.valorTexto === "string") {
-            allOpen.push(v.valorTexto);
+          if (!q || q.tipo !== "abierta") continue;
+          
+          const respuesta = val as { tipo: "abierta"; valorTexto: string };
+          if (respuesta.tipo === "abierta" && respuesta.valorTexto?.trim()) {
+            allOpen.push(respuesta.valorTexto.trim());
           }
         }
       }
-      if (allOpen.length) {
-        const kws = await extractKeywordsWithAI(allOpen, 30);
-        setKeywords(kws);
+
+      console.log('Respuestas abiertas encontradas:', allOpen.length);
+      
+      if (allOpen.length > 0) {
+        try {
+          const kws = await extractKeywordsWithAI(allOpen, 30);
+          console.log('Keywords generadas:', kws);
+          setKeywords(kws);
+        } catch (error) {
+          console.error('Error al extraer keywords:', error);
+          setKeywords([]);
+        }
       } else {
         setKeywords([]);
       }
@@ -562,10 +615,16 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
 
   /* ------------------------------ Guardado ------------------------------ */
   const convertToSaveFormat = useCallback((questions: ExtendedDPDQuestion[]): DPDQuestion[] => {
-    return questions.map((q) => ({
-      ...q,
-      opciones: q.opciones ? q.opciones.map((o) => o.text) : undefined,
-    }));
+    return questions.map((q) => {
+      if (q.tipo === "abierta") {
+        return q;
+      } else {
+        return {
+          ...q,
+          opciones: q.opciones.map((o) => o.text)
+        };
+      }
+    });
   }, []);
 
   const resetForm = useCallback(() => setForm(defaultForm()), []);
@@ -896,19 +955,42 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
               <div className="grid md:grid-cols-12 gap-6">
                 {/* Lista de usuarios que respondieron */}
                 <div className="md:col-span-4 lg:col-span-3">
-                  <h4 className="font-semibold mb-4">Usuarios ({respuestasActividad.length})</h4>
-                  <div className="space-y-2">
-                    {respuestasActividad.map((respuesta) => (
-                      <button
-                        key={respuesta.usuarioId}
-                        onClick={() => setSelectedUserId(respuesta.usuarioId)}
-                        className={`w-full text-left px-4 py-2 rounded-lg hover:bg-slate-50 ${
-                          selectedUserId === respuesta.usuarioId ? "bg-slate-100 font-medium" : ""
-                        }`}
-                      >
-                        {respuesta.usuarioNombre}
-                      </button>
-                    ))}
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <h4 className="font-semibold mb-4 flex items-center gap-2">
+                      <UsersRound className="w-5 h-5 text-indigo-600" />
+                      Usuarios ({respuestasActividad.length})
+                    </h4>
+                    <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
+                      {respuestasActividad.length > 0 ? (
+                        respuestasActividad.map((respuesta) => (
+                          <button
+                            key={respuesta.userId}
+                            onClick={() => setSelectedUserId(respuesta.userId)}
+                            className={`w-full text-left p-3 rounded-lg transition-all duration-200 ${
+                              selectedUserId === respuesta.userId 
+                                ? "bg-indigo-50 text-indigo-700 font-medium border border-indigo-200 shadow-sm" 
+                                : "hover:bg-slate-50 border border-transparent"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="p-1.5 bg-indigo-100 rounded-lg">
+                                <UsersRound className="w-4 h-4 text-indigo-600" />
+                              </div>
+                              <span className="font-medium">{respuesta.userNombre}</span>
+                            </div>
+                            <div className="text-xs text-slate-500 mt-2 flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5" />
+                              {new Date(respuesta.createdAt?.seconds * 1000).toLocaleDateString()}
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="text-center py-8 text-slate-500">
+                          <UsersRound className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">No hay respuestas todavía</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -916,35 +998,82 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
                 <div className="md:col-span-8 lg:col-span-9">
                   {selectedUserId ? (
                     <>
-                      <h4 className="font-semibold mb-4">
+                      <h4 className="font-semibold mb-4 flex items-center gap-2 text-lg">
+                        <NotebookPen className="w-5 h-5 text-indigo-600" />
                         Respuestas de:{" "}
-                        {respuestasActividad.find((r) => r.usuarioId === selectedUserId)?.usuarioNombre}
+                        <span className="text-indigo-600">
+                          {respuestasActividad.find((r) => r.userId === selectedUserId)?.userNombre}
+                        </span>
                       </h4>
                       <div className="space-y-6">
                         {selectedActivity.preguntas.map((pregunta) => {
-                          const respuesta = respuestasActividad.find(
-                            (r) => r.usuarioId === selectedUserId
-                          )?.respuestas[pregunta.id];
+                          const userRespuesta = respuestasActividad.find(
+                            (r) => r.userId === selectedUserId
+                          );
+                          const respuesta = userRespuesta?.respuestas?.[pregunta.id];
+                          
+                          console.log('Respuesta encontrada:', {
+                            preguntaId: pregunta.id,
+                            tipo: pregunta.tipo,
+                            respuesta: respuesta
+                          });
 
                           return (
-                            <div key={pregunta.id} className="p-4 border rounded-xl">
-                              <p className="font-medium mb-2">{pregunta.enunciado}</p>
+                            <div key={pregunta.id} className="bg-white p-6 border border-slate-200 rounded-xl shadow-sm">
+                              <div className="flex items-start gap-3 mb-4">
+                                <div className="p-2 bg-indigo-100 rounded-lg shrink-0">
+                                  {pregunta.tipo === "abierta" ? (
+                                    <ScrollText className="w-5 h-5 text-indigo-600" />
+                                  ) : (
+                                    <ListChecks className="w-5 h-5 text-indigo-600" />
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="font-medium text-slate-900">{pregunta.enunciado}</p>
+                                  <p className="text-sm text-slate-500 mt-1">
+                                    {pregunta.tipo === "abierta" ? "Respuesta abierta" : "Selección múltiple"}
+                                  </p>
+                                </div>
+                              </div>
+                              
                               {pregunta.tipo === "abierta" ? (
-                                <p className="text-slate-600 whitespace-pre-wrap">{respuesta || "Sin respuesta"}</p>
+                                respuesta?.tipo === "abierta" && respuesta.valorTexto ? (
+                                  <div className="mt-3 bg-slate-50 rounded-lg p-4">
+                                    <p className="text-slate-700 whitespace-pre-wrap">{respuesta.valorTexto}</p>
+                                  </div>
+                                ) : (
+                                  <p className="text-slate-500 italic mt-3">Sin respuesta</p>
+                                )
                               ) : (
-                                <div className="space-y-1">
-                                  {(pregunta.opciones || []).map((opcion) => (
-                                    <div
-                                      key={opcion.id}
-                                      className={`px-3 py-1.5 rounded ${
-                                        (Array.isArray(respuesta) ? respuesta : [respuesta]).includes(opcion.id)
-                                          ? "bg-indigo-50 text-indigo-700"
-                                          : "text-slate-500"
-                                      }`}
-                                    >
-                                      {opcion.text}
-                                    </div>
-                                  ))}
+                                <div className="space-y-2 mt-3">
+                                  {(pregunta.opciones || []).map((opcion) => {
+                                    const seleccionados = respuesta?.tipo === "seleccion_multiple" ? 
+                                      respuesta.seleccionados || [] : [];
+                                    const isSelected = seleccionados.includes(opcion.text);
+                                    
+                                    return (
+                                      <div
+                                        key={typeof opcion === 'string' ? opcion : opcion.id}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
+                                          isSelected
+                                            ? "border-indigo-200 bg-indigo-50 text-indigo-700 shadow-sm"
+                                            : "border-slate-200 text-slate-500"
+                                        }`}
+                                      >
+                                        <div className="flex-shrink-0">
+                                          {isSelected ? (
+                                            <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                                          ) : (
+                                            <div className="w-4 h-4 border-2 border-slate-300 rounded-full" />
+                                          )}
+                                        </div>
+                                        <span className="text-sm">{typeof opcion === 'string' ? opcion : opcion.text}</span>
+                                      </div>
+                                    );
+                                  })}
+                                  {!respuesta && (
+                                    <p className="text-slate-500 italic mt-1 text-sm">Sin respuesta</p>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -965,20 +1094,20 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
           {tab === "dashboard" && selectedActivity && (
             <Section
               title={`Dashboard: ${selectedActivity.titulo}`}
-              icon={<BarChart3 className="w-5 h-5 text-indigo-600" />}
+              icon={<Brain className="w-5 h-5 text-indigo-600" />}
               right={
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setTab("respuestas_individuales")}
-                    className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:opacity-90"
+                    className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
                   >
-                    <Users className="w-4 h-4" />
+                    <UsersRound className="w-4 h-4" />
                     Ver respuestas individuales
                   </button>
                   {canDelete(selectedActivity) && (
                     <button
                       onClick={() => handleDeleteActivity(selectedActivity.id, selectedActivity.titulo)}
-                      className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:opacity-90"
+                      className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
                       Eliminar actividad
@@ -987,33 +1116,106 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
                 </div>
               }
             >
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <h4 className="font-semibold">Resultados de selección múltiple</h4>
-                  {selectedActivity.preguntas.filter((q) => q.tipo === "seleccion_multiple").map((q) => (
-                    <div key={q.id} className="p-3 border rounded-xl">
-                      <p className="font-medium mb-2">{q.enunciado}</p>
-                      {Object.entries((choiceStats as any)[q.id] || {}).map(([opt, count]) => (
-                        <StatBar key={opt} label={opt as string} value={count as number} />
-                      ))}
-                      <div className="text-xs text-slate-500 mt-1">
-                        Total respuestas: {respuestasActividad.length}
-                      </div>
+              {/* Stats Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-indigo-100 rounded-lg">
+                      <UsersRound className="w-5 h-5 text-indigo-600" />
                     </div>
-                  ))}
-                  {selectedActivity.preguntas.filter((q) => q.tipo === "seleccion_multiple").length === 0 && (
-                    <p className="text-slate-500 text-sm">No hay preguntas de selección múltiple en esta actividad.</p>
-                  )}
+                    <div>
+                      <p className="text-sm text-slate-500">Total respuestas</p>
+                      <p className="text-xl font-semibold">{respuestasActividad.length}</p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-emerald-100 rounded-lg">
+                      <ListChecks className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-500">Preguntas</p>
+                      <p className="text-xl font-semibold">{selectedActivity.preguntas.length}</p>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-4">
-                  <h4 className="font-semibold">Conceptos clave (respuestas abiertas)</h4>
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-100 rounded-lg">
+                      <GraduationCap className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-500">Creador</p>
+                      <p className="text-sm font-medium truncate">{selectedActivity.creadorNombre}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-purple-100 rounded-lg">
+                      <Calendar className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-500">Fecha</p>
+                      <p className="text-sm font-medium">
+                        {(() => {
+                          const v: any = (selectedActivity as any).createdAt;
+                          const d = v?.toDate ? v.toDate() : v?.seconds ? new Date(v.seconds * 1000) : v ? new Date(v) : null;
+                          return d ? d.toLocaleDateString() : "No disponible";
+                        })()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Resultados de selección múltiple */}
+                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <PieChart className="w-5 h-5 text-indigo-600" />
+                    <h4 className="font-semibold">Resultados de selección múltiple</h4>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    {selectedActivity.preguntas.filter((q) => q.tipo === "seleccion_multiple").map((q) => (
+                      <div key={q.id} className="p-4 bg-slate-50 rounded-xl">
+                        <p className="font-medium mb-3 text-slate-700">{q.enunciado}</p>
+                        {Object.entries((choiceStats as any)[q.id] || {}).map(([opt, count]) => (
+                          <StatBar key={opt} label={opt as string} value={count as number} />
+                        ))}
+                        <div className="text-xs text-slate-500 mt-2 flex items-center gap-1">
+                          <Target className="w-4 h-4" />
+                          Total respuestas: {respuestasActividad.length}
+                        </div>
+                      </div>
+                    ))}
+                    {selectedActivity.preguntas.filter((q) => q.tipo === "seleccion_multiple").length === 0 && (
+                      <div className="text-center py-8 text-slate-500">
+                        <ListChecks className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">No hay preguntas de selección múltiple en esta actividad.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Conceptos clave */}
+                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <BrainCircuit className="w-5 h-5 text-indigo-600" />
+                    <h4 className="font-semibold">Conceptos clave (IA)</h4>
+                  </div>
+                  
                   {keywords.length ? (
                     <div className="flex flex-wrap gap-2">
                       {keywords.map((k) => (
                         <span
                           key={k.keyword}
-                          className="rounded-full px-3 py-1 text-sm bg-indigo-50 text-indigo-700"
+                          className="rounded-full px-3 py-1.5 text-sm bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-700 border border-indigo-100 shadow-sm transition-transform hover:scale-105"
                           style={{ fontSize: `${12 + Math.round(k.score * 18)}px` }}
                         >
                           {k.keyword}
@@ -1021,37 +1223,13 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-slate-500 text-sm">
-                      Aún no hay suficientes respuestas abiertas para mostrar conceptos.
-                    </p>
+                    <div className="text-center py-8 text-slate-500">
+                      <ScrollText className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">
+                        Aún no hay suficientes respuestas abiertas para mostrar conceptos.
+                      </p>
+                    </div>
                   )}
-                </div>
-              </div>
-
-              <div className="mt-6 p-4 bg-slate-50 rounded-xl">
-                <div className="grid md:grid-cols-4 gap-4 text-sm">
-                  <div>
-                    <span className="text-slate-500">Total respuestas:</span>
-                    <p className="font-semibold text-lg">{respuestasActividad.length}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Preguntas:</span>
-                    <p className="font-semibold text-lg">{selectedActivity.preguntas.length}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Creado por:</span>
-                    <p className="font-semibold">{selectedActivity.creadorNombre}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Fecha creación:</span>
-                    <p className="font-semibold">
-                      {(() => {
-                        const v: any = (selectedActivity as any).createdAt;
-                        const d = v?.toDate ? v.toDate() : v?.seconds ? new Date(v.seconds * 1000) : v ? new Date(v) : null;
-                        return d ? d.toLocaleDateString() : "No disponible";
-                      })()}
-                    </p>
-                  </div>
                 </div>
               </div>
             </Section>

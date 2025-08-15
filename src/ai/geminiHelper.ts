@@ -1,141 +1,231 @@
 
 // src/ai/geminiHelper.ts
-// Helper delgado para integrar Gemini Flash 2.5 Lite en el módulo DPD.
+// Helper para integrar Gemini AI en el módulo DPD.
 // Requiere instalar: npm i @google/generative-ai
 // y definir la variable de entorno: VITE_GEMINI_API_KEY
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const getGenAI = () => {
-  const apiKey = (import.meta as any)?.env?.VITE_GEMINI_API_KEY || (process as any)?.env?.VITE_GEMINI_API_KEY;
-  if (!apiKey) return null;
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    return genAI;
-  } catch {
-    return null;
-  }
-};
-
-// -----------------------------
-// Generación de preguntas tipo selección múltiple
-// -----------------------------
+// Tipos exportados
 export type GeneratedChoiceQuestion = {
   enunciado: string;
   opciones: string[];
 };
 
-export async function generateMultipleChoiceQuestionsWithAI(
-  topic: string,
-  count: number
-): Promise<GeneratedChoiceQuestion[]> {
-  const genAI = getGenAI();
-  if (!genAI) return naiveChoices(topic, count);
+export type KeywordScore = {
+  keyword: string;
+  score: number;
+};
 
-  try {
-    // Gemini Flash 2.5 Lite (puede variar el id según disponibilidad del SDK)
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite-preview-02-05" });
-
-    const prompt = `Genera ${count} preguntas breves en español de selección múltiple (selección múltiple posible, sin señalar cuál es correcta) sobre el tema "${topic}".
-Responde SOLO en JSON estricto con el siguiente formato:
-{
-  "items": [
-    { "enunciado": "...", "opciones": ["...", "...", "...", "..."] },
-    ...
-  ]
-}
-Asegúrate de que cada pregunta tenga entre 4 y 5 opciones, variadas y plausibles. No expliques nada fuera del JSON.`;
-
-    const result = await model.generateContent(prompt as any);
-    const text = result?.response?.text?.() ?? "";
-    const parsed = safeJSON(text);
-    if (parsed?.items?.length) return parsed.items.slice(0, count);
-    return naiveChoices(topic, count);
-  } catch (err) {
-    console.warn("Gemini generateMultipleChoiceQuestions error:", err);
-    return naiveChoices(topic, count);
-  }
-}
-
-// -----------------------------
-// Extracción de palabras/conceptos clave desde respuestas abiertas
-// -----------------------------
-export type KeywordScore = { keyword: string; score: number };
-
-export async function extractKeywordsWithAI(
-  answers: string[],
-  max = 30
-): Promise<KeywordScore[]> {
-  const genAI = getGenAI();
-  if (!genAI) return naiveKeywords(answers, max);
-
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite-preview-02-05" });
-    const joined = answers.filter(Boolean).join("\n- ");
-    const prompt = `Analiza estas respuestas de docentes (en español) y devuelve un JSON con las principales palabras o conceptos clave y un puntaje de relevancia de 0 a 1.
-Respuestas:
-${joined}
-
-Responde SOLO el JSON con el formato:
-{ "keywords": [ { "keyword": "..." , "score": 0.85 }, ... ] } 
-Incluye hasta ${max} elementos, sin texto adicional.`;
-
-    const result = await model.generateContent(prompt as any);
-    const text = result?.response?.text?.() ?? "";
-    const parsed = safeJSON(text);
-    if (parsed?.keywords?.length) {
-      return parsed.keywords.slice(0, max);
+// Configuraciones de modelos disponibles
+const MODEL_CONFIGS = [
+  {
+    model: "gemini-2.5-flash-lite",
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 1024,
     }
-    return naiveKeywords(answers, max);
-  } catch (err) {
-    console.warn("Gemini extractKeywords error:", err);
-    return naiveKeywords(answers, max);
+  },
+  {
+    model: "gemini-1.5-pro",
+    generationConfig: {
+      temperature: 0.7,
+      topK: 40,
+      topP: 0.95,
+      maxOutputTokens: 1024,
+    }
+  }
+];
+
+// Funciones de utilidad
+const getGenAI = () => {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn('No se encontró la API key de Gemini');
+    return null;
+  }
+  try {
+    return new GoogleGenerativeAI(apiKey);
+  } catch (error) {
+    console.error('Error al inicializar Gemini:', error);
+    return null;
+  }
+};
+
+async function tryModel(genAI: GoogleGenerativeAI, modelConfig: any): Promise<any> {
+  try {
+    const model = genAI.getGenerativeModel(modelConfig);
+    await model.generateContent("test");
+    return model;
+  } catch (error) {
+    console.warn(`Modelo ${modelConfig.model} no disponible:`, error);
+    return null;
   }
 }
 
-// -----------------------------
-// Fallbacks locales sin IA
-// -----------------------------
-function naiveChoices(topic: string, count: number): GeneratedChoiceQuestion[] {
-  const bank = [
-    "Siempre", "Frecuentemente", "A veces", "Rara vez", "Nunca",
-    "Totalmente de acuerdo", "De acuerdo", "Ni de acuerdo ni en desacuerdo", "En desacuerdo", "Totalmente en desacuerdo"
-  ];
-  return Array.from({ length: count }).map((_, i) => ({
-    enunciado: `Sobre "${topic}", seleccione las opciones que mejor describen su práctica (${i + 1}).`,
-    opciones: shuffle(bank).slice(0, 5),
-  }));
-}
+async function getWorkingModel(): Promise<any> {
+  const genAI = getGenAI();
+  if (!genAI) return null;
 
-function naiveKeywords(answers: string[], max: number): KeywordScore[] {
-  const text = answers.join(" ").toLowerCase();
-  const tokens = text.split(/[^a-záéíóúüñ]+/i).filter(t => t.length > 3);
-  const stop = new Set("para como donde tanto entre sobre pero esta este esta estas estos solo muy entonces tiene tienen desde hacia eran eran sera será así asi aún aun los las unos unas con sin ante bajo cabe contra desde hacia hasta para por segun según tras durante".split(/\s+/));
-  const freq: Record<string, number> = {};
-  for (const t of tokens) {
-    if (stop.has(t)) continue;
-    freq[t] = (freq[t] || 0) + 1;
+  for (const config of MODEL_CONFIGS) {
+    const model = await tryModel(genAI, config);
+    if (model) {
+      console.log(`Usando modelo ${config.model}`);
+      return model;
+    }
   }
-  const sorted = Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0, max);
-  const total = sorted.reduce((s, [,n])=>s+n, 0) || 1;
-  return sorted.map(([k, n]) => ({ keyword: k, score: Math.min(1, n/total) }));
+  
+  console.error('No se encontró ningún modelo de Gemini disponible');
+  return null;
 }
 
-function shuffle<T>(arr: T[]): T[] {
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
+// Funciones de ayuda
 function safeJSON(text: string): any {
   try {
-    // limpia posibles envoltorios de markdown
-    const clean = text.trim().replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "");
+    const clean = text.trim()
+      .replace(/^```json/i, "")
+      .replace(/^```/i, "")
+      .replace(/```$/i, "");
     return JSON.parse(clean);
   } catch {
     return null;
   }
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+// Funciones principales exportadas
+export async function generateMultipleChoiceQuestionsWithAI(
+  tema: string, 
+  cantidad: number = 3
+): Promise<GeneratedChoiceQuestion[]> {
+  const model = await getWorkingModel();
+  if (!model) {
+    return naiveChoices(tema, cantidad);
+  }
+
+  try {
+    const prompt = `Genera ${cantidad} preguntas de selección múltiple sobre el tema "${tema}".
+    Para cada pregunta, proporciona:
+    1. Un enunciado claro y conciso
+    2. 4 opciones de respuesta plausibles
+    
+    Devuelve las preguntas en formato JSON como este:
+    {
+      "preguntas": [
+        {
+          "enunciado": "¿Pregunta 1?",
+          "opciones": ["Opción 1", "Opción 2", "Opción 3", "Opción 4"]
+        }
+      ]
+    }`;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    const parsed = safeJSON(text);
+
+    if (parsed?.preguntas?.length) {
+      return parsed.preguntas.slice(0, cantidad);
+    } else {
+      console.warn('Formato inesperado de respuesta:', text);
+      return naiveChoices(tema, cantidad);
+    }
+  } catch (error) {
+    console.error('Error al generar preguntas:', error);
+    return naiveChoices(tema, cantidad);
+  }
+}
+
+export async function extractKeywordsWithAI(
+  respuestas: string[],
+  max: number = 30
+): Promise<KeywordScore[]> {
+  const model = await getWorkingModel();
+  if (!model) {
+    return naiveKeywords(respuestas);
+  }
+
+  try {
+    const validAnswers = respuestas.filter(r => r && r.trim());
+    if (validAnswers.length === 0) {
+      return [];
+    }
+
+    const prompt = `Analiza estas respuestas y extrae los conceptos clave con su relevancia:
+    ${validAnswers.join('\n---\n')}
+    
+    Responde en formato JSON:
+    {
+      "keywords": [
+        { "keyword": "concepto1", "score": 0.9 },
+        { "keyword": "concepto2", "score": 0.8 }
+      ]
+    }
+    
+    Incluye hasta ${max} conceptos más relevantes.`;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    const parsed = safeJSON(text);
+
+    if (parsed?.keywords?.length) {
+      return parsed.keywords
+        .filter(k => k.keyword && typeof k.score === 'number')
+        .slice(0, max);
+    } else {
+      console.warn('Formato inesperado de respuesta:', text);
+      return naiveKeywords(respuestas);
+    }
+  } catch (error) {
+    console.error('Error al analizar respuestas:', error);
+    return naiveKeywords(respuestas);
+  }
+}
+
+// Fallbacks sin IA
+function naiveChoices(tema: string, cantidad: number): GeneratedChoiceQuestion[] {
+  const opciones = [
+    "Totalmente de acuerdo",
+    "De acuerdo",
+    "Neutral",
+    "En desacuerdo",
+    "Totalmente en desacuerdo"
+  ];
+  return Array(cantidad).fill(null).map((_, i) => ({
+    enunciado: `Pregunta ${i + 1} sobre ${tema}`,
+    opciones: shuffle(opciones).slice(0, 4)
+  }));
+}
+
+function naiveKeywords(respuestas: string[]): KeywordScore[] {
+  const stopwords = new Set([
+    "el", "la", "los", "las", "un", "una", "unos", "unas",
+    "de", "del", "a", "ante", "con", "en", "para", "por", "sobre",
+    "y", "o", "pero", "si", "no", "que", "cual", "quien", "como"
+  ]);
+
+  const freq: Record<string, number> = {};
+  const words = respuestas.join(" ")
+    .toLowerCase()
+    .split(/\W+/)
+    .filter(w => w.length > 3 && !stopwords.has(w));
+
+  for (const word of words) {
+    freq[word] = (freq[word] || 0) + 1;
+  }
+
+  return Object.entries(freq)
+    .sort(([,a], [,b]) => b - a)
+    .slice(0, 20)
+    .map(([keyword, count]) => ({
+      keyword,
+      score: Math.min(1, count / words.length)
+    }));
 }
