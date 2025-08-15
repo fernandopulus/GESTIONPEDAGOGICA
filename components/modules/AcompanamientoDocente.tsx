@@ -54,25 +54,31 @@ const getAllUsers = async (): Promise<any[]> => {
 interface FileUploadProps {
   label: string;
   onFileChange: (file: File) => void;
+  onLinkChange?: (url: string) => void;
   uploadedUrl?: string;
   onRemove: () => void;
   isUploading: boolean;
   accept?: string;
   error?: string | null;
   progress?: number;
+  allowLink?: boolean;
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({
   label,
   onFileChange,
+  onLinkChange,
   uploadedUrl,
   onRemove,
   isUploading,
   accept = 'video/mp4,video/quicktime,video/avi,video/mov',
   error,
   progress = 0,
+  allowLink = false,
 }) => {
   const [dragActive, setDragActive] = useState(false);
+  const [showLinkInput, setShowLinkInput] = useState(false);
+  const [linkValue, setLinkValue] = useState('');
   const inputId = `file-upload-${label.replace(/\s+/g, '-')}`;
 
   const handleDrag = (e: React.DragEvent) => {
@@ -125,11 +131,52 @@ const FileUpload: React.FC<FileUploadProps> = ({
     return 'bg-blue-500';
   };
 
+  const handleLinkSubmit = () => {
+    if (!linkValue || !onLinkChange) return;
+    if (!linkValue.startsWith('http://') && !linkValue.startsWith('https://')) {
+      alert('Por favor ingresa una URL válida que comience con http:// o https://');
+      return;
+    }
+    onLinkChange(linkValue);
+    setShowLinkInput(false);
+    setLinkValue('');
+  };
+
   return (
     <div className="w-full">
-      <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
-        {label}
-      </label>
+      <div className="flex justify-between items-center mb-2">
+        <label className="block text-sm font-medium text-slate-600 dark:text-slate-300">
+          {label}
+        </label>
+        {allowLink && !uploadedUrl && !isUploading && (
+          <button
+            type="button"
+            onClick={() => setShowLinkInput(!showLinkInput)}
+            className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+          >
+            {showLinkInput ? 'Cancelar' : 'Insertar enlace'}
+          </button>
+        )}
+      </div>
+
+      {showLinkInput && (
+        <div className="flex gap-2 mb-4">
+          <input
+            type="url"
+            value={linkValue}
+            onChange={(e) => setLinkValue(e.target.value)}
+            placeholder="https://..."
+            className="flex-1 border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+          />
+          <button
+            type="button"
+            onClick={handleLinkSubmit}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          >
+            Guardar
+          </button>
+        </div>
+      )}
 
       {uploadedUrl ? (
         <div className="flex items-center gap-3 p-3 border rounded-md bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700">
@@ -141,9 +188,11 @@ const FileUpload: React.FC<FileUploadProps> = ({
               rel="noopener noreferrer"
               className="text-sm text-green-700 dark:text-green-300 hover:underline font-medium"
             >
-              Ver video cargado
+              {uploadedUrl.startsWith('http') ? 'Ver video enlazado' : 'Ver video cargado'}
             </a>
-            <p className="text-xs text-green-600 dark:text-green-400">Video subido exitosamente</p>
+            <p className="text-xs text-green-600 dark:text-green-400">
+              {uploadedUrl.startsWith('http') ? 'Enlace guardado exitosamente' : 'Video subido exitosamente'}
+            </p>
           </div>
           <button
             type="button"
@@ -411,19 +460,7 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
         setUploadProgress((prev) => ({ ...prev, [fieldName]: progress }));
       });
 
-      const keys = fieldName.split('.');
-      if (keys.length > 1) {
-        setFormData((prev) => {
-          const newState = JSON.parse(JSON.stringify(prev));
-          let current: any = newState;
-          for (let i = 0; i < keys.length - 1; i++) current = current[keys[i]];
-          current[keys[keys.length - 1]] = url;
-          return newState;
-        });
-      } else {
-        setFormData((prev) => ({ ...prev, [fieldName]: url }));
-      }
-
+      handleUrlUpdate(fieldName, url);
       setUploadProgress((prev) => ({ ...prev, [fieldName]: 100 }));
     } catch (error: any) {
       const msg = error?.message || 'Error desconocido al subir el archivo';
@@ -434,6 +471,21 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
       setTimeout(() => {
         setUploadProgress((prev) => ({ ...prev, [fieldName]: 0 }));
       }, 2000);
+    }
+  };
+
+  const handleUrlUpdate = (fieldName: string, url: string) => {
+    const keys = fieldName.split('.');
+    if (keys.length > 1) {
+      setFormData((prev) => {
+        const newState = JSON.parse(JSON.stringify(prev));
+        let current: any = newState;
+        for (let i = 0; i < keys.length - 1; i++) current = current[keys[i]];
+        current[keys[keys.length - 1]] = url;
+        return newState;
+      });
+    } else {
+      setFormData((prev) => ({ ...prev, [fieldName]: url }));
     }
   };
 
@@ -791,13 +843,15 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
 
           {/* Video Observación */}
           <FileUpload
-            label="Subir video de observación de clase"
+            label="Video de observación de clase"
             onFileChange={(file) => handleFileUploadImproved('videoObservacionUrl', file)}
+            onLinkChange={(url) => handleUrlUpdate('videoObservacionUrl', url)}
             uploadedUrl={formData.videoObservacionUrl}
             onRemove={() => handleFileRemove('videoObservacionUrl')}
             isUploading={!!uploading['videoObservacionUrl']}
             error={uploadErrors['videoObservacionUrl']}
             progress={uploadProgress['videoObservacionUrl'] || 0}
+            allowLink={true}
           />
         </fieldset>
 

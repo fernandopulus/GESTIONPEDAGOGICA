@@ -98,6 +98,22 @@ export interface HorarioCelda {
 
 export type HorariosGenerados = Record<string, Record<string, Record<string, HorarioCelda>>>;
 
+// --- Ciclos OPR ---
+
+export interface CicloOPR {
+  id: string;
+  docenteInfo: string;
+  fecha: string; // ISO String
+  horaInicio?: string;
+  horaTermino?: string;
+  asignaturaInfo: string;
+  videoObservacionUrl?: string;
+  retroalimentacion: {
+    exito: boolean;
+    comentarios?: string;
+  };
+}
+
 // --- Seguimiento de Acciones ---
 
 export type EstadoAccion = 'Pendiente' | 'En Proceso' | 'Cumplida';

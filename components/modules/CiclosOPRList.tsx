@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
+import DashboardOPR from './DashboardOPR';
 import { CalendarCheck, Film, MessageSquare, Clock, Trash2 } from 'lucide-react';
 import { CicloOPR } from '../../types';
 import {
@@ -70,6 +71,8 @@ const CiclosOPRList: React.FC<Props> = ({ acompanamientoId, onEdit }) => {
     }
   };
 
+  const [showDashboard, setShowDashboard] = useState(false);
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
@@ -95,8 +98,26 @@ const CiclosOPRList: React.FC<Props> = ({ acompanamientoId, onEdit }) => {
   }
 
   return (
-    <div className="space-y-3">
-      {ciclos.map((c) => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+          Ciclos OPR
+        </h2>
+        <button
+          onClick={() => setShowDashboard(!showDashboard)}
+          className="px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-colors"
+        >
+          {showDashboard ? 'Ver Lista' : 'Ver Dashboard'}
+        </button>
+      </div>
+
+      {showDashboard ? (
+        <div>
+          <DashboardOPR ciclos={ciclos} />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {ciclos.map((c) => (
         <div key={c.id} className="p-4 border dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 shadow-sm">
           <div className="flex justify-between items-start gap-3">
             <div className="space-y-1">
@@ -153,6 +174,8 @@ const CiclosOPRList: React.FC<Props> = ({ acompanamientoId, onEdit }) => {
           </div>
         </div>
       ))}
+        </div>
+      )}
     </div>
   );
 };
