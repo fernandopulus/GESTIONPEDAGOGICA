@@ -111,6 +111,7 @@ export interface DetalleObservacionRow {
 export interface CicloOPR {
   id?: string;
   docenteInfo: string;
+  cursoInfo?: string;
   fecha: string; // ISO String
   horaInicio?: string;
   horaTermino?: string;
@@ -124,6 +125,7 @@ export interface CicloOPR {
     foco: string; // Foco de mejora
     elementosIdentificar: string; // Elementos a identificar
   };
+  acompanamientoId?: string; // ID del acompañamiento asociado
 }
 
 // --- Seguimiento de Acciones ---

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   BarChart3,
   Users,
@@ -10,8 +10,13 @@ import {
   BookOpen,
   Target,
   TrendingUp,
+  LineChart,
+  AlertCircle,
+  BarChart2,
+  Brain,
 } from 'lucide-react';
 import { AcompanamientoDocente, CicloOPR } from '../../types';
+import { analizarOPR } from '../../src/ai/oprAnalyzer';
 
 interface AcompanamientoDocenteDashboardProps {
   acompanamientos: AcompanamientoDocente[];
@@ -24,6 +29,11 @@ const AcompanamientoDocenteDashboard: React.FC<AcompanamientoDocenteDashboardPro
   ciclosOPR,
   standaloneCiclos,
 }) => {
+  // Estado para el análisis de IA
+  const [analisisIA, setAnalisisIA] = useState<any>(null);
+  const [cicloSeleccionado, setCicloSeleccionado] = useState<CicloOPR | null>(null);
+  const [cargandoAnalisis, setCargandoAnalisis] = useState(false);
+
   // Estadísticas generales
   const totalAcompanamientos = acompanamientos.length;
   const totalCiclosOPR = Object.values(ciclosOPR).reduce((acc: number, curr: CicloOPR[]) => acc + curr.length, 0) + standaloneCiclos.length;
@@ -163,6 +173,165 @@ const AcompanamientoDocenteDashboard: React.FC<AcompanamientoDocenteDashboardPro
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Análisis IA */}
+        <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border dark:border-slate-700">
+          <h3 className="text-lg font-semibold mb-4 text-slate-900 dark:text-white flex items-center gap-2">
+            <Brain className="w-5 h-5 text-purple-600" />
+            Análisis Inteligente
+          </h3>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-2">
+              Seleccionar Ciclo OPR para Análisis
+            </label>
+            <select
+              className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+              value={cicloSeleccionado?.id || ''}
+              onChange={(e) => {
+                const ciclo = allCiclos.find((c) => c.id === e.target.value);
+                setCicloSeleccionado(ciclo || null);
+              }}
+            >
+              <option value="">Seleccione un ciclo...</option>
+              {allCiclos.map((ciclo) => (
+                <option key={ciclo.id} value={ciclo.id}>
+                  {ciclo.docenteInfo} - {new Date(ciclo.fecha).toLocaleDateString()}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {cicloSeleccionado && !analisisIA && (
+            <button
+              onClick={async () => {
+                setCargandoAnalisis(true);
+                try {
+                  const historial = allCiclos.filter(
+                    (c) => c.docenteInfo === cicloSeleccionado.docenteInfo && c.id !== cicloSeleccionado.id
+                  );
+                  const analisis = await analizarOPR(cicloSeleccionado, historial);
+                  setAnalisisIA(analisis);
+                } catch (error) {
+                  console.error('Error al analizar ciclo:', error);
+                } finally {
+                  setCargandoAnalisis(false);
+                }
+              }}
+              className="w-full py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors flex items-center justify-center gap-2"
+              disabled={cargandoAnalisis}
+            >
+              {cargandoAnalisis ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                  Analizando...
+                </>
+              ) : (
+                <>
+                  <Brain className="w-4 h-4" />
+                  Analizar Ciclo
+                </>
+              )}
+            </button>
+          )}
+
+          {analisisIA && (
+            <div className="space-y-6">
+              {/* Estadísticas */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                  <h4 className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-2">
+                    Participación
+                  </h4>
+                  <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">
+                    {analisisIA.stats.participacion_promedio.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <h4 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2">
+                    Interacción vs Explicación
+                  </h4>
+                  <div className="text-lg font-medium text-blue-900 dark:text-blue-100">
+                    {analisisIA.stats.min_interaccion}min / {analisisIA.stats.min_explicacion}min
+                  </div>
+                </div>
+              </div>
+
+              {/* Fortalezas y Mejoras */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h4 className="text-sm font-medium text-green-700 dark:text-green-300 mb-2 flex items-center gap-1">
+                    <CheckCircle2 className="w-4 h-4" /> Fortalezas
+                  </h4>
+                  <ul className="space-y-2">
+                    {analisisIA.summary.fortalezas.map((fortaleza: string, index: number) => (
+                      <li
+                        key={index}
+                        className="text-sm text-slate-600 dark:text-slate-300 flex items-center gap-2"
+                      >
+                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                        {fortaleza}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-amber-700 dark:text-amber-300 mb-2 flex items-center gap-1">
+                    <Target className="w-4 h-4" /> Áreas de Mejora
+                  </h4>
+                  <ul className="space-y-2">
+                    {analisisIA.summary.mejoras.map((mejora: string, index: number) => (
+                      <li
+                        key={index}
+                        className="text-sm text-slate-600 dark:text-slate-300 flex items-center gap-2"
+                      >
+                        <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
+                        {mejora}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Alertas */}
+              {analisisIA.alerts.length > 0 && (
+                <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                  <h4 className="text-sm font-medium text-red-700 dark:text-red-300 mb-2 flex items-center gap-1">
+                    <AlertCircle className="w-4 h-4" /> Alertas
+                  </h4>
+                  <ul className="space-y-2">
+                    {analisisIA.alerts.map((alerta: string, index: number) => (
+                      <li
+                        key={index}
+                        className="text-sm text-red-600 dark:text-red-300 flex items-center gap-2"
+                      >
+                        <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+                        {alerta}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Recomendaciones */}
+              <div>
+                <h4 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2 flex items-center gap-1">
+                  <TrendingUp className="w-4 h-4" /> Recomendaciones
+                </h4>
+                <ul className="space-y-2">
+                  {analisisIA.summary.recomendaciones.map((recomendacion: string, index: number) => (
+                    <li
+                      key={index}
+                      className="text-sm text-slate-600 dark:text-slate-300 flex items-center gap-2"
+                    >
+                      <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+                      {recomendacion}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Asignaturas Más Observadas */}
