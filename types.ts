@@ -100,17 +100,29 @@ export type HorariosGenerados = Record<string, Record<string, Record<string, Hor
 
 // --- Ciclos OPR ---
 
-export interface CicloOPR {
+export interface DetalleObservacionRow {
   id: string;
+  minuto: string;
+  accionesDocente: string;
+  accionesEstudiantes: string;
+  actividades: string;
+}
+
+export interface CicloOPR {
+  id?: string;
   docenteInfo: string;
   fecha: string; // ISO String
   horaInicio?: string;
   horaTermino?: string;
   asignaturaInfo: string;
+  registroN?: number;
+  nombreCiclo?: string;
   videoObservacionUrl?: string;
+  detallesObservacion: DetalleObservacionRow[];
   retroalimentacion: {
-    exito: boolean;
-    comentarios?: string;
+    exito: string; // Texto de retroalimentación positiva
+    foco: string; // Foco de mejora
+    elementosIdentificar: string; // Elementos a identificar
   };
 }
 
@@ -635,15 +647,19 @@ export interface NotificacionDocente {
 // --- Acompañamiento Docente ---
 
 export interface AcompanamientoDocente {
-  id: string;
-  fecha: string; // YYYY-MM-DD
+  id?: string;
   docente: string;
   curso: string;
   asignatura: string;
-  bloques: string;
-  rubricaResultados: Record<string, number>; // { [nombreCriterio]: puntaje }
-  observacionesGenerales: string;
-  retroalimentacionConsolidada: string;
+  fecha: string;
+  observacionesGenerales?: string;
+  planificacionFutura: string;
+  rubricaResultados: Record<string, number>;
+  retroalimentacionConsolidada?: string;
+  createdAt: string;
+  indicadoresLogrados?: number;
+  indicadoresEnProceso?: number;
+  totalIndicadores?: number;
 }
 
 // --- Evaluaciones Formativas y Gamificación ---

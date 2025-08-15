@@ -28,6 +28,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logApiCall } from '../utils/apiLogger';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import AcompanamientoDocenteDashboard from './AcompanamientoDocenteDashboard';
 
 // Firebase helpers (usa la versión con callback de progreso)
 import {
@@ -331,17 +332,8 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
       ],
       retroalimentacion: {
         exito: '',
-        modelo: '',
-        videoModeloUrl: '',
         foco: '',
         elementosIdentificar: '',
-        brecha: {
-          videoUrl: '',
-          minutoInicial: '',
-          minutoFinal: '',
-          preguntas: '',
-          indicadores: '',
-        },
       },
       planificacion: { preparacion: '', objetivo: '', actividad: '', tiempo: '' },
       seguimiento: {
@@ -526,7 +518,7 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
         alert('La API Key de Gemini no está configurada.');
         return;
       }
-      await logApiCall('Acompañamiento - Mejorar Ciclo OPR');
+      // No necesitamos registrar este log por ahora
       const ai = new GoogleGenerativeAI(apiKey);
       const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
 
@@ -981,18 +973,7 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
               />
             </div>
 
-            {/* Video Modelo (opcional) */}
-            <FileUpload
-              label="Video modelo (opcional)"
-              onFileChange={(file) =>
-                handleFileUploadImproved('retroalimentacion.videoModeloUrl', file)
-              }
-              uploadedUrl={formData.retroalimentacion.videoModeloUrl}
-              onRemove={() => handleFileRemove('retroalimentacion.videoModeloUrl')}
-              isUploading={!!uploading['retroalimentacion.videoModeloUrl']}
-              error={uploadErrors['retroalimentacion.videoModeloUrl']}
-              progress={uploadProgress['retroalimentacion.videoModeloUrl'] || 0}
-            />
+
 
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -1022,81 +1003,7 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
             </div>
           </div>
 
-          {/* Brecha */}
-          <div className="p-4 border rounded-md dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 space-y-3">
-            <h4 className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-500" />
-              Análisis de Brecha
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  Minuto inicial
-                </label>
-                <input
-                  type="text"
-                  name="retroalimentacion.brecha.minutoInicial"
-                  value={formData.retroalimentacion.brecha.minutoInicial}
-                  onChange={handleFieldChange}
-                  placeholder="Ej: 15:30"
-                  className="w-full border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  Minuto final
-                </label>
-                <input
-                  type="text"
-                  name="retroalimentacion.brecha.minutoFinal"
-                  value={formData.retroalimentacion.brecha.minutoFinal}
-                  onChange={handleFieldChange}
-                  placeholder="Ej: 20:45"
-                  className="w-full border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600"
-                />
-              </div>
-            </div>
 
-            {/* Video Brecha (opcional) */}
-            <FileUpload
-              label="Video de brecha (opcional)"
-              onFileChange={(file) =>
-                handleFileUploadImproved('retroalimentacion.brecha.videoUrl', file)
-              }
-              uploadedUrl={formData.retroalimentacion.brecha.videoUrl}
-              onRemove={() => handleFileRemove('retroalimentacion.brecha.videoUrl')}
-              isUploading={!!uploading['retroalimentacion.brecha.videoUrl']}
-              error={uploadErrors['retroalimentacion.brecha.videoUrl']}
-              progress={uploadProgress['retroalimentacion.brecha.videoUrl'] || 0}
-            />
-
-            <div>
-              <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Preguntas
-              </label>
-              <textarea
-                name="retroalimentacion.brecha.preguntas"
-                value={formData.retroalimentacion.brecha.preguntas}
-                onChange={handleFieldChange}
-                placeholder="Preguntas específicas sobre la brecha identificada..."
-                rows={3}
-                className="w-full border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Indicadores
-              </label>
-              <textarea
-                name="retroalimentacion.brecha.indicadores"
-                value={formData.retroalimentacion.brecha.indicadores}
-                onChange={handleFieldChange}
-                placeholder="Indicadores para evaluar el progreso..."
-                rows={3}
-                className="w-full border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600"
-              />
-            </div>
-          </div>
         </fieldset>
 
         <fieldset className="shadow-md rounded-lg p-4 border dark:border-slate-700 space-y-4">
@@ -1349,8 +1256,9 @@ const AcompanamientoDocente: React.FC = () => {
         docente: (ciclo as any).docenteInfo || '',
         curso: (ciclo as any).cursoInfo || '',
         asignatura: (ciclo as any).asignaturaInfo || '',
-        bloques: '',
         rubricaResultados: {},
+        planificacionFutura: '',
+        createdAt: new Date().toISOString(),
         observacionesGenerales: '',
         retroalimentacionConsolidada: '',
       };
@@ -1375,7 +1283,7 @@ const AcompanamientoDocente: React.FC = () => {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) throw new Error('API Key de Gemini no configurada.');
 
-      await logApiCall('Acompañamiento - Feedback General');
+      // No necesitamos registrar este log por ahora
       const ai = new GoogleGenerativeAI(apiKey);
       const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
 
@@ -1885,7 +1793,9 @@ La respuesta debe ser solo el texto de la retroalimentación.
       docente: 'docente' in formData ? (formData as any).docente || '' : '',
       curso: 'curso' in formData ? (formData as any).curso || '' : '',
       asignatura: 'asignatura' in formData ? (formData as any).asignatura || '' : '',
-      bloques: 'bloques' in formData ? (formData as any).bloques || '' : '',
+      planificacionFutura: '',
+      createdAt: new Date().toISOString(),
+
       rubricaResultados: {},
       observacionesGenerales: '',
       retroalimentacionConsolidada: '',
@@ -1943,6 +1853,19 @@ La respuesta debe ser solo el texto de la retroalimentación.
                 Ciclos OPR
               </span>
             </button>
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'dashboard'
+                  ? 'border-amber-500 text-amber-600 dark:text-amber-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-300'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4" />
+                Dashboard
+              </span>
+            </button>
           </nav>
         </div>
 
@@ -1952,6 +1875,16 @@ La respuesta debe ser solo el texto de la retroalimentación.
               <AlertCircle className="w-5 h-5 text-red-500" />
               <p className="text-red-700 dark:text-red-300">{error}</p>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'dashboard' && (
+          <div className="animate-fade-in">
+            <AcompanamientoDocenteDashboard 
+              acompanamientos={acompanamientos}
+              ciclosOPR={ciclosOPR}
+              standaloneCiclos={standaloneCiclos}
+            />
           </div>
         )}
 
