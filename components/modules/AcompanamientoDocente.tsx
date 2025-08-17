@@ -17,6 +17,7 @@ import {
   AlertCircle,
   CheckCircle2,
 } from 'lucide-react';
+import { PDFHelper } from '../../src/utils/pdfHelper';
 import {
   AcompanamientoDocente as AcompanamientoDocenteType,
   CicloOPR,
@@ -24,6 +25,7 @@ import {
 } from '../../types';
 import { ASIGNATURAS, CURSOS, RUBRICA_ACOMPANAMIENTO_DOCENTE as defaultRubric } from '../../constants';
 import CiclosOPRList from './CiclosOPRList';
+import { generatePDF, PDFGeneratorData } from '../../src/utils/pdfHelperApi';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logApiCall } from '../utils/apiLogger';
@@ -1285,7 +1287,7 @@ const AcompanamientoDocente: React.FC = () => {
 
       // No necesitamos registrar este log por ahora
       const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+      const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
       const rubricaTexto = Object.entries(formData.rubricaResultados || {})
         .map(([criterio, nivel]) => `- ${criterio}: Nivel ${nivel}`)
@@ -1400,95 +1402,187 @@ La respuesta debe ser solo el texto de la retroalimentación.
     try {
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
-      const margin = 15;
-      const contentWidth = pageWidth - margin * 2;
-      let yPosition = 20;
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 20; // Margen de 20mm
+      const contentWidth = pageWidth - (margin * 2);
 
-      doc.setFontSize(18);
-      doc.setFont('helvetica', 'bold');
-      doc.text('INFORME DE ACOMPAÑAMIENTO DOCENTE', pageWidth / 2, yPosition, { align: 'center' });
-      yPosition += 5;
-      doc.setLineWidth(0.5);
-      doc.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 10;
-
-      const infoBasica = [
-        ['Docente:', (formData as any).docente],
-        ['Curso:', (formData as any).curso],
-        ['Asignatura:', (formData as any).asignatura],
-        ['Fecha:', new Date((formData as any).fecha).toLocaleDateString('es-CL')],
-        ['Bloques horarios:', (formData as any).bloques || 'No especificado'],
-      ];
-      autoTable(doc, {
-        body: infoBasica,
-        startY: yPosition,
-        theme: 'plain',
-        styles: { fontSize: 10 },
-        columnStyles: { 0: { fontStyle: 'bold' } },
-      });
-      yPosition = (doc as any).lastAutoTable.finalY + 10;
-
-      if (Object.keys((formData as any).rubricaResultados || {}).length > 0) {
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.text('RESULTADOS DE EVALUACIÓN', margin, yPosition);
-        yPosition += 8;
-        const rubricaData = Object.entries((formData as any).rubricaResultados).map(
-          ([criterio, nivel]: any) => [
-            criterio,
-            `Nivel ${nivel}`,
-            nivel === 1 ? 'Débil' : nivel === 2 ? 'Incipiente' : nivel === 3 ? 'Satisfactorio' : 'Avanzado',
-          ]
-        );
-        autoTable(doc, {
-          startY: yPosition,
-          head: [['Criterio', 'Nivel', 'Descripción']],
-          body: rubricaData,
-          theme: 'grid',
-          headStyles: { fillColor: [245, 158, 11], textColor: 255 },
-          margin: { left: margin, right: margin },
-          styles: { fontSize: 9 },
-        });
-        yPosition = (doc as any).lastAutoTable.finalY + 10;
-      }
-
-      const addTitledText = (title: string, text: string | undefined) => {
-        if (!text || text.trim() === '') return;
-        if (yPosition > 250) {
-          doc.addPage();
-          yPosition = 20;
-        }
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.text(title, margin, yPosition);
-        yPosition += 8;
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        const lines = doc.splitTextToSize(text, contentWidth);
-        doc.text(lines, margin, yPosition);
-        yPosition += lines.length * 5 + 10;
+      // Función helper para verificar si hay espacio suficiente
+      const needsNewPage = (heightNeeded: number, currentY: number) => {
+        return (currentY + heightNeeded) > (pageHeight - margin);
       };
 
-      addTitledText('OBSERVACIONES GENERALES', (formData as any).observacionesGenerales);
-      addTitledText('RETROALIMENTACIÓN PEDAGÓGICA', (formData as any).retroalimentacionConsolidada);
+      // Función helper para agregar número de página
+      const addPageNumber = () => {
+        const pages = doc.getNumberOfPages();
+        for (let i = 1; i <= pages; i++) {
+          doc.setPage(i);
+          doc.setFontSize(9);
+          doc.setTextColor(128);
+          doc.text(
+            `pág. ${i} de ${pages}`,
+            pageWidth - margin,
+            pageHeight - 10,
+            { align: 'right' }
+          );
+        }
+      };
 
-      const pageCount = doc.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'italic');
-        doc.text(
-          `Generado el ${new Date().toLocaleDateString('es-CL')} - Página ${i} de ${pageCount}`,
-          pageWidth / 2,
-          doc.internal.pageSize.getHeight() - 10,
-          { align: 'center' }
-        );
+      // PÁGINA 1: Datos y Tabla
+      let currentY = margin;
+
+      // Título del documento
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('INFORME DE ACOMPAÑAMIENTO DOCENTE', pageWidth/2, currentY, { align: 'center' });
+      currentY += 15;
+
+      // Encabezado con datos del docente
+      const infoTableHeight = 40;
+      autoTable(doc, {
+        startY: currentY,
+        head: [],
+        body: [
+          ['Docente:', (formData as any).docente],
+          ['Curso:', (formData as any).curso],
+          ['Asignatura:', (formData as any).asignatura],
+          ['Fecha:', new Date((formData as any).fecha).toLocaleDateString('es-CL')],
+          ['Bloques:', (formData as any).bloques || 'No especificado'],
+        ],
+        theme: 'plain',
+        styles: {
+          fontSize: 11,
+          cellPadding: 4,
+        },
+        columnStyles: {
+          0: { fontStyle: 'bold', cellWidth: 30 },
+          1: { cellWidth: 120 }
+        },
+        margin: { left: margin, right: margin },
+      });
+      currentY = (doc as any).lastAutoTable.finalY + 10;
+
+      // Tabla de indicadores
+      if (Object.keys((formData as any).rubricaResultados || {}).length > 0) {
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Evaluación por Indicadores', margin, currentY);
+        currentY += 10;
+
+        const rubricData = Object.entries((formData as any).rubricaResultados).map(([criterio, nivel]) => {
+          let nivelTexto;
+          switch(nivel) {
+            case 1: nivelTexto = 'Débil'; break;
+            case 2: nivelTexto = 'Incipiente'; break;
+            case 3: nivelTexto = 'Satisfactorio'; break;
+            case 4: nivelTexto = 'Avanzado'; break;
+            default: nivelTexto = 'No evaluado';
+          }
+          return [criterio, nivelTexto, nivel];
+        });
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [['Indicador', 'Nivel de Logro', 'Puntuación']],
+          body: rubricData,
+          theme: 'grid',
+          styles: {
+            fontSize: 10,
+            cellPadding: 6,
+            lineColor: [200, 200, 200],
+            lineWidth: 0.1,
+            valign: 'middle'
+          },
+          headStyles: {
+            fillColor: [41, 128, 185],
+            textColor: 255,
+            fontSize: 11,
+            fontStyle: 'bold',
+            halign: 'left'
+          },
+          columnStyles: {
+            0: { cellWidth: 100 },
+            1: { cellWidth: 40 },
+            2: { cellWidth: 30, halign: 'center' }
+          },
+          alternateRowStyles: {
+            fillColor: [245, 247, 250]
+          },
+          margin: { left: margin, right: margin }
+        });
       }
 
+      // PÁGINA 2: Observaciones y Sugerencias
+      doc.addPage();
+      currentY = margin;
+
+      // Título de la sección
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Observaciones Generales y Sugerencias de Mejora', margin, currentY);
+      currentY += 15;
+
+      // Fortalezas
+      if ((formData as any).observacionesGenerales) {
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Fortalezas:', margin, currentY);
+        currentY += 10;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        const obsLines = doc.splitTextToSize(
+          (formData as any).observacionesGenerales,
+          contentWidth
+        );
+        obsLines.forEach((line: string) => {
+          if (needsNewPage(7, currentY)) {
+            doc.addPage();
+            currentY = margin;
+          }
+          doc.text(line, margin, currentY, { align: 'justify' });
+          currentY += 7; // Espaciado 1.3 para 11pt
+        });
+        currentY += 10;
+      }
+
+      // Sugerencias de mejora
+      if ((formData as any).retroalimentacionConsolidada) {
+        if (needsNewPage(50, currentY)) {
+          doc.addPage();
+          currentY = margin;
+        }
+
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Sugerencias de mejora:', margin, currentY);
+        currentY += 10;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        const retroLines = doc.splitTextToSize(
+          (formData as any).retroalimentacionConsolidada,
+          contentWidth
+        );
+        retroLines.forEach((line: string) => {
+          if (needsNewPage(7, currentY)) {
+            doc.addPage();
+            currentY = margin;
+          }
+          doc.text(line, margin, currentY, { align: 'justify' });
+          currentY += 7; // Espaciado 1.3 para 11pt
+        });
+      }
+
+      // Agregar números de página
+      addPageNumber();
+
+      // Guardar el PDF
       const fileName = `Informe_Acompanamiento_${(formData as any).docente?.replace(/\s+/g, '_')}_${
         (formData as any).curso
       }_${new Date().toISOString().split('T')[0]}.pdf`;
+      
       doc.save(fileName);
+
     } catch (error) {
       console.error('❌ Error al generar PDF:', error);
       alert('Error al generar el PDF. Intenta nuevamente.');

@@ -28,6 +28,7 @@ import {
   Search,
   ArrowRight,
   Shield,
+  Target,
 } from 'lucide-react';
 
 /**
@@ -66,6 +67,7 @@ const ICONS: Record<string, JSX.Element> = {
   actividades_remotas: <FlaskConical className="w-6 h-6" aria-hidden />,
   evaluacion_aprendizajes: <ClipboardList className="w-6 h-6" aria-hidden />,
   evaluaciones_formativas: <LineChart className="w-6 h-6" aria-hidden />,
+  evaluacion_competencias: <Target className="w-6 h-6" aria-hidden />,
   actas: <FileText className="w-6 h-6" aria-hidden />,
   mensajeria: <MessageSquare className="w-6 h-6" aria-hidden />,
   seguimiento_dual: <UserCheck className="w-6 h-6" aria-hidden />,
@@ -116,11 +118,11 @@ const getProfileDisplayName = (profile: Profile): string => {
   switch (profile) {
     case Profile.PROFESORADO:
       return 'Profesorado';
-    case Profile.COORDINACION:
+    case Profile.COORDINACION_TP:
       return 'Coordinación';
     case Profile.SUBDIRECCION:
       return 'Subdirección';
-    case Profile.ESTUDIANTES:
+    case Profile.ESTUDIANTE:
       return 'Estudiantes';
     default:
       return 'Usuario';
@@ -156,6 +158,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'actividades_remotas', name: 'Actividades Remotas', icon: ICONS.actividades_remotas, accent: ACCENTS.actividades_remotas },
         { id: 'evaluacion_aprendizajes', name: 'Evaluación de Aprendizajes', icon: ICONS.evaluacion_aprendizajes, accent: ACCENTS.evaluacion_aprendizajes },
         { id: 'evaluaciones_formativas', name: 'Evaluaciones Formativas', icon: ICONS.evaluaciones_formativas, accent: ACCENTS.evaluaciones_formativas },
+        { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
         { id: 'desarrollo_profesional', name: 'Desarrollo Profesional', icon: ICONS.desarrollo_profesional, accent: ACCENTS.desarrollo_profesional },
         ...commonModules,
         { id: 'actas', name: 'Generador de Actas', icon: ICONS.actas, accent: ACCENTS.actas },
@@ -171,6 +174,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'pañol', name: 'Pañol', icon: ICONS.pañol, accent: ACCENTS.pañol },
         { id: 'gestion_empresas', name: 'Gestión de Empresas', icon: ICONS.gestion_empresas, accent: ACCENTS.gestion_empresas },
         { id: 'desarrollo_profesional', name: 'Desarrollo Profesional', icon: ICONS.desarrollo_profesional, accent: ACCENTS.desarrollo_profesional },
+        { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
         ...commonModules,
         { id: 'mensajeria', name: 'Mensajería Interna', icon: ICONS.mensajeria, accent: ACCENTS.mensajeria },
         { id: 'actas', name: 'Generador de Actas', icon: ICONS.actas, accent: ACCENTS.actas },
@@ -189,6 +193,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'crear_horarios', name: 'Crear Horarios', icon: <Clock4 className="w-6 h-6" />, accent: ACCENTS.asistencia_dual },
         { id: 'seguimiento_acciones', name: 'Seguimiento de Acciones', icon: ICONS.evaluaciones_formativas, accent: ACCENTS.evaluaciones_formativas },
         { id: 'inclusion', name: 'Inclusión', icon: ICONS.inclusion, accent: ACCENTS.inclusion },
+        { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
         ...commonModules,
       ];
 
@@ -212,9 +217,9 @@ const ProfileBadge: React.FC<{ profile: Profile }> = ({ profile }) => {
   const label = getProfileDisplayName(profile);
   const palette: Record<Profile, string> = {
     [Profile.PROFESORADO]: 'bg-indigo-50 text-indigo-700 ring-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:ring-indigo-900/50',
-    [Profile.COORDINACION]: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900/50',
+    [Profile.COORDINACION_TP]: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900/50',
     [Profile.SUBDIRECCION]: 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900/50',
-    [Profile.ESTUDIANTES]: 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-900/50',
+    [Profile.ESTUDIANTE]: 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-900/50',
   } as any;
 
   return (

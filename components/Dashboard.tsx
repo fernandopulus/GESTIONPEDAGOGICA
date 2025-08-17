@@ -35,6 +35,7 @@ import AnalisisTaxonomico from '../components/modules/AnalisisTaxonomico';
 import GestionEmpresas from '../components/modules/GestionEmpresas';
 import DesarrolloProfesionalDocente from '../components/modules/DesarrolloProfesionalDocente';
 import AlternanciaTP from './modules/AlternanciaTP';
+import EvaluacionCompetencias from './modules/EvaluacionCompetencias';
 
 // UI
 import { Menu, ChevronLeft, ChevronRight, GraduationCap } from 'lucide-react';
@@ -227,6 +228,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (activeModule.name === 'Actividades Remotas') return <ActividadesRemotas />;
       if (activeModule.name === 'Evaluación de Aprendizajes') return <EvaluacionAprendizajes />;
       if (activeModule.name === 'Evaluaciones Formativas') return <EvaluacionesFormativas currentUser={currentUser} />;
+      if (activeModule.name === 'Evaluación de Competencias') return <EvaluacionCompetencias currentUser={currentUser} />;
     }
 
     if (profile === Profile.COORDINACION_TP) {

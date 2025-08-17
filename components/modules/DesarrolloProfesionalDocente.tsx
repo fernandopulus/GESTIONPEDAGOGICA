@@ -672,282 +672,84 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
   const downloadReport = useCallback(async () => {
     if (!selectedActivity || !respuestasActividad.length) return;
 
-    // Configuración inicial del PDF
     const pdf = new jsPDF('p', 'mm', 'a4');
-    const pageWidth = 210;  // A4 width in mm
-    const pageHeight = 297; // A4 height in mm
-    const margin = 25;      // 2.5 cm margin
+    const margin = 20;
     let yPos = margin;
 
-    // Función helper para agregar número de página
-    const addPageNumber = (pageNum: number) => {
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      pdf.text(`${pageNum}`, pageWidth/2, pageHeight - 10, { align: 'center' });
-    };
+    // Título del informe
+    pdf.setFontSize(20);
+    pdf.text(`Informe: ${selectedActivity.titulo}`, margin, yPos);
+    yPos += 10;
 
-    // Función helper para agregar el logo en cada página
-    const addHeaderImage = async () => {
-      try {
-        const img = new Image();
-        img.src = 'https://res.cloudinary.com/dwncmu1wu/image/upload/v1754153206/ChatGPT_Image_2_ago_2025_12_46_35_p.m._qsqj5e.png';
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-        });
-        const imgWidth = 20; // 2cm en mm
-        const imgHeight = (img.height * imgWidth) / img.width;
-        pdf.addImage(img, 'PNG', (pageWidth - imgWidth)/2, 10, imgWidth, imgHeight);
-        yPos = margin + imgHeight + 10;
-      } catch (error) {
-        console.error('Error al cargar la imagen:', error);
-        yPos = margin;
-      }
-    };
-
-    // Función helper para agregar una nueva página
-    const addNewPage = async () => {
-      pdf.addPage();
-      await addHeaderImage();
-      addPageNumber(pdf.internal.getNumberOfPages());
-      return margin + 20; // Retorna la nueva posición Y inicial
-    };
-
-    // Inicializar primera página
-    await addHeaderImage();
-    addPageNumber(1);
-
-    // Función helper para manejar texto largo
-    const wrapText = (text: string, maxWidth: number) => {
-      return pdf.splitTextToSize(text, maxWidth);
-    };
-
-    // Configurar fuentes y título principal
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(16);
-    const title = `Informe de Desarrollo Profesional Docente`;
-    pdf.text(title, pageWidth/2, yPos, { align: 'center' });
-    yPos += 12;
-
-    // Subtítulo (título de la actividad) con manejo de texto largo
-    pdf.setFontSize(14);
-    const maxTitleWidth = pageWidth - (2 * margin);
-    const wrappedTitle = wrapText(selectedActivity.titulo, maxTitleWidth);
-    pdf.text(wrappedTitle, pageWidth/2, yPos, { align: 'center' });
-    yPos += (wrappedTitle.length * 8) + 4;
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(10);
-    pdf.text(new Date().getFullYear().toString(), pageWidth/2, yPos, { align: 'center' });
-    yPos += 15;
-
-    // Información general en un cuadro con manejo de texto largo
-    const infoBoxMargin = margin + 5;
-    const maxInfoWidth = pageWidth - (2 * margin) - 10; // 5px padding on each side
-
-    // Preparar textos y calcular altura necesaria
-    const dimension = wrapText(`Dimensión: ${selectedActivity.dimension}`, maxInfoWidth);
-    const subdimension = wrapText(`Subdimensión: ${selectedActivity.subdimension}`, maxInfoWidth);
-    const creador = wrapText(`Creador: ${selectedActivity.creadorNombre} (${selectedActivity.creadorPerfil})`, maxInfoWidth);
-    const respuestas = `Total de respuestas: ${respuestasActividad.length}`;
-
-    // Calcular altura total necesaria
-    const lineHeight = 7;
-    const totalHeight = (dimension.length + subdimension.length + creador.length) * lineHeight + 25;
-
-    // Dibujar el cuadro de fondo
-    pdf.setDrawColor(200, 200, 200);
-    pdf.setFillColor(248, 250, 252);
-    pdf.roundedRect(margin, yPos, pageWidth - (2 * margin), totalHeight, 3, 3, 'FD');
-    
-    // Agregar textos
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(11);
-    yPos += 8;
-
-    // Función helper para agregar texto con múltiples líneas
-    const addMultilineText = (text: string[], startY: number) => {
-      text.forEach((line, i) => {
-        pdf.text(line, infoBoxMargin, startY + (i * lineHeight));
-      });
-      return startY + (text.length * lineHeight);
-    };
-
-    // Agregar cada campo
-    yPos = addMultilineText(dimension, yPos);
-    yPos = addMultilineText(subdimension, yPos);
-    yPos = addMultilineText(creador, yPos);
-    pdf.text(respuestas, infoBoxMargin, yPos += lineHeight);
+    // Información general
+    pdf.setFontSize(12);
+    pdf.text(`Dimensión: ${selectedActivity.dimension}`, margin, yPos += 10);
+    pdf.text(`Subdimensión: ${selectedActivity.subdimension}`, margin, yPos += 7);
+    pdf.text(`Creador: ${selectedActivity.creadorNombre} (${selectedActivity.creadorPerfil})`, margin, yPos += 7);
+    pdf.text(`Total de respuestas: ${respuestasActividad.length}`, margin, yPos += 7);
     
     yPos += 10;
 
-    // Procesar preguntas
-    for (const [index, pregunta] of selectedActivity.preguntas.entries()) {
-      // Verificar espacio y agregar nueva página si es necesario
-      if (yPos > pageHeight - 50) {
-        yPos = await addNewPage();
+    // Para cada pregunta
+    for (const pregunta of selectedActivity.preguntas) {
+      // Si no hay espacio suficiente en la página actual, crear nueva página
+      if (yPos > 250) {
+        pdf.addPage();
+        yPos = margin;
       }
 
-      // Título de la pregunta con separador
-      pdf.setDrawColor(70, 100, 200);
-      pdf.setLineWidth(0.5);
-      pdf.line(margin, yPos, pageWidth - margin, yPos);
+      pdf.setFontSize(14);
+      pdf.text(`Pregunta: ${pregunta.enunciado}`, margin, yPos += 10);
       yPos += 5;
-
-      // Título de la pregunta con manejo de texto largo
-      pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(12);
-      const questionTitle = `Pregunta ${index + 1}: ${pregunta.enunciado}`;
-      const wrappedQuestion = wrapText(questionTitle, pageWidth - (2 * margin));
-      pdf.text(wrappedQuestion, margin, yPos += 8);
-      yPos += (wrappedQuestion.length * 7);
-      
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(11);
 
       if (pregunta.tipo === "seleccion_multiple") {
-        // Gráfico de barras para selección múltiple
+        // Resultados de selección múltiple
         const stats = choiceStats[pregunta.id] || {};
         const total = respuestasActividad.length;
-        const entries = Object.entries(stats);
-        
-        // Configuración del gráfico
-        const barHeight = 8;
-        const barGap = 5;
-        const labelWidth = 40;
-        const percentWidth = 25;
-        const maxBarWidth = pageWidth - (2 * margin) - labelWidth - percentWidth - 10;
-        
-        // Dibujar cada barra
-        for (const [opcion, count] of entries) {
-          // Verificar si necesitamos nueva página
-          if (yPos > pageHeight - 30) {
-            yPos = await addNewPage();
-          }
 
+        Object.entries(stats).forEach(([opcion, count]) => {
           const porcentaje = total > 0 ? Math.round((count as number / total) * 100) : 0;
-          const barWidth = (count as number / total) * maxBarWidth;
-          
-          // Etiqueta (con manejo de texto largo)
-          const wrappedOption = wrapText(opcion, labelWidth);
-          pdf.text(wrappedOption, margin, yPos + 6);
-          
-          // Barra de fondo
-          pdf.setFillColor(240, 240, 240);
-          pdf.rect(margin + labelWidth + 5, yPos, maxBarWidth, barHeight, 'F');
-          
-          // Barra de valor
-          pdf.setFillColor(100, 100, 200);
-          pdf.rect(margin + labelWidth + 5, yPos, barWidth, barHeight, 'F');
-          
-          // Porcentaje
-          pdf.text(
-            `${porcentaje}%`,
-            pageWidth - margin - 5,
-            yPos + 6,
-            { align: 'right' }
-          );
-          
-          yPos += Math.max(wrappedOption.length * 7, barHeight + barGap);
-        }
-        
-        yPos += 10;
-
+          pdf.text(`${opcion}: ${count} respuestas (${porcentaje}%)`, margin + 5, yPos += 7);
+        });
       } else {
         // Respuestas abiertas
         pdf.text("Respuestas:", margin, yPos += 7);
-        
         for (const respuesta of respuestasActividad) {
           const resp = respuesta.respuestas[pregunta.id];
           if (resp?.tipo === "abierta" && resp.valorTexto) {
-            if (yPos > pageHeight - 50) {
-              yPos = await addNewPage();
+            // Verificar espacio disponible
+            if (yPos > 250) {
+              pdf.addPage();
+              yPos = margin;
             }
-            
-            // Contenedor de respuesta con padding
-            const contentWidth = pageWidth - (2 * margin) - 20; // 10px padding en cada lado
-            const contentMargin = margin + 10;
-            
-            // Nombre del respondente con estilo
-            pdf.setFont('helvetica', 'bold');
-            const wrappedName = wrapText(`${respuesta.userNombre}:`, contentWidth);
-            pdf.text(wrappedName, contentMargin, yPos += 7);
-            yPos += (wrappedName.length - 1) * 7;
-            
-            pdf.setFont('helvetica', 'normal');
-            
-            // Texto de respuesta justificado
-            const wrappedResponse = wrapText(resp.valorTexto, contentWidth - 10);
-            
-            // Fondo sutil para la respuesta con padding
-            const responseHeight = wrappedResponse.length * 7 + 6;
-            pdf.setFillColor(248, 250, 252);
-            pdf.rect(contentMargin, yPos + 2, contentWidth, responseHeight, 'F');
-            
-            // Texto de la respuesta
-            pdf.text(wrappedResponse, contentMargin + 5, yPos += 7);
-            yPos += responseHeight + 3;
+            pdf.text(`${respuesta.userNombre}:`, margin + 5, yPos += 7);
+            const lines = pdf.splitTextToSize(resp.valorTexto, 170);
+            pdf.text(lines, margin + 10, yPos += 7);
+            yPos += (lines.length * 7);
           }
         }
       }
       yPos += 10;
     }
 
-    // Sección de palabras clave con diseño visual
+    // Palabras clave (si existen)
     if (keywords.length > 0) {
-      if (yPos > pageHeight - 80) {
-        yPos = await addNewPage();
+      if (yPos > 250) {
+        pdf.addPage();
+        yPos = margin;
       }
       
-      // Título de sección
-      pdf.setDrawColor(70, 100, 200);
-      pdf.setLineWidth(0.5);
-      pdf.line(margin, yPos, pageWidth - margin, yPos);
-      yPos += 10;
-
-      pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(14);
-      const keywordsTitle = "Análisis de Conceptos Clave";
-      pdf.text(keywordsTitle, pageWidth/2, yPos, { align: 'center' });
-      yPos += 15;
+      pdf.text("Conceptos clave detectados:", margin, yPos += 10);
+      pdf.setFontSize(12);
       
-      // Crear nube de tags visual
-      const keywordsWithScores = keywords
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10); // Top 10 keywords
+      const keywordText = keywords
+        .map(k => `${k.keyword} (${Math.round(k.score * 100)}%)`)
+        .join(", ");
       
-      const maxFontSize = 16;
-      const minFontSize = 10;
-      
-      let currentX = margin;
-      let maxYforRow = yPos;
-      
-      keywordsWithScores.forEach((k, i) => {
-        const fontSize = minFontSize + (k.score * (maxFontSize - minFontSize));
-        pdf.setFontSize(fontSize);
-        const text = k.keyword;
-        const textWidth = pdf.getTextWidth(text);
-        
-        if (currentX + textWidth > pageWidth - margin) {
-          currentX = margin;
-          yPos = maxYforRow + 10;
-          maxYforRow = yPos;
-        }
-        
-        // Fondo para la palabra clave
-        pdf.setFillColor(240, 240, 250);
-        pdf.roundedRect(currentX - 2, yPos - fontSize/2, textWidth + 8, fontSize + 4, 2, 2, 'F');
-        
-        // Texto de la palabra clave
-        pdf.setTextColor(70, 100, 200);
-        pdf.text(text, currentX + 2, yPos + fontSize/4);
-        pdf.setTextColor(0);
-        
-        currentX += textWidth + 15;
-        maxYforRow = Math.max(maxYforRow, yPos + fontSize/2 + 5);
-      });
-      
-      yPos = maxYforRow + 20;
+      const lines = pdf.splitTextToSize(keywordText, 170);
+      pdf.text(lines, margin, yPos += 7);
     }
 
     // Descargar el PDF

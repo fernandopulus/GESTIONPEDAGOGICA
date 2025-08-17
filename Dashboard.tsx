@@ -42,6 +42,7 @@ import AcompanamientoDocenteProfesor from './components/modules/AcompanamientoDo
 import SeguimientoCurricular from './components/modules/SeguimientoCurricular';
 import AnalisisTaxonomico from './components/modules/AnalisisTaxonomico';
 import DesarrolloProfesionalDocente from './components/modules/DesarrolloProfesionalDocente';
+import EvaluacionCompetencias from './components/modules/EvaluacionCompetencias';
 
 interface DashboardProps {
     currentUser: User;
@@ -187,6 +188,15 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onLogout, onUserUpda
             if (activeModule.name === 'Actividades Remotas') return <ActividadesRemotas />;
             if (activeModule.name === 'Evaluación de Aprendizajes') return <EvaluacionAprendizajes />;
             if (activeModule.name === 'Evaluaciones Formativas') return <EvaluacionesFormativas currentUser={currentUser} />;
+            if (activeModule.name === 'Evaluación de Competencias') {
+                const user = {
+                    id: currentUser.id,
+                    displayName: currentUser.nombreCompleto,
+                    role: currentUser.profile === Profile.PROFESORADO ? 'Docente' : 'Directivo',
+                    curso: currentUser.curso
+                };
+                return <EvaluacionCompetencias currentUser={user} />;
+            }
         }
         
         if (profile === Profile.COORDINACION_TP) {
