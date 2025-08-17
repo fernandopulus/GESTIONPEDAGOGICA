@@ -717,35 +717,67 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
     await addHeaderImage();
     addPageNumber(1);
 
-    // Configurar fuentes
+    // Función helper para manejar texto largo
+    const wrapText = (text: string, maxWidth: number) => {
+      return pdf.splitTextToSize(text, maxWidth);
+    };
+
+    // Configurar fuentes y título principal
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(16);
     const title = `Informe de Desarrollo Profesional Docente`;
     pdf.text(title, pageWidth/2, yPos, { align: 'center' });
-    yPos += 8;
+    yPos += 12;
 
+    // Subtítulo (título de la actividad) con manejo de texto largo
     pdf.setFontSize(14);
-    pdf.text(selectedActivity.titulo, pageWidth/2, yPos, { align: 'center' });
-    yPos += 8;
+    const maxTitleWidth = pageWidth - (2 * margin);
+    const wrappedTitle = wrapText(selectedActivity.titulo, maxTitleWidth);
+    pdf.text(wrappedTitle, pageWidth/2, yPos, { align: 'center' });
+    yPos += (wrappedTitle.length * 8) + 4;
 
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(10);
     pdf.text(new Date().getFullYear().toString(), pageWidth/2, yPos, { align: 'center' });
     yPos += 15;
 
-    // Información general en un cuadro
+    // Información general en un cuadro con manejo de texto largo
+    const infoBoxMargin = margin + 5;
+    const maxInfoWidth = pageWidth - (2 * margin) - 10; // 5px padding on each side
+
+    // Preparar textos y calcular altura necesaria
+    const dimension = wrapText(`Dimensión: ${selectedActivity.dimension}`, maxInfoWidth);
+    const subdimension = wrapText(`Subdimensión: ${selectedActivity.subdimension}`, maxInfoWidth);
+    const creador = wrapText(`Creador: ${selectedActivity.creadorNombre} (${selectedActivity.creadorPerfil})`, maxInfoWidth);
+    const respuestas = `Total de respuestas: ${respuestasActividad.length}`;
+
+    // Calcular altura total necesaria
+    const lineHeight = 7;
+    const totalHeight = (dimension.length + subdimension.length + creador.length) * lineHeight + 25;
+
+    // Dibujar el cuadro de fondo
     pdf.setDrawColor(200, 200, 200);
     pdf.setFillColor(248, 250, 252);
-    pdf.roundedRect(margin, yPos, pageWidth - (2 * margin), 35, 3, 3, 'FD');
+    pdf.roundedRect(margin, yPos, pageWidth - (2 * margin), totalHeight, 3, 3, 'FD');
     
+    // Agregar textos
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(11);
     yPos += 8;
-    const leftMargin = margin + 5;
-    pdf.text(`Dimensión: ${selectedActivity.dimension}`, leftMargin, yPos);
-    pdf.text(`Subdimensión: ${selectedActivity.subdimension}`, leftMargin, yPos += 8);
-    pdf.text(`Creador: ${selectedActivity.creadorNombre} (${selectedActivity.creadorPerfil})`, leftMargin, yPos += 8);
-    pdf.text(`Total de respuestas: ${respuestasActividad.length}`, leftMargin, yPos += 8);
+
+    // Función helper para agregar texto con múltiples líneas
+    const addMultilineText = (text: string[], startY: number) => {
+      text.forEach((line, i) => {
+        pdf.text(line, infoBoxMargin, startY + (i * lineHeight));
+      });
+      return startY + (text.length * lineHeight);
+    };
+
+    // Agregar cada campo
+    yPos = addMultilineText(dimension, yPos);
+    yPos = addMultilineText(subdimension, yPos);
+    yPos = addMultilineText(creador, yPos);
+    pdf.text(respuestas, infoBoxMargin, yPos += lineHeight);
     
     yPos += 10;
 
@@ -762,10 +794,13 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
       pdf.line(margin, yPos, pageWidth - margin, yPos);
       yPos += 5;
 
+      // Título de la pregunta con manejo de texto largo
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(12);
-      pdf.text(`Pregunta ${index + 1}: ${pregunta.enunciado}`, margin, yPos += 8);
-      yPos += 5;
+      const questionTitle = `Pregunta ${index + 1}: ${pregunta.enunciado}`;
+      const wrappedQuestion = wrapText(questionTitle, pageWidth - (2 * margin));
+      pdf.text(wrappedQuestion, margin, yPos += 8);
+      yPos += (wrappedQuestion.length * 7);
       
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(11);
@@ -779,29 +814,44 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
         // Configuración del gráfico
         const barHeight = 8;
         const barGap = 5;
-        const maxBarWidth = pageWidth - (2 * margin) - 60; // Espacio para etiquetas
+        const labelWidth = 40;
+        const percentWidth = 25;
+        const maxBarWidth = pageWidth - (2 * margin) - labelWidth - percentWidth - 10;
         
         // Dibujar cada barra
-        entries.forEach(([opcion, count], idx) => {
+        for (const [opcion, count] of entries) {
+          // Verificar si necesitamos nueva página
+          if (yPos > pageHeight - 30) {
+            yPos = await addNewPage();
+          }
+
           const porcentaje = total > 0 ? Math.round((count as number / total) * 100) : 0;
           const barWidth = (count as number / total) * maxBarWidth;
           
-          const barY = yPos + (idx * (barHeight + barGap));
+          // Etiqueta (con manejo de texto largo)
+          const wrappedOption = wrapText(opcion, labelWidth);
+          pdf.text(wrappedOption, margin, yPos + 6);
           
           // Barra de fondo
           pdf.setFillColor(240, 240, 240);
-          pdf.rect(margin + 50, barY, maxBarWidth, barHeight, 'F');
+          pdf.rect(margin + labelWidth + 5, yPos, maxBarWidth, barHeight, 'F');
           
           // Barra de valor
           pdf.setFillColor(100, 100, 200);
-          pdf.rect(margin + 50, barY, barWidth, barHeight, 'F');
+          pdf.rect(margin + labelWidth + 5, yPos, barWidth, barHeight, 'F');
           
-          // Etiquetas
-          pdf.text(`${opcion}:`, margin, barY + 6);
-          pdf.text(`${porcentaje}%`, margin + maxBarWidth + 55, barY + 6, { align: 'right' });
-        });
+          // Porcentaje
+          pdf.text(
+            `${porcentaje}%`,
+            pageWidth - margin - 5,
+            yPos + 6,
+            { align: 'right' }
+          );
+          
+          yPos += Math.max(wrappedOption.length * 7, barHeight + barGap);
+        }
         
-        yPos += (entries.length * (barHeight + barGap)) + 10;
+        yPos += 10;
 
       } else {
         // Respuestas abiertas
@@ -814,22 +864,29 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
               yPos = await addNewPage();
             }
             
+            // Contenedor de respuesta con padding
+            const contentWidth = pageWidth - (2 * margin) - 20; // 10px padding en cada lado
+            const contentMargin = margin + 10;
+            
             // Nombre del respondente con estilo
             pdf.setFont('helvetica', 'bold');
-            pdf.text(`${respuesta.userNombre}:`, margin + 5, yPos += 7);
+            const wrappedName = wrapText(`${respuesta.userNombre}:`, contentWidth);
+            pdf.text(wrappedName, contentMargin, yPos += 7);
+            yPos += (wrappedName.length - 1) * 7;
+            
             pdf.setFont('helvetica', 'normal');
             
             // Texto de respuesta justificado
-            const textWidth = pageWidth - (2 * margin) - 15;
-            const lines = pdf.splitTextToSize(resp.valorTexto, textWidth);
+            const wrappedResponse = wrapText(resp.valorTexto, contentWidth - 10);
             
-            // Fondo sutil para la respuesta
+            // Fondo sutil para la respuesta con padding
+            const responseHeight = wrappedResponse.length * 7 + 6;
             pdf.setFillColor(248, 250, 252);
-            pdf.rect(margin + 10, yPos + 2, textWidth, lines.length * 7, 'F');
+            pdf.rect(contentMargin, yPos + 2, contentWidth, responseHeight, 'F');
             
             // Texto de la respuesta
-            pdf.text(lines, margin + 15, yPos += 7);
-            yPos += (lines.length * 7) + 3;
+            pdf.text(wrappedResponse, contentMargin + 5, yPos += 7);
+            yPos += responseHeight + 3;
           }
         }
       }
@@ -850,7 +907,8 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
 
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(14);
-      pdf.text("Análisis de Conceptos Clave", pageWidth/2, yPos, { align: 'center' });
+      const keywordsTitle = "Análisis de Conceptos Clave";
+      pdf.text(keywordsTitle, pageWidth/2, yPos, { align: 'center' });
       yPos += 15;
       
       // Crear nube de tags visual
