@@ -1,5 +1,5 @@
 // components/modules/DesarrolloProfesionalDocente.tsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   Layers,
   ClipboardList,
@@ -25,7 +25,10 @@ import {
   ScrollText,
   GraduationCap,
   BrainCircuit,
+  Download,
 } from "lucide-react";
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 // === Integraciones que ya existen en tu proyecto (NO cambiar rutas) ===
 import {
@@ -665,6 +668,234 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
     [selectedId, actividades]
   );
 
+  // Función para descargar el informe en PDF
+  const downloadReport = useCallback(async () => {
+    if (!selectedActivity || !respuestasActividad.length) return;
+
+    // Configuración inicial del PDF
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = 210;  // A4 width in mm
+    const pageHeight = 297; // A4 height in mm
+    const margin = 25;      // 2.5 cm margin
+    let yPos = margin;
+
+    // Función helper para agregar número de página
+    const addPageNumber = (pageNum: number) => {
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.text(`${pageNum}`, pageWidth/2, pageHeight - 10, { align: 'center' });
+    };
+
+    // Función helper para agregar el logo en cada página
+    const addHeaderImage = async () => {
+      try {
+        const img = new Image();
+        img.src = 'https://res.cloudinary.com/dwncmu1wu/image/upload/v1754153206/ChatGPT_Image_2_ago_2025_12_46_35_p.m._qsqj5e.png';
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+        });
+        const imgWidth = 20; // 2cm en mm
+        const imgHeight = (img.height * imgWidth) / img.width;
+        pdf.addImage(img, 'PNG', (pageWidth - imgWidth)/2, 10, imgWidth, imgHeight);
+        yPos = margin + imgHeight + 10;
+      } catch (error) {
+        console.error('Error al cargar la imagen:', error);
+        yPos = margin;
+      }
+    };
+
+    // Función helper para agregar una nueva página
+    const addNewPage = async () => {
+      pdf.addPage();
+      await addHeaderImage();
+      addPageNumber(pdf.internal.getNumberOfPages());
+      return margin + 20; // Retorna la nueva posición Y inicial
+    };
+
+    // Inicializar primera página
+    await addHeaderImage();
+    addPageNumber(1);
+
+    // Configurar fuentes
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(16);
+    const title = `Informe de Desarrollo Profesional Docente`;
+    pdf.text(title, pageWidth/2, yPos, { align: 'center' });
+    yPos += 8;
+
+    pdf.setFontSize(14);
+    pdf.text(selectedActivity.titulo, pageWidth/2, yPos, { align: 'center' });
+    yPos += 8;
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.text(new Date().getFullYear().toString(), pageWidth/2, yPos, { align: 'center' });
+    yPos += 15;
+
+    // Información general en un cuadro
+    pdf.setDrawColor(200, 200, 200);
+    pdf.setFillColor(248, 250, 252);
+    pdf.roundedRect(margin, yPos, pageWidth - (2 * margin), 35, 3, 3, 'FD');
+    
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(11);
+    yPos += 8;
+    const leftMargin = margin + 5;
+    pdf.text(`Dimensión: ${selectedActivity.dimension}`, leftMargin, yPos);
+    pdf.text(`Subdimensión: ${selectedActivity.subdimension}`, leftMargin, yPos += 8);
+    pdf.text(`Creador: ${selectedActivity.creadorNombre} (${selectedActivity.creadorPerfil})`, leftMargin, yPos += 8);
+    pdf.text(`Total de respuestas: ${respuestasActividad.length}`, leftMargin, yPos += 8);
+    
+    yPos += 10;
+
+    // Procesar preguntas
+    for (const [index, pregunta] of selectedActivity.preguntas.entries()) {
+      // Verificar espacio y agregar nueva página si es necesario
+      if (yPos > pageHeight - 50) {
+        yPos = await addNewPage();
+      }
+
+      // Título de la pregunta con separador
+      pdf.setDrawColor(70, 100, 200);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += 5;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.text(`Pregunta ${index + 1}: ${pregunta.enunciado}`, margin, yPos += 8);
+      yPos += 5;
+      
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(11);
+
+      if (pregunta.tipo === "seleccion_multiple") {
+        // Gráfico de barras para selección múltiple
+        const stats = choiceStats[pregunta.id] || {};
+        const total = respuestasActividad.length;
+        const entries = Object.entries(stats);
+        
+        // Configuración del gráfico
+        const barHeight = 8;
+        const barGap = 5;
+        const maxBarWidth = pageWidth - (2 * margin) - 60; // Espacio para etiquetas
+        
+        // Dibujar cada barra
+        entries.forEach(([opcion, count], idx) => {
+          const porcentaje = total > 0 ? Math.round((count as number / total) * 100) : 0;
+          const barWidth = (count as number / total) * maxBarWidth;
+          
+          const barY = yPos + (idx * (barHeight + barGap));
+          
+          // Barra de fondo
+          pdf.setFillColor(240, 240, 240);
+          pdf.rect(margin + 50, barY, maxBarWidth, barHeight, 'F');
+          
+          // Barra de valor
+          pdf.setFillColor(100, 100, 200);
+          pdf.rect(margin + 50, barY, barWidth, barHeight, 'F');
+          
+          // Etiquetas
+          pdf.text(`${opcion}:`, margin, barY + 6);
+          pdf.text(`${porcentaje}%`, margin + maxBarWidth + 55, barY + 6, { align: 'right' });
+        });
+        
+        yPos += (entries.length * (barHeight + barGap)) + 10;
+
+      } else {
+        // Respuestas abiertas
+        pdf.text("Respuestas:", margin, yPos += 7);
+        
+        for (const respuesta of respuestasActividad) {
+          const resp = respuesta.respuestas[pregunta.id];
+          if (resp?.tipo === "abierta" && resp.valorTexto) {
+            if (yPos > pageHeight - 50) {
+              yPos = await addNewPage();
+            }
+            
+            // Nombre del respondente con estilo
+            pdf.setFont('helvetica', 'bold');
+            pdf.text(`${respuesta.userNombre}:`, margin + 5, yPos += 7);
+            pdf.setFont('helvetica', 'normal');
+            
+            // Texto de respuesta justificado
+            const textWidth = pageWidth - (2 * margin) - 15;
+            const lines = pdf.splitTextToSize(resp.valorTexto, textWidth);
+            
+            // Fondo sutil para la respuesta
+            pdf.setFillColor(248, 250, 252);
+            pdf.rect(margin + 10, yPos + 2, textWidth, lines.length * 7, 'F');
+            
+            // Texto de la respuesta
+            pdf.text(lines, margin + 15, yPos += 7);
+            yPos += (lines.length * 7) + 3;
+          }
+        }
+      }
+      yPos += 10;
+    }
+
+    // Sección de palabras clave con diseño visual
+    if (keywords.length > 0) {
+      if (yPos > pageHeight - 80) {
+        yPos = await addNewPage();
+      }
+      
+      // Título de sección
+      pdf.setDrawColor(70, 100, 200);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += 10;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(14);
+      pdf.text("Análisis de Conceptos Clave", pageWidth/2, yPos, { align: 'center' });
+      yPos += 15;
+      
+      // Crear nube de tags visual
+      const keywordsWithScores = keywords
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10); // Top 10 keywords
+      
+      const maxFontSize = 16;
+      const minFontSize = 10;
+      
+      let currentX = margin;
+      let maxYforRow = yPos;
+      
+      keywordsWithScores.forEach((k, i) => {
+        const fontSize = minFontSize + (k.score * (maxFontSize - minFontSize));
+        pdf.setFontSize(fontSize);
+        const text = k.keyword;
+        const textWidth = pdf.getTextWidth(text);
+        
+        if (currentX + textWidth > pageWidth - margin) {
+          currentX = margin;
+          yPos = maxYforRow + 10;
+          maxYforRow = yPos;
+        }
+        
+        // Fondo para la palabra clave
+        pdf.setFillColor(240, 240, 250);
+        pdf.roundedRect(currentX - 2, yPos - fontSize/2, textWidth + 8, fontSize + 4, 2, 2, 'F');
+        
+        // Texto de la palabra clave
+        pdf.setTextColor(70, 100, 200);
+        pdf.text(text, currentX + 2, yPos + fontSize/4);
+        pdf.setTextColor(0);
+        
+        currentX += textWidth + 15;
+        maxYforRow = Math.max(maxYforRow, yPos + fontSize/2 + 5);
+      });
+      
+      yPos = maxYforRow + 20;
+    }
+
+    // Descargar el PDF
+    pdf.save(`informe_${selectedActivity.titulo.replace(/\s+/g, '_')}.pdf`);
+  }, [selectedActivity, respuestasActividad, choiceStats, keywords]);
+
   const canDelete = useCallback(
     (a: DPDActivity) => {
       const isAdmin = (currentUser as any)?.isAdmin;
@@ -940,16 +1171,27 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
               title={`Respuestas individuales: ${selectedActivity.titulo}`}
               icon={<Users className="w-5 h-5 text-indigo-600" />}
               right={
-                <button
-                  onClick={() => {
-                    setSelectedUserId("");
-                    setTab("dashboard");
-                  }}
-                  className="inline-flex items-center gap-2 bg-slate-600 text-white px-4 py-2 rounded-lg hover:opacity-90"
-                >
-                  <BarChart3 className="w-4 h-4" />
-                  Volver al dashboard
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={downloadReport}
+                    disabled={!respuestasActividad.length}
+                    className="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={!respuestasActividad.length ? "No hay respuestas para generar informe" : "Descargar informe en PDF"}
+                  >
+                    <Download className="w-4 h-4" />
+                    Descargar informe
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedUserId("");
+                      setTab("dashboard");
+                    }}
+                    className="inline-flex items-center gap-2 bg-slate-600 text-white px-4 py-2 rounded-lg hover:opacity-90"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    Volver al dashboard
+                  </button>
+                </div>
               }
             >
               <div className="grid md:grid-cols-12 gap-6">
@@ -1116,6 +1358,19 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
                 </div>
               }
             >
+              {/* Botón de descarga */}
+              <div className="mb-6">
+                <button
+                  onClick={downloadReport}
+                  disabled={!respuestasActividad.length}
+                  className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg font-medium"
+                  title={!respuestasActividad.length ? "No hay respuestas para generar informe" : "Descargar informe en PDF"}
+                >
+                  <Download className="w-5 h-5" />
+                  Descargar Informe Global
+                </button>
+              </div>
+
               {/* Stats Cards */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
