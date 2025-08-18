@@ -23,3 +23,4 @@ if (import.meta.env.MODE === "development") {
 
 export const db = getFirestore(app);
 export const storage = getStorage(app); // ✅ Ahora no dará error
+export const GEMINI_API_KEY = 'AIzaSyDn2nxyD4XMxRJdyLgo_9MNRlPPb7f0u5w'; // API key for Gemini AI
