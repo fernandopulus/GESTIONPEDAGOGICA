@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, FormEvent, ChangeEvent } from 'react';
 import { AsignacionHorario, HorariosGenerados, HorarioCelda, User, Profile } from '../../types';
+import { MatrizAsignaciones } from './MatrizAsignaciones';
 import { CURSOS, ASIGNATURAS, DIAS_SEMANA, HORARIO_BLOQUES, BLOCK_ALLOCATION_RULES } from '../../constants';
 // ✅ IA: Importar la librería de Google Generative AI
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -333,16 +334,10 @@ const CrearHorarios: React.FC = () => {
                     </div>
                     <button type="submit" className="bg-slate-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-700 dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600 h-10">Agregar</button>
                 </form>
-                <div className="max-h-60 overflow-y-auto pr-2">
-                    <ul className="space-y-2">
-                        {asignaciones.map(a => (
-                            <li key={a.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-700 p-2 rounded-md">
-                                <span className="text-sm text-slate-700 dark:text-slate-300">{a.curso} - {a.asignatura} - <strong>{a.profesor}</strong></span>
-                                <button onClick={() => handleDeleteAsignacion(a.id)} className="text-red-500 hover:text-red-700 font-bold text-xl">&times;</button>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
+                <MatrizAsignaciones 
+                    asignaciones={asignaciones}
+                    onDeleteAsignacion={handleDeleteAsignacion}
+                />
             </div>
 
             <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
