@@ -337,6 +337,14 @@ const CrearHorarios: React.FC = () => {
                 <MatrizAsignaciones 
                     asignaciones={asignaciones}
                     onDeleteAsignacion={handleDeleteAsignacion}
+                    profesores={profesores}
+                    onAddAsignacion={async (asignacion) => {
+                        try {
+                            await addAsignacion(asignacion);
+                        } catch (err) {
+                            setError(err instanceof Error ? err.message : "Error al guardar la asignación.");
+                        }
+                    }}
                 />
             </div>
 
