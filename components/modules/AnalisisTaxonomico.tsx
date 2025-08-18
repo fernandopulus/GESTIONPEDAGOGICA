@@ -273,7 +273,7 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
 
     return (
         <div className="space-y-8 animate-fade-in">
-            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Análisis Taxonómico de Evaluaciones</h1>
+            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Análisis Taxonomico de Evaluaciones</h1>
 
             {error && <div className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</div>}
 

@@ -52,6 +52,22 @@ import type { PlanificacionUnidad, PlanificacionClase, DetalleLeccion, Actividad
 import { useMemo } from 'react';
 import { EventType } from '../../types';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { 
+  BookOpen, 
+  Calendar, 
+  CheckCircle2, 
+  ChevronLeft, 
+  Clock, 
+  FileEdit, 
+  Trash2,
+  Plus,
+  Save,
+  RefreshCcw,
+  BookMarked,
+  School2,
+  Sparkles,
+  LayoutDashboard
+} from 'lucide-react';
 // import { saveCalendarEvent } from '../../src/firebaseHelpers/calendar'; // Función no disponible
 // Firebase helpers
 import {
@@ -518,7 +534,17 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
     }
   };
   
-  const inputStyles = "w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white";
+  const inputStyles = `
+  w-full px-4 py-2.5 rounded-lg border border-slate-200 
+  bg-white dark:bg-slate-800 
+  text-slate-900 dark:text-slate-100 
+  placeholder:text-slate-400 dark:placeholder:text-slate-500
+  focus:border-indigo-500 dark:focus:border-indigo-600 
+  focus:ring-2 focus:ring-indigo-500/20 dark:focus:ring-indigo-600/20
+  focus:outline-none
+  transition-colors
+  disabled:opacity-50 disabled:cursor-not-allowed
+`;
 
   if (view === 'form') {
     return (
@@ -903,7 +929,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       }
 
       const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+      const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
       const prompt = buildUnidadPrompt();
       
       const responseSchema = {
@@ -1001,7 +1027,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       }
 
       const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+      const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
       
       const schema = {
         type: "object",
@@ -1244,15 +1270,15 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
               <button 
                 type="submit" 
                 disabled={loading || planificacionesLoading} 
-                className="bg-slate-800 text-white font-bold py-2 px-6 rounded-lg hover:bg-slate-700 disabled:bg-slate-400 flex items-center justify-center min-w-[150px] dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600"
+                className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-semibold py-3 px-6 rounded-lg hover:from-indigo-700 hover:to-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[180px] shadow-md hover:shadow-lg transition-all"
               >
                 {loading ? (
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
+                  <RefreshCcw className="w-5 h-5 animate-spin" />
                 ) : (
-                  editingPlanificacion ? 'Regenerar' : 'Generar Plan'
+                  <>
+                    <Sparkles className="w-5 h-5" />
+                    <span>{editingPlanificacion ? 'Regenerar Plan' : 'Generar con IA'}</span>
+                  </>
                 )}
               </button>
             </div>
@@ -1286,10 +1312,10 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
               planificaciones.filter((p): p is PlanificacionUnidad => p.tipo === 'Unidad').map(plan => (
                 <div 
                   key={plan.id} 
-                  className={`p-4 border rounded-lg ${
+                  className={`p-5 border rounded-xl transition-all ${
                     editingPlanificacion?.id === plan.id 
-                      ? 'bg-amber-50 border-amber-300 dark:bg-amber-900/20 dark:border-amber-500/50' 
-                      : 'bg-slate-50 dark:bg-slate-700/50 dark:border-slate-700'
+                      ? 'bg-indigo-50/50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-500/30 shadow-lg shadow-indigo-100/20 dark:shadow-indigo-900/10' 
+                      : 'bg-white hover:bg-slate-50 border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700/50'
                   }`}
                 >
                   <div className="flex justify-between items-center">
@@ -1305,18 +1331,20 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
                     <div className="flex items-center gap-2">
                       <button 
                         onClick={() => handleSelectForEdit(plan)} 
-                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-semibold text-sm disabled:opacity-50"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                         disabled={loading}
                       >
-                        Ver y Editar
+                        <FileEdit className="w-4 h-4" />
+                        <span>Editar</span>
                       </button>
                       <button 
                         onClick={() => handleDelete(plan.id)} 
                         title="Eliminar" 
-                        className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-50"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-red-700 bg-red-50 hover:bg-red-100 dark:text-red-300 dark:bg-red-900/30 dark:hover:bg-red-900/50 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                         disabled={loading}
                       >
-                        🗑️
+                        <Trash2 className="w-4 h-4" />
+                        <span>Eliminar</span>
                       </button>
                     </div>
                   </div>
@@ -1356,8 +1384,11 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     }
 
     return (
-      <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">Planes de Clase Guardados</h2>
+      <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-lg border border-slate-100 dark:border-slate-700/50">
+        <div className="flex items-center gap-3 mb-6">
+          <BookMarked className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+          <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Planes de Clase</h2>
+        </div>
         {planificacionesLoading ? (
           <div className="flex justify-center items-center py-8">
             <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
@@ -1409,38 +1440,45 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   
   return (
     <div className="space-y-8 animate-fade-in">
-      <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Planificación</h1>
-      <div className="border-b border-slate-200 dark:border-slate-700">
-        <nav className="-mb-px flex space-x-6" aria-label="Tabs">
+      <div className="flex items-center gap-4 mb-8">
+        <LayoutDashboard className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
+        <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">Planificación Docente</h1>
+      </div>
+      
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-2">
+        <nav className="flex space-x-2" aria-label="Tabs">
           <button 
             onClick={() => setActiveTab('unidad')} 
-            className={`${
+            className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
               activeTab === 'unidad' 
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400' 
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:border-slate-600'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
+                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
+                : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/50'
+            }`}
           >
-            Unidad
+            <BookOpen className="w-4 h-4" />
+            <span>Unidad</span>
           </button>
           <button 
             onClick={() => setActiveTab('clase')} 
-            className={`${
+            className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
               activeTab === 'clase' 
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400' 
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:border-slate-600'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
+                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
+                : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/50'
+            }`}
           >
-            Clase
+            <School2 className="w-4 h-4" />
+            <span>Clase</span>
           </button>
           <button 
             onClick={() => setActiveTab('calendario')} 
-            className={`${
+            className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
               activeTab === 'calendario' 
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400' 
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:border-slate-600'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
+                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
+                : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/50'
+            }`}
           >
-            Actividades Calendario
+            <Calendar className="w-4 h-4" />
+            <span>Actividades Calendario</span>
           </button>
         </nav>
       </div>
