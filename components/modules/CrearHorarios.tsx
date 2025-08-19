@@ -110,6 +110,7 @@ const CrearHorarios: React.FC = () => {
     departamento: ''
   });
   const [mostrarResumen, setMostrarResumen] = useState(false);
+  const [vistaResumen, setVistaResumen] = useState<'docentes' | 'cursos' | 'funciones'>('docentes');
   const [validaciones, setValidaciones] = useState<ValidationResult[]>([]);
   const [loading, setLoading] = useState(false);
   
@@ -1147,69 +1148,337 @@ const CrearHorarios: React.FC = () => {
 
       {/* Panel de resumen */}
       {mostrarResumen && (
-        <div className="mt-6 p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
-          <h3 className="text-xl font-semibold mb-4">Resumen por Docente</h3>
-          <div className="grid gap-4">
-            {docentes.map(docente => {
-              const totales = totalesByDocente[docente.id];
-              const asignacionesDocente = asignaciones.filter(a => a.docenteId === docente.id);
-              
-              return (
-                <div key={docente.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-gray-900 dark:text-white">{docente.nombre}</h4>
-                    <div className={`w-3 h-3 rounded-full ${
-                      getSemaforoColor(docente.id) === 'green' ? 'bg-green-500' :
-                      getSemaforoColor(docente.id) === 'yellow' ? 'bg-yellow-500' :
-                      getSemaforoColor(docente.id) === 'red' ? 'bg-red-500' : 'bg-gray-500'
-                    }`} />
-                  </div>
-                  
-                  {totales && (
-                    <>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-2">
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Contrato:</span>
-                          <span className="ml-1 font-medium">{docente.horasContrato}h</span>
+        <div className="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow">
+          {/* Tabs de navegación */}
+          <div className="border-b border-gray-200 dark:border-gray-700">
+            <nav className="flex -mb-px">
+              <button
+                onClick={() => setVistaResumen('docentes')}
+                className={`px-6 py-3 font-medium text-sm ${
+                  vistaResumen === 'docentes'
+                    ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                }`}
+              >
+                Por Docente
+              </button>
+              <button
+                onClick={() => setVistaResumen('cursos')}
+                className={`px-6 py-3 font-medium text-sm ${
+                  vistaResumen === 'cursos'
+                    ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                }`}
+              >
+                Por Curso
+              </button>
+              <button
+                onClick={() => setVistaResumen('funciones')}
+                className={`px-6 py-3 font-medium text-sm ${
+                  vistaResumen === 'funciones'
+                    ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                }`}
+              >
+                Por Función
+              </button>
+            </nav>
+          </div>
+
+          {/* Contenido del tab seleccionado */}
+          <div className="p-6">
+            {/* Vista por docente */}
+            {vistaResumen === 'docentes' && (
+              <>
+                <h3 className="text-xl font-semibold mb-4">Resumen por Docente</h3>
+                <div className="grid gap-4">
+                  {docentes.map(docente => {
+                    const totales = totalesByDocente[docente.id];
+                    const asignacionesDocente = asignaciones.filter(a => a.docenteId === docente.id);
+                    
+                    return (
+                      <div key={docente.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-medium text-gray-900 dark:text-white">{docente.nombre}</h4>
+                          <div className={`w-3 h-3 rounded-full ${
+                            getSemaforoColor(docente.id) === 'green' ? 'bg-green-500' :
+                            getSemaforoColor(docente.id) === 'yellow' ? 'bg-yellow-500' :
+                            getSemaforoColor(docente.id) === 'red' ? 'bg-red-500' : 'bg-gray-500'
+                          }`} />
                         </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">HA:</span>
-                          <span className="ml-1 font-medium text-blue-600 dark:text-blue-400">
-                            {totales.sumCursos}/{totales.HA}
+                        
+                        {totales && (
+                          <>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-2">
+                              <div>
+                                <span className="text-gray-600 dark:text-gray-400">Contrato:</span>
+                                <span className="ml-1 font-medium">{docente.horasContrato}h</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600 dark:text-gray-400">HA:</span>
+                                <span className="ml-1 font-medium text-blue-600 dark:text-blue-400">
+                                  {totales.sumCursos}/{totales.HA}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600 dark:text-gray-400">HB:</span>
+                                <span className="ml-1 font-medium text-green-600 dark:text-green-400">
+                                  {totales.sumFunciones}/{totales.HB}
+                              </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600 dark:text-gray-400">Asignaciones:</span>
+                                <span className="ml-1 font-medium">{asignacionesDocente.length}</span>
+                              </div>
+                            </div>
+                            
+                            {/* Sección de asignaturas */}
+                            {asignacionesDocente.length > 0 && (
+                              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Asignaturas */}
+                                <div className="border-t border-gray-100 dark:border-gray-700 pt-2">
+                                  <h5 className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
+                                    Asignaturas asignadas:
+                                  </h5>
+                                  <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
+                                    {asignacionesDocente.map(asig => (
+                                      <li key={asig.id} className="flex justify-between">
+                                        <span>{asig.asignaturaOModulo || 'Sin asignatura'}</span>
+                                        <span className="text-blue-600 dark:text-blue-400 font-medium">{asig.horasXAsig || 0}h</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                                
+                                {/* Cursos */}
+                                <div className="border-t border-gray-100 dark:border-gray-700 pt-2">
+                                  <h5 className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
+                                    Distribución por curso:
+                                  </h5>
+                                  <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
+                                    {CURSOS.filter(curso => {
+                                      // Mostrar solo los cursos que tienen horas asignadas
+                                      return asignacionesDocente.some(asig => asig.horasPorCurso[curso]);
+                                    }).map(curso => {
+                                      // Sumar todas las horas del curso entre todas las asignaciones
+                                      const horasTotalesCurso = asignacionesDocente.reduce(
+                                        (total, asig) => total + (asig.horasPorCurso[curso] || 0), 
+                                        0
+                                      );
+                                      
+                                      return (
+                                        <li key={curso} className="flex justify-between">
+                                          <span>{curso}</span>
+                                          <span className="text-blue-600 dark:text-blue-400 font-medium">{horasTotalesCurso}h</span>
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Funciones lectivas */}
+                            {asignacionesDocente.some(asig => 
+                              asig.funcionesLectivas && asig.funcionesLectivas.length > 0
+                            ) && (
+                              <div className="mt-2 border-t border-gray-100 dark:border-gray-700 pt-2">
+                                <h5 className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
+                                  Funciones lectivas:
+                                </h5>
+                                <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
+                                  {asignacionesDocente.flatMap(asig => 
+                                    (asig.funcionesLectivas || []).map(funcion => ({
+                                      id: `${asig.id}_${funcion.id}`,
+                                      nombre: funcion.nombre,
+                                      horas: funcion.horas
+                                    }))
+                                  ).map(funcion => (
+                                    <li key={funcion.id} className="flex justify-between">
+                                      <span>{funcion.nombre || 'Sin nombre'}</span>
+                                      <span className="text-green-600 dark:text-green-400 font-medium">{funcion.horas}h</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* Vista por curso */}
+            {vistaResumen === 'cursos' && (
+              <>
+                <h3 className="text-xl font-semibold mb-4">Resumen por Curso</h3>
+                <div className="grid gap-4">
+                  {CURSOS.filter(curso => {
+                    // Filtrar solo los cursos que tienen asignaciones
+                    return asignaciones.some(asig => asig.horasPorCurso[curso]);
+                  }).map(curso => {
+                    // Obtener todas las asignaciones para este curso
+                    const asignacionesCurso = asignaciones.filter(asig => asig.horasPorCurso[curso]);
+                    
+                    // Agrupar por docente
+                    const docentesEnCurso = [];
+                    asignacionesCurso.forEach(asig => {
+                      const index = docentesEnCurso.findIndex(d => d.id === asig.docenteId);
+                      if (index === -1) {
+                        // Si no existe el docente, agregarlo
+                        docentesEnCurso.push({
+                          id: asig.docenteId,
+                          nombre: asig.docenteNombre,
+                          asignaciones: [asig]
+                        });
+                      } else {
+                        // Si ya existe, agregar la asignación
+                        docentesEnCurso[index].asignaciones.push(asig);
+                      }
+                    });
+                    
+                    // Calcular total de horas por curso
+                    const totalHorasCurso = asignacionesCurso.reduce(
+                      (total, asig) => total + (asig.horasPorCurso[curso] || 0), 
+                      0
+                    );
+
+                    return (
+                      <div key={curso} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-medium text-gray-900 dark:text-white">{curso}</h4>
+                          <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-md">
+                            Total: {totalHorasCurso}h
                           </span>
                         </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">HB:</span>
-                          <span className="ml-1 font-medium text-green-600 dark:text-green-400">
-                            {totales.sumFunciones}/{totales.HB}
-                        </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Asignaciones:</span>
-                          <span className="ml-1 font-medium">{asignacionesDocente.length}</span>
+
+                        <div className="mt-2">
+                          <h5 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                            Docentes asignados:
+                          </h5>
+                          <div className="grid gap-2">
+                            {docentesEnCurso.map(docente => (
+                              <div key={docente.id} className="px-3 py-2 bg-gray-50 dark:bg-gray-750 rounded">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-medium">{docente.nombre}</span>
+                                  <span className="text-sm text-blue-600 dark:text-blue-400">
+                                    {docente.asignaciones.reduce((sum, asig) => sum + (asig.horasPorCurso[curso] || 0), 0)}h
+                                  </span>
+                                </div>
+                                
+                                {/* Asignaturas del docente en este curso */}
+                                <ul className="mt-1 text-xs text-gray-600 dark:text-gray-400 space-y-1 ml-2">
+                                  {docente.asignaciones.filter(asig => asig.horasPorCurso[curso]).map(asig => (
+                                    <li key={asig.id} className="flex justify-between">
+                                      <span>{asig.asignaturaOModulo || 'Sin asignatura'}</span>
+                                      <span>{asig.horasPorCurso[curso]}h</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
-                      
-                      {asignacionesDocente.length > 1 && (
-                        <div className="mt-2 border-t border-gray-100 dark:border-gray-700 pt-2">
-                          <h5 className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
-                            Asignaturas asignadas:
-                          </h5>
-                          <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
-                            {asignacionesDocente.map(asig => (
-                              <li key={asig.id} className="flex justify-between">
-                                <span>{asig.asignaturaOModulo || 'Sin asignatura'}</span>
-                                <span className="text-blue-600 dark:text-blue-400 font-medium">{asig.horasXAsig || 0}h</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </>
-                  )}
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </>
+            )}
+
+            {/* Vista por función */}
+            {vistaResumen === 'funciones' && (
+              <>
+                <h3 className="text-xl font-semibold mb-4">Resumen por Funciones Lectivas</h3>
+                
+                {/* Lista de todas las funciones lectivas */}
+                {(() => {
+                  // Extraer todas las funciones lectivas únicas
+                  const todasLasFunciones = [];
+                  
+                  // Agrupar por nombre de función
+                  asignaciones.forEach(asig => {
+                    (asig.funcionesLectivas || []).forEach(funcion => {
+                      if (!funcion.nombre) return;
+                      
+                      const funcionExistente = todasLasFunciones.find(f => f.nombre === funcion.nombre);
+                      
+                      if (!funcionExistente) {
+                        todasLasFunciones.push({
+                          nombre: funcion.nombre,
+                          docentes: [{
+                            id: asig.docenteId,
+                            nombre: asig.docenteNombre,
+                            horas: funcion.horas
+                          }],
+                          totalHoras: funcion.horas
+                        });
+                      } else {
+                        // Verificar si ya existe el docente para esta función
+                        const docenteExistente = funcionExistente.docentes.find(d => d.id === asig.docenteId);
+                        
+                        if (!docenteExistente) {
+                          funcionExistente.docentes.push({
+                            id: asig.docenteId,
+                            nombre: asig.docenteNombre,
+                            horas: funcion.horas
+                          });
+                        } else {
+                          docenteExistente.horas += funcion.horas;
+                        }
+                        
+                        funcionExistente.totalHoras += funcion.horas;
+                      }
+                    });
+                  });
+                  
+                  // Ordenar por total de horas (descendente)
+                  todasLasFunciones.sort((a, b) => b.totalHoras - a.totalHoras);
+                  
+                  if (todasLasFunciones.length === 0) {
+                    return (
+                      <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-750">
+                        <p className="text-gray-500 dark:text-gray-400 text-center">
+                          No hay funciones lectivas asignadas.
+                        </p>
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <div className="grid gap-4">
+                      {todasLasFunciones.map((funcion, index) => (
+                        <div key={index} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium text-gray-900 dark:text-white">{funcion.nombre}</h4>
+                            <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs rounded-md">
+                              Total: {funcion.totalHoras}h
+                            </span>
+                          </div>
+                          
+                          <div className="mt-2">
+                            <h5 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                              Docentes asignados:
+                            </h5>
+                            <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
+                              {funcion.docentes.sort((a, b) => b.horas - a.horas).map(docente => (
+                                <li key={docente.id} className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                                  <span>{docente.nombre}</span>
+                                  <span className="text-green-600 dark:text-green-400 font-medium">{docente.horas}h</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </>
+            )}
           </div>
         </div>
       )}
