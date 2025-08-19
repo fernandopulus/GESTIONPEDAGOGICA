@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Box, 
   Button, 
@@ -14,7 +15,7 @@ import {
   Chip
 } from '@mui/material';
 import { CURSOS, ASIGNATURAS } from '../../constants';
-import { Profile, User } from '../../types';
+import { User } from '../../types';
 import { subscribeToProfesores } from '../../src/firebaseHelpers/reemplazosHelper';
 
 interface Course {
@@ -35,7 +36,7 @@ interface Teacher {
   }[];
 }
 
-function CrearHorarios(): React.ReactElement {
+const CrearHorarios = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedSchedule, setGeneratedSchedule] = useState<any>(null);
@@ -46,40 +47,37 @@ function CrearHorarios(): React.ReactElement {
   const [newCourse, setNewCourse] = useState<Partial<Course>>({});
   const [newTeacher, setNewTeacher] = useState<Partial<Teacher>>({});
 
-  // Efecto para cargar los profesores registrados
   useEffect(() => {
     const unsubscribe = subscribeToProfesores((professors) => {
-      // Filtramos solo los profesores con perfil PROFESORADO
-      const teachersOnly = professors.filter(p => p.profile === Profile.PROFESORADO);
-      setRegisteredProfessors(teachersOnly);
+      setRegisteredProfessors(professors);
     });
 
     return () => unsubscribe();
   }, []);
 
-  const handleAddCourse = () => {
+  const handleAddCourse = useCallback(() => {
     if (newCourse.name && newCourse.subject && newCourse.hoursPerWeek && newCourse.teacher) {
-      setCourses([...courses, { ...newCourse, id: `course-${Date.now()}` } as Course]);
+      setCourses(prev => [...prev, { ...newCourse, id: `course-${Date.now()}` } as Course]);
       setNewCourse({});
     }
-  };
+  }, [newCourse]);
 
-  const handleAddTeacher = () => {
+  const handleAddTeacher = useCallback(() => {
     if (newTeacher.name) {
-      setTeachers([...teachers, { ...newTeacher, id: `teacher-${Date.now()}`, availability: [] } as Teacher]);
+      setTeachers(prev => [...prev, { ...newTeacher, id: `teacher-${Date.now()}`, availability: [] } as Teacher]);
       setNewTeacher({});
     }
-  };
+  }, [newTeacher]);
 
-  const handleDeleteCourse = (id: string) => {
-    setCourses(courses.filter(course => course.id !== id));
-  };
+  const handleDeleteCourse = useCallback((id: string) => {
+    setCourses(prev => prev.filter(course => course.id !== id));
+  }, []);
 
-  const handleDeleteTeacher = (id: string) => {
-    setTeachers(teachers.filter(teacher => teacher.id !== id));
-  };
+  const handleDeleteTeacher = useCallback((id: string) => {
+    setTeachers(prev => prev.filter(teacher => teacher.id !== id));
+  }, []);
 
-  const generateSchedule = async () => {
+  const generateSchedule = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     
@@ -138,7 +136,7 @@ function CrearHorarios(): React.ReactElement {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [courses, teachers]);
 
   return (
     <Box sx={{ p: 3 }}>
@@ -146,7 +144,6 @@ function CrearHorarios(): React.ReactElement {
         Generador de Horarios
       </Typography>
       
-      {/* Configuración de Cursos */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
           Configuración de Cursos
@@ -199,8 +196,8 @@ function CrearHorarios(): React.ReactElement {
                 onChange={(e) => setNewCourse({ ...newCourse, teacher: e.target.value })}
               >
                 {registeredProfessors.map(profesor => (
-                  <MenuItem key={profesor.id} value={profesor.nombreCompleto}>
-                    {profesor.nombreCompleto}
+                  <MenuItem key={profesor.id} value={profesor.nombreCompleto || profesor.email}>
+                    {profesor.nombreCompleto || profesor.email}
                   </MenuItem>
                 ))}
               </Select>
@@ -232,7 +229,6 @@ function CrearHorarios(): React.ReactElement {
           </Grid>
         </Grid>
 
-        {/* Lista de Cursos */}
         <Box sx={{ mt: 2 }}>
           {courses.map((course) => (
             <Chip
@@ -245,7 +241,6 @@ function CrearHorarios(): React.ReactElement {
         </Box>
       </Paper>
 
-      {/* Botón de Generación */}
       <Button 
         variant="contained" 
         onClick={generateSchedule}
@@ -279,6 +274,6 @@ function CrearHorarios(): React.ReactElement {
       )}
     </Box>
   );
-}
+};
 
 export default CrearHorarios;
