@@ -177,6 +177,17 @@ export const NIVELES: NivelPlanificacion[] = ['1º Medio', '2º Medio', '3º Med
 export const ASIGNATURAS = ['Lengua y Literatura', 'Matemática', 'Inglés', 'Filosofía', 'Historia y Geografía', 'Educación Ciudadana', 'Ciencias', 'Ciencias para la Ciudadanía', 'Artes', 'Música', 'Educación Física', 'Orientación', 'Mecánica Industrial', 'Mecánica Automotriz', 'Emprendimiento', 'Tecnología', 'Pensamiento Lógico', 'Competencia Lectora'];
 export const CURSOS = [ '1ºA', '1ºB', '1ºC', '1ºD', '1ºE', '2ºA', '2ºB', '2ºC', '2ºD', '3ºA', '3ºB', '3ºC', '3ºD', '4ºA', '4ºB', '4ºC', '4ºD' ];
 export const PROFESORES = [ 'Nelson Laubreaux', 'Julian Seguel', 'Martin Moya', 'Leonel Moya', 'Miguel Becerra' ];
+
+// Tabla oficial para distribución de horas docentes
+export const TABLA_HORAS_LECTIVAS: Record<number, number> = {
+  44: 38, 43: 37, 42: 36, 41: 35, 40: 35, 39: 34, 38: 33, 37: 32, 36: 31, 35: 30,
+  34: 29, 33: 29, 32: 28, 31: 27, 30: 26, 29: 25, 28: 24, 27: 23, 26: 22, 25: 22,
+  24: 21, 23: 20, 22: 19, 21: 18, 20: 17, 19: 16, 18: 16, 17: 15, 16: 14, 15: 13,
+  14: 12, 13: 11, 12: 10, 11: 10, 10: 9, 9: 8, 8: 7, 7: 6, 6: 5, 5: 4, 4: 3, 3: 2, 2: 1, 1: 1
+};
+// Estos porcentajes son aproximados y se mantienen para retrocompatibilidad
+export const LECTIVAS_PCT = 0.65;     // 65% horas lectivas (aproximado)
+export const NO_LECTIVAS_PCT = 0.35;  // 35% horas no lectivas (aproximado)
 export const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 export const HORARIO_BLOQUES = [
     { bloque: 1, inicio: '08:00', fin: '08:40' }, { bloque: 2, inicio: '08:40', fin: '09:20' },

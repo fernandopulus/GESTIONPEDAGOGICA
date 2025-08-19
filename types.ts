@@ -197,6 +197,58 @@ export interface HorarioCelda {
 
 export type HorariosGenerados = Record<string, Record<string, Record<string, HorarioCelda>>>;
 
+// --- Carga Horaria Docente ---
+
+export type CursoId = '1ºA' | '1ºB' | '1ºC' | '1ºD' | '1ºE' | '2ºA' | '2ºB' | '2ºC' | '2ºD' | '3ºA' | '3ºB' | '3ºC' | '3ºD' | '4ºA' | '4ºB' | '4ºC' | '4ºD';
+
+export interface DocenteCargaHoraria {
+  id: string;
+  nombre: string;
+  departamento?: string;
+  horasContrato: number;
+  perfil: "PROFESORADO";
+  email?: string;
+}
+
+export interface FuncionLectiva {
+  id: string;
+  nombre: string;
+  horas: number;
+}
+
+export interface AsignacionCargaHoraria {
+  id: string;
+  docenteId: string;
+  docenteNombre: string;
+  asignaturaOModulo?: string;
+  otraFuncion?: string; // Mantener por compatibilidad
+  funcionesLectivas?: FuncionLectiva[];
+  funcionesNoLectivas?: FuncionLectiva[]; // Mantener por compatibilidad
+  horasPorCurso: Partial<Record<CursoId, number>>;
+  horasXAsig?: number;
+}
+
+export interface TotalesDocenteCarga {
+  HA: number;                    // Horas lectivas asignadas
+  HB: number;                    // Horas no lectivas asignadas  
+  sumCursos: number;             // Total horas en cursos
+  sumFunciones: number;          // Total horas en funciones no lectivas (siempre 0 en nuevo sistema)
+  sumFuncionesLectivas?: number; // Total horas en funciones lectivas
+  totalHorasLectivas?: number;   // Total horas lectivas (sumCursos + sumFuncionesLectivas)
+  restantesHA: number;           // Horas lectivas restantes
+  restantesHB: number;           // Horas no lectivas restantes
+  valido: boolean;               // Si cumple las validaciones
+  warnings: string[];            // Advertencias
+  errors: string[];              // Errores
+}
+
+export interface ValidationResultCarga {
+  asignacionId: string;
+  docenteId: string;
+  tipo: 'error' | 'warning';
+  mensaje: string;
+}
+
 // --- Ciclos OPR ---
 
 export interface DetalleObservacionRow {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../src/firebase'; // Ajusta la ruta según tu estructura
-import { AsistenciaDual, User, Profile } from '../../types';
+import { User, Profile } from '../../types';
 import { CURSOS_DUAL } from '../../constants';
 import {
     subscribeToAsistenciaByMonth,
