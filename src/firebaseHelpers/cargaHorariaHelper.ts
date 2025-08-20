@@ -93,6 +93,26 @@ export const crearNuevoDocente = async (docenteData: {
   }
 };
 
+/**
+ * Actualiza las horas de contrato de un docente existente.
+ * @param docenteId El ID del docente a actualizar.
+ * @param horasContrato Las nuevas horas de contrato.
+ * @returns Promise<void>
+ */
+export const actualizarHorasContrato = async (docenteId: string, horasContrato: number): Promise<void> => {
+  try {
+    const docRef = doc(db, USUARIOS_COLLECTION, docenteId);
+    await setDoc(docRef, {
+      horasContrato,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    console.log(`Horas de contrato actualizadas para ${docenteId}: ${horasContrato}h`);
+  } catch (error) {
+    console.error("Error al actualizar horas de contrato:", error);
+    throw new Error("No se pudieron actualizar las horas de contrato.");
+  }
+};
+
 // --- GESTIÓN DE ASIGNACIONES ---
 
 /**

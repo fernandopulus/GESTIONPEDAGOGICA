@@ -724,6 +724,24 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
                 className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
                 required
               >
+                <option value="">Seleccione un docente</option>
+                {profesores.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                Curso
+              </label>
+              <select
+                value={basicData.curso}
+                onChange={(e) => setBasicData((prev) => ({ ...prev, curso: e.target.value }))}
+                className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                required
+              >
                 <option value="">Seleccione un curso</option>
                 {CURSOS.map((c) => (
                   <option key={c} value={c}>
