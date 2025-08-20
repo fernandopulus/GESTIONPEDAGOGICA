@@ -110,7 +110,7 @@ const CrearHorarios: React.FC = () => {
     departamento: ''
   });
   const [mostrarResumen, setMostrarResumen] = useState(false);
-  const [vistaResumen, setVistaResumen] = useState<'docentes' | 'cursos' | 'funciones'>('docentes');
+  const [vistaResumen, setVistaResumen] = useState<'docentes' | 'cursos' | 'funciones' | 'totales'>('docentes');
   const [validaciones, setValidaciones] = useState<ValidationResult[]>([]);
   const [loading, setLoading] = useState(false);
   
@@ -1182,6 +1182,16 @@ const CrearHorarios: React.FC = () => {
               >
                 Por Función
               </button>
+              <button
+                onClick={() => setVistaResumen('totales')}
+                className={`px-6 py-3 font-medium text-sm ${
+                  vistaResumen === 'totales'
+                    ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                }`}
+              >
+                Totales Generales
+              </button>
             </nav>
           </div>
 
@@ -1477,6 +1487,232 @@ const CrearHorarios: React.FC = () => {
                     </div>
                   );
                 })()}
+              </>
+            )}
+            
+            {/* Vista de Totales Generales */}
+            {vistaResumen === 'totales' && (
+              <>
+                <h3 className="text-xl font-semibold mb-6">Resumen de Totales Generales</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                  {/* Total de Horas Lectivas */}
+                  <div className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 shadow-md">
+                    <h4 className="text-lg font-bold text-blue-800 dark:text-blue-300 mb-2">Total de Horas Lectivas</h4>
+                    <div className="flex items-end justify-between">
+                      <div className="text-4xl font-bold text-blue-600 dark:text-blue-400">
+                        {(() => {
+                          let totalLectivas = 0;
+                          
+                          // Sumar horas por cursos
+                          asignaciones.forEach(asig => {
+                            if (asig.horasPorCurso) {
+                              Object.values(asig.horasPorCurso).forEach(horas => {
+                                if (typeof horas === 'number') {
+                                  totalLectivas += horas;
+                                }
+                              });
+                            }
+                          });
+                          
+                          // Sumar horas de funciones lectivas
+                          asignaciones.forEach(asig => {
+                            (asig.funcionesLectivas || []).forEach(funcion => {
+                              if (typeof funcion.horas === 'number') {
+                                totalLectivas += funcion.horas;
+                              }
+                            });
+                          });
+                          
+                          return totalLectivas;
+                        })()}
+                      </div>
+                      <span className="text-sm text-blue-500 dark:text-blue-300">horas</span>
+                    </div>
+                    <p className="mt-3 text-sm text-blue-600 dark:text-blue-400">
+                      Total de horas lectivas asignadas (HA)
+                    </p>
+                  </div>
+                  
+                  {/* Total de Horas No Lectivas */}
+                  <div className="p-6 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-900/20 rounded-xl border border-green-200 dark:border-green-800 shadow-md">
+                    <h4 className="text-lg font-bold text-green-800 dark:text-green-300 mb-2">Total de Horas No Lectivas</h4>
+                    <div className="flex items-end justify-between">
+                      <div className="text-4xl font-bold text-green-600 dark:text-green-400">
+                        {(() => {
+                          let totalNoLectivas = 0;
+                          
+                          // Calculamos HB para cada docente según su contrato (35%)
+                          docentes.forEach(docente => {
+                            const horasContrato = typeof docente.horasContrato === 'number' ? docente.horasContrato : 0;
+                            totalNoLectivas += Math.round(horasContrato * 0.35);
+                          });
+                          
+                          return totalNoLectivas;
+                        })()}
+                      </div>
+                      <span className="text-sm text-green-500 dark:text-green-300">horas</span>
+                    </div>
+                    <p className="mt-3 text-sm text-green-600 dark:text-green-400">
+                      Total de horas no lectivas (HB)
+                    </p>
+                  </div>
+                  
+                  {/* Total de Horas Contrato */}
+                  <div className="p-6 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 shadow-md">
+                    <h4 className="text-lg font-bold text-amber-800 dark:text-amber-300 mb-2">Total de Horas Contrato</h4>
+                    <div className="flex items-end justify-between">
+                      <div className="text-4xl font-bold text-amber-600 dark:text-amber-400">
+                        {docentes.reduce((total, docente) => total + (typeof docente.horasContrato === 'number' ? docente.horasContrato : 0), 0)}
+                      </div>
+                      <span className="text-sm text-amber-500 dark:text-amber-300">horas</span>
+                    </div>
+                    <p className="mt-3 text-sm text-amber-600 dark:text-amber-400">
+                      Total de horas contratadas
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Información adicional sobre distribución de horas */}
+                <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-md">
+                  <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-3">Distribución de Horas</h4>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Gráfico de distribución */}
+                    <div>
+                      <h5 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-2">Distribución Porcentual</h5>
+                      
+                      {(() => {
+                        // Calcular totales
+                        let totalLectivas = 0;
+                        let totalNoLectivas = 0;
+                        let totalContrato = 0;
+                        
+                        // Horas lectivas
+                        asignaciones.forEach(asig => {
+                          if (asig.horasPorCurso) {
+                            Object.values(asig.horasPorCurso).forEach(horas => {
+                              if (typeof horas === 'number') {
+                                totalLectivas += horas;
+                              }
+                            });
+                          }
+                          
+                          (asig.funcionesLectivas || []).forEach(funcion => {
+                            if (typeof funcion.horas === 'number') {
+                              totalLectivas += funcion.horas;
+                            }
+                          });
+                        });
+                        
+                        // Total contrato
+                        docentes.forEach(docente => {
+                          if (typeof docente.horasContrato === 'number') {
+                            totalContrato += docente.horasContrato;
+                          }
+                        });
+                        
+                        // Horas no lectivas
+                        totalNoLectivas = totalContrato - totalLectivas;
+                        
+                        // Calcular porcentajes
+                        const porcentajeLectivas = totalContrato > 0 ? Math.round((totalLectivas / totalContrato) * 100) : 0;
+                        const porcentajeNoLectivas = totalContrato > 0 ? Math.round((totalNoLectivas / totalContrato) * 100) : 0;
+                        
+                        return (
+                          <div>
+                            {/* Barra lectivas */}
+                            <div className="mb-4">
+                              <div className="flex justify-between text-xs mb-1">
+                                <span className="font-medium text-blue-700 dark:text-blue-300">Horas Lectivas (HA)</span>
+                                <span className="font-bold">{porcentajeLectivas}%</span>
+                              </div>
+                              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-blue-500 dark:bg-blue-600 rounded-full" 
+                                  style={{ width: `${porcentajeLectivas}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                            
+                            {/* Barra no lectivas */}
+                            <div className="mb-4">
+                              <div className="flex justify-between text-xs mb-1">
+                                <span className="font-medium text-green-700 dark:text-green-300">Horas No Lectivas (HB)</span>
+                                <span className="font-bold">{porcentajeNoLectivas}%</span>
+                              </div>
+                              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-green-500 dark:bg-green-600 rounded-full" 
+                                  style={{ width: `${porcentajeNoLectivas}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                            
+                            {/* Distribución ideal */}
+                            <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-750 rounded-lg text-xs text-gray-700 dark:text-gray-300">
+                              <p><strong>Distribución Objetivo:</strong></p>
+                              <p>• Horas Lectivas (HA): 65% del contrato</p>
+                              <p>• Horas No Lectivas (HB): 35% del contrato</p>
+                              <div className="mt-2">
+                                {Math.abs(porcentajeLectivas - 65) <= 5 ? (
+                                  <p className="text-green-600 dark:text-green-400 font-medium">✓ La distribución está dentro de los parámetros recomendados</p>
+                                ) : (
+                                  <p className="text-orange-600 dark:text-orange-400 font-medium">⚠️ La distribución difiere de los parámetros recomendados</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    
+                    {/* Información */}
+                    <div className="space-y-4">
+                      <div>
+                        <h5 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-2">Estadísticas Generales</h5>
+                        
+                        <ul className="space-y-3 text-sm">
+                          <li className="flex justify-between border-b border-gray-100 dark:border-gray-700 pb-2">
+                            <span className="text-gray-600 dark:text-gray-400">Total de docentes:</span>
+                            <span className="font-semibold">{docentes.length}</span>
+                          </li>
+                          <li className="flex justify-between border-b border-gray-100 dark:border-gray-700 pb-2">
+                            <span className="text-gray-600 dark:text-gray-400">Total de asignaciones:</span>
+                            <span className="font-semibold">{asignaciones.length}</span>
+                          </li>
+                          <li className="flex justify-between border-b border-gray-100 dark:border-gray-700 pb-2">
+                            <span className="text-gray-600 dark:text-gray-400">Promedio horas contrato:</span>
+                            <span className="font-semibold">
+                              {docentes.length > 0 
+                                ? (docentes.reduce((total, docente) => total + (typeof docente.horasContrato === 'number' ? docente.horasContrato : 0), 0) / docentes.length).toFixed(1)
+                                : '0'} horas
+                            </span>
+                          </li>
+                        </ul>
+                      </div>
+                      
+                      {validaciones.length > 0 && (
+                        <div className="mt-4">
+                          <h5 className="text-md font-medium text-red-700 dark:text-red-300 mb-2">Advertencias ({validaciones.length})</h5>
+                          <div className="max-h-32 overflow-y-auto p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <ul className="text-xs space-y-1 text-red-600 dark:text-red-400">
+                              {validaciones.slice(0, 5).map((validacion, index) => (
+                                <li key={index} className="flex items-center gap-1">
+                                  {validacion.tipo === 'error' ? '❌' : '⚠️'}
+                                  <span>{validacion.mensaje}</span>
+                                </li>
+                              ))}
+                              {validaciones.length > 5 && (
+                                <li className="italic">Y {validaciones.length - 5} más...</li>
+                              )}
+                            </ul>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </>
             )}
           </div>

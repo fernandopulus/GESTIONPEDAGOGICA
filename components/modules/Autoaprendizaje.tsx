@@ -513,6 +513,62 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
         <div className="text-slate-700 whitespace-pre-wrap">
           <UltraSafeRenderer content={actividad.introduccion} context="actividad-introduccion" />
         </div>
+        
+        {/* Recursos adicionales (enlaces y archivos) */}
+        {actividad.recursos && (
+          <div className="mt-4 pt-4 border-t border-sky-200">
+            {actividad.recursos.instrucciones && (
+              <div className="mb-3">
+                <h3 className="font-semibold text-sky-700">Instrucciones adicionales:</h3>
+                <p className="text-slate-700 whitespace-pre-wrap">
+                  <UltraSafeRenderer content={actividad.recursos.instrucciones} context="actividad-instrucciones" />
+                </p>
+              </div>
+            )}
+            
+            {actividad.recursos.enlaces && (
+              <div className="mb-3">
+                <h3 className="font-semibold text-sky-700">Enlaces complementarios:</h3>
+                <div className="space-y-1 mt-1">
+                  {actividad.recursos.enlaces.split('\n').filter(Boolean).map((enlace, idx) => (
+                    <div key={idx} className="flex items-center">
+                      <span className="text-sky-500 mr-2">🔗</span>
+                      <a 
+                        href={enlace.startsWith('http') ? enlace : `https://${enlace}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-sky-600 hover:text-sky-800 hover:underline break-all"
+                      >
+                        {enlace}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {actividad.recursos.archivos && actividad.recursos.archivos.length > 0 && (
+              <div>
+                <h3 className="font-semibold text-sky-700">Archivos complementarios:</h3>
+                <div className="space-y-1 mt-1">
+                  {actividad.recursos.archivos.map((archivo, idx) => (
+                    <div key={idx} className="flex items-center">
+                      <span className="text-sky-500 mr-2">📄</span>
+                      <a 
+                        href={archivo.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-sky-600 hover:text-sky-800 hover:underline"
+                      >
+                        {archivo.nombre || `Archivo ${idx + 1}`}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {actividad.tipos.map((tipo) => {
@@ -754,8 +810,12 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
       (data) => {
         console.log('📝 Respuestas del estudiante recibidas:', data.length);
         data.forEach((resp, i) => {
-          console.log(`  ${i + 1}. Actividad ${resp.actividadId} - Nota: ${resp.nota} - Fecha: ${resp.fechaCompletado}`);
-          if (resp.revisionDocente?.completada) {
+          console.log(`  ${i + 1}. Actividad ${resp.actividadId} - Fecha: ${resp.fechaCompletado}`);
+          // Comprobaciones seguras para evitar errores de tipos
+          if ((resp as any).nota) {
+            console.log(`    Nota: ${(resp as any).nota}`);
+          }
+          if ((resp as any).revisionDocente?.completada) {
             console.log(`    ✅ Con revisión docente completada`);
           }
           logSuspiciousObject(resp, `respuesta-${i}`);
@@ -968,6 +1028,64 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
             </span>
           </p>
         </div>
+        
+        {/* Recursos adicionales en la vista de resultados */}
+        {selectedActividad?.recursos && (
+          <div className="mb-6 p-4 bg-sky-50 border border-sky-200 rounded-lg">
+            <h2 className="text-lg font-bold text-sky-800 mb-2">Material complementario</h2>
+            
+            {selectedActividad.recursos.instrucciones && (
+              <div className="mb-3">
+                <h3 className="font-semibold text-sky-700">Instrucciones adicionales:</h3>
+                <p className="text-slate-700 whitespace-pre-wrap">
+                  <UltraSafeRenderer content={selectedActividad.recursos.instrucciones} context="resultado-instrucciones" />
+                </p>
+              </div>
+            )}
+            
+            {selectedActividad.recursos.enlaces && (
+              <div className="mb-3">
+                <h3 className="font-semibold text-sky-700">Enlaces complementarios:</h3>
+                <div className="space-y-1 mt-1">
+                  {selectedActividad.recursos.enlaces.split('\n').filter(Boolean).map((enlace, idx) => (
+                    <div key={idx} className="flex items-center">
+                      <span className="text-sky-500 mr-2">🔗</span>
+                      <a 
+                        href={enlace.startsWith('http') ? enlace : `https://${enlace}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-sky-600 hover:text-sky-800 hover:underline break-all"
+                      >
+                        {enlace}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {selectedActividad.recursos.archivos && selectedActividad.recursos.archivos.length > 0 && (
+              <div>
+                <h3 className="font-semibold text-sky-700">Archivos complementarios:</h3>
+                <div className="space-y-1 mt-1">
+                  {selectedActividad.recursos.archivos.map((archivo, idx) => (
+                    <div key={idx} className="flex items-center">
+                      <span className="text-sky-500 mr-2">📄</span>
+                      <a 
+                        href={archivo.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-sky-600 hover:text-sky-800 hover:underline"
+                      >
+                        {archivo.nombre || `Archivo ${idx + 1}`}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
