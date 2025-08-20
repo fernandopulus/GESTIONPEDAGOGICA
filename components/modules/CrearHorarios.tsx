@@ -26,6 +26,7 @@ import {
   Loader2,
   HelpCircle,
   Users,
+  FileText,
 } from 'lucide-react';
 
 // Estilos para animaciones y scrollbar personalizado
@@ -89,6 +90,8 @@ const styles = `
   }
 `;
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 import { CURSOS, ASIGNATURAS } from '../../constants';
 import {
@@ -467,6 +470,375 @@ const CrearHorarios: React.FC = () => {
     XLSX.writeFile(wb, `horarios_${new Date().toISOString().split('T')[0]}.xlsx`);
   }, [asignaciones, docentes, totalesByDocente]);
 
+  const exportarPDF = useCallback(() => {
+    // Creamos un nuevo documento PDF
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+    
+    // Definimos los colores y dimensiones para un diseño moderno y minimalista
+    const colorPrimario: [number, number, number] = [41, 128, 185]; // Azul corporativo
+    const colorSecundario: [number, number, number] = [52, 73, 94]; // Gris oscuro para textos
+    const colorAcento: [number, number, number] = [26, 188, 156]; // Verde turquesa para acentos
+    
+    const margenIzquierdo = 20;
+    const margenDerecho = 20;
+    const margenSuperior = 20;
+    const anchoUtil = doc.internal.pageSize.getWidth() - margenIzquierdo - margenDerecho;
+    
+    // Logo y URLs
+    const logoUrl = "https://res.cloudinary.com/dwncmu1wu/image/upload/v1753209432/LIR_fpq2lc.png";
+    
+    // Función para añadir página con encabezado moderno
+    const addPageWithHeader = async (docente: string) => {
+      doc.addPage();
+      
+      // Añadir logo (2cm de ancho aprox. 56px)
+      try {
+        const logoWidth = 20; // 2cm en mm
+        const logoHeight = 20; // Mantener proporción
+        const logoX = margenIzquierdo;
+        const logoY = margenSuperior;
+        
+        // Cargar y colocar la imagen
+        const img = new Image();
+        img.crossOrigin = "Anonymous";  // Importante para CORS
+        
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+          img.src = logoUrl;
+        });
+        
+        doc.addImage(img, 'PNG', logoX, logoY, logoWidth, logoHeight);
+      } catch (err) {
+        console.error("Error al cargar el logo:", err);
+      }
+      
+      // Línea separadora elegante
+      doc.setDrawColor(colorPrimario[0], colorPrimario[1], colorPrimario[2]);
+      doc.setLineWidth(0.5);
+      doc.line(margenIzquierdo, margenSuperior + 25, doc.internal.pageSize.getWidth() - margenDerecho, margenSuperior + 25);
+      
+      // Título del documento con tipografía moderna
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(colorPrimario[0], colorPrimario[1], colorPrimario[2]);
+      doc.text('CARGA HORARIA DOCENTE', doc.internal.pageSize.getWidth() / 2, margenSuperior + 15, { align: 'center' });
+      
+      // Nombre del docente con tipografía moderna
+      doc.setFontSize(16);
+      doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
+      doc.text(`Docente: ${docente}`, doc.internal.pageSize.getWidth() / 2, margenSuperior + 35, { align: 'center' });
+      
+      // Eliminamos la fecha de generación para un diseño más limpio
+    };
+    
+    // Eliminamos la primera página (en blanco)
+    doc.deletePage(1);
+    
+    // Agrupamos las asignaciones por docente
+    const asignacionesPorDocente: Record<string, AsignacionCargaHoraria[]> = {};
+    asignaciones.forEach(asig => {
+      if (!asignacionesPorDocente[asig.docenteId]) {
+        asignacionesPorDocente[asig.docenteId] = [];
+      }
+      asignacionesPorDocente[asig.docenteId].push(asig);
+    });
+    
+    // Procesamos a cada docente de manera asíncrona
+    const procesarDocentes = async () => {
+      // Para cada docente creamos una página
+      for (const [docenteId, asignacionesDocente] of Object.entries(asignacionesPorDocente)) {
+        const docente = docentes.find(d => d.id === docenteId);
+        if (!docente) continue;
+        
+        // Añadir página con encabezado
+        await addPageWithHeader(docente.nombre);
+        
+        // Datos básicos del docente con mejor formato
+        const totales = totalesByDocente[docenteId];
+        const datosDocente = [
+          ['Horas de Contrato:', docente.horasContrato.toString()],
+          ['Horas Lectivas (HA):', totales ? totales.HA.toString() : '0'],
+          ['Horas No Lectivas (HB):', totales ? totales.HB.toString() : '0'],
+          ['Email:', docente.email || 'No especificado']
+        ];
+        
+        autoTable(doc, {
+          startY: margenSuperior + 45,
+          margin: { left: margenIzquierdo, right: margenDerecho },
+          head: [],
+          body: datosDocente,
+          theme: 'plain',
+          styles: {
+            fontSize: 10,
+            cellPadding: 2,
+            lineColor: [240, 240, 240],
+            lineWidth: 0.1
+          },
+          columnStyles: {
+            0: { cellWidth: 50, fontStyle: 'bold', textColor: colorPrimario },
+            1: { cellWidth: 'auto', textColor: [70, 70, 70] }
+          }
+        });
+        
+        // Título para la sección de asignaturas
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
+        const tituloAsignaturasY = (doc as any).lastAutoTable.finalY + 10;
+        doc.text('Distribución de asignaturas por curso', margenIzquierdo, tituloAsignaturasY);
+        
+        // Tabla de asignaturas y cursos
+        const asignaturasData = [];
+        asignacionesDocente.forEach(asig => {
+          // Si tiene asignatura la agregamos
+          if (asig.asignaturaOModulo) {
+            const fila = [
+              asig.asignaturaOModulo,
+              asig.horasXAsig || '',
+            ];
+            
+            // Añadimos los cursos como columnas
+            CURSOS.forEach(curso => {
+              fila.push(asig.horasPorCurso[curso as CursoId] || '');
+            });
+            
+            asignaturasData.push(fila);
+          }
+        });
+        
+        // Encabezado para la tabla de asignaturas
+        const headerAsignaturas = [
+          'Asignatura/Módulo', 
+          'Hrs', 
+          ...CURSOS
+        ];
+        
+        if (asignaturasData.length > 0) {
+          autoTable(doc, {
+            startY: tituloAsignaturasY + 3,
+            margin: { left: margenIzquierdo, right: margenDerecho },
+            head: [headerAsignaturas],
+            body: asignaturasData,
+            theme: 'grid',
+            headStyles: { 
+              fillColor: colorPrimario, 
+              textColor: [255, 255, 255],
+              fontStyle: 'bold',
+              lineWidth: 0.1,
+              lineColor: [255, 255, 255]
+            },
+            styles: {
+              fontSize: 8,
+              overflow: 'linebreak',
+              cellPadding: 3,
+              valign: 'middle',
+              halign: 'center',
+              lineWidth: 0.1,
+              lineColor: [220, 220, 220]
+            },
+            columnStyles: {
+              0: { cellWidth: 60, halign: 'left' },
+              1: { cellWidth: 15, halign: 'center' }
+            },
+            alternateRowStyles: {
+              fillColor: [249, 249, 249]
+            },
+            didParseCell: (data) => {
+              // Destacar celdas con valores
+              if (data.section === 'body' && data.column.index > 1 && data.cell.raw) {
+                data.cell.styles.fontStyle = 'bold';
+                data.cell.styles.textColor = colorAcento;
+              }
+            }
+          });
+        }
+        
+        // Título para la sección de funciones
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
+        const tituloFuncionesY = asignaturasData.length > 0 ? 
+          (doc as any).lastAutoTable.finalY + 10 : 
+          tituloAsignaturasY + 15;
+        doc.text('Funciones asignadas', margenIzquierdo, tituloFuncionesY);
+        
+        // Tabla de funciones
+        const funcionesData = [];
+        asignacionesDocente.forEach(asig => {
+          // Si tiene funciones lectivas las agregamos
+          if (asig.funcionesLectivas && asig.funcionesLectivas.length > 0) {
+            asig.funcionesLectivas.forEach(funcion => {
+              funcionesData.push([
+                funcion.nombre,
+                funcion.horas.toString()
+              ]);
+            });
+          } else if ((asig as any).funcionesNoLectivas && (asig as any).funcionesNoLectivas.length > 0) {
+            (asig as any).funcionesNoLectivas.forEach((funcion: any) => {
+              funcionesData.push([
+                funcion.nombre,
+                funcion.horas.toString()
+              ]);
+            });
+          } else if ((asig as any).otraFuncion) {
+            funcionesData.push([
+              (asig as any).otraFuncion,
+              ''
+            ]);
+          }
+        });
+        
+        if (funcionesData.length > 0) {
+          autoTable(doc, {
+            startY: tituloFuncionesY + 3,
+            margin: { left: margenIzquierdo, right: margenDerecho },
+            head: [['Función', 'Horas']],
+            body: funcionesData,
+            theme: 'grid',
+            headStyles: { 
+              fillColor: colorPrimario, 
+              textColor: [255, 255, 255],
+              fontStyle: 'bold',
+              lineWidth: 0.1,
+              lineColor: [255, 255, 255]
+            },
+            styles: {
+              fontSize: 8,
+              overflow: 'linebreak',
+              cellPadding: 3,
+              lineWidth: 0.1,
+              lineColor: [220, 220, 220]
+            },
+            columnStyles: {
+              0: { cellWidth: 'auto', halign: 'left' },
+              1: { cellWidth: 30, halign: 'center' }
+            },
+            alternateRowStyles: {
+              fillColor: [249, 249, 249]
+            },
+            didParseCell: (data) => {
+              // Destacar las horas
+              if (data.section === 'body' && data.column.index === 1 && data.cell.raw) {
+                data.cell.styles.fontStyle = 'bold';
+                data.cell.styles.textColor = colorAcento;
+              }
+            }
+          });
+        }
+        
+        // Añadir sección de firmas con mejor diseño - siempre a la misma altura desde abajo
+        const yPos = doc.internal.pageSize.getHeight() - 50;
+        
+        doc.setDrawColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
+        doc.setLineWidth(0.5);
+        
+        // Firma del docente
+        const firmaDocenteX = margenIzquierdo + anchoUtil * 0.25;
+        doc.line(firmaDocenteX - 30, yPos, firmaDocenteX + 30, yPos);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
+        doc.text('Firma Docente', firmaDocenteX, yPos + 7, { align: 'center' });
+        
+        // Firma de la directora
+        const firmaDirectoraX = margenIzquierdo + anchoUtil * 0.75;
+        doc.line(firmaDirectoraX - 30, yPos, firmaDirectoraX + 30, yPos);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
+        doc.text('Firma Directora', firmaDirectoraX, yPos + 7, { align: 'center' });
+        
+        // Pie de página con información institucional
+        const piePaginaY = doc.internal.pageSize.getHeight() - 10;
+        doc.setFontSize(7);
+        doc.setTextColor(150, 150, 150);
+        doc.text('Liceo Industrial de Recoleta', doc.internal.pageSize.getWidth() / 2, piePaginaY, { align: 'center' });
+      }
+      
+      // Si no hay páginas (porque no hay docentes), añadimos una página con mensaje
+      if (doc.getNumberOfPages() === 0) {
+        doc.addPage();
+        
+        // Intentamos añadir logo como en las otras páginas
+        try {
+          const logoWidth = 20; // 2cm en mm
+          const logoHeight = 20; // Mantener proporción
+          const logoX = margenIzquierdo;
+          const logoY = margenSuperior;
+          
+          const img = new Image();
+          img.crossOrigin = "Anonymous";
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+            img.src = logoUrl;
+          });
+          
+          doc.addImage(img, 'PNG', logoX, logoY, logoWidth, logoHeight);
+        } catch (err) {
+          console.error("Error al cargar el logo:", err);
+        }
+        
+        // Línea separadora
+        doc.setDrawColor(colorPrimario[0], colorPrimario[1], colorPrimario[2]);
+        doc.setLineWidth(0.5);
+        doc.line(margenIzquierdo, margenSuperior + 25, doc.internal.pageSize.getWidth() - margenDerecho, margenSuperior + 25);
+        
+        // Mensaje de no datos
+        doc.setFontSize(14);
+        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
+        doc.text('No hay datos de carga horaria disponibles', doc.internal.pageSize.getWidth() / 2, 100, { align: 'center' });
+        
+        // Añadimos firmas
+        const yPos = doc.internal.pageSize.getHeight() - 50;
+        
+        doc.setDrawColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
+        doc.setLineWidth(0.5);
+        
+        // Firma del docente
+        const anchoUtil = doc.internal.pageSize.getWidth() - margenIzquierdo - margenDerecho;
+        const firmaDocenteX = margenIzquierdo + anchoUtil * 0.25;
+        doc.line(firmaDocenteX - 30, yPos, firmaDocenteX + 30, yPos);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
+        doc.text('Firma Docente', firmaDocenteX, yPos + 7, { align: 'center' });
+        
+        // Firma de la directora
+        const firmaDirectoraX = margenIzquierdo + anchoUtil * 0.75;
+        doc.line(firmaDirectoraX - 30, yPos, firmaDirectoraX + 30, yPos);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
+        doc.text('Firma Directora', firmaDirectoraX, yPos + 7, { align: 'center' });
+        
+        // Pie de página 
+        const piePaginaY = doc.internal.pageSize.getHeight() - 10;
+        doc.setFontSize(7);
+        doc.setTextColor(150, 150, 150);
+        doc.text('Liceo Industrial de Recoleta', doc.internal.pageSize.getWidth() / 2, piePaginaY, { align: 'center' });
+      }
+      
+      // Guardar el PDF
+      doc.save(`carga_horaria_docentes_${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+    
+    // Ejecutar el proceso
+    procesarDocentes().catch(error => {
+      console.error('Error al generar el PDF:', error);
+      alert('Error al generar el PDF. Consulte la consola para más detalles.');
+    });
+  }, [asignaciones, docentes, totalesByDocente]);
+
   const guardar = useCallback(async () => {
     const errores = validaciones.filter((v) => v.tipo === 'error');
     if (errores.length > 0) {
@@ -803,6 +1175,14 @@ const CrearHorarios: React.FC = () => {
             >
               <FileSpreadsheet className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
               <span className="text-xs font-medium mt-1">Exportar Excel</span>
+            </button>
+            
+            <button 
+              onClick={exportarPDF} 
+              className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white rounded-lg transition-all duration-200 shadow-sm group"
+            >
+              <FileText className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
+              <span className="text-xs font-medium mt-1">PDF por Docente</span>
             </button>
             
             <button 
