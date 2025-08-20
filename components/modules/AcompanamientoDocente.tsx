@@ -570,40 +570,91 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
   const generateOPRPDF = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 15;
     const contentWidth = pageWidth - margin * 2;
-    let yPosition = 20;
+    
+    // Cargar el logo en la esquina superior derecha (1cm = ~28.35 puntos)
+    const logoUrl = "https://res.cloudinary.com/dwncmu1wu/image/upload/v1753209432/LIR_fpq2lc.png";
+    const logoHeight = 15; // Altura aproximada del logo en mm
+    const logoWidth = 15; // Ancho aproximado del logo en mm
+    let yPosition = 25; // Posición inicial con espacio para el título
+    
+    // Función para añadir pie de página y firmas
+    const addFooterAndSignatures = () => {
+      // Pie de página
+      const footerText = "Liceo Industrial de Recoleta";
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
+      
+      // Espacios para firmas
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      const signatureY = pageHeight - 25;
+      
+      // Línea para firma docente
+      doc.line(margin, signatureY, margin + 70, signatureY);
+      doc.text("Firma Docente", margin + 15, signatureY + 5);
+      
+      // Línea para firma observador
+      doc.line(pageWidth - margin - 70, signatureY, pageWidth - margin, signatureY);
+      doc.text("Firma Observador", pageWidth - margin - 55, signatureY + 5);
+    };
+    
+    // Función para añadir logo en cada página (esquina superior derecha, 1cm del borde)
+    const addLogoToPage = () => {
+      try {
+        // 1cm = 28.35 puntos; ubicar el logo en la esquina superior derecha
+        const rightMargin = 10; // 1cm en mm
+        doc.addImage(logoUrl, 'PNG', pageWidth - logoWidth - rightMargin, 10, logoWidth, logoHeight);
+      } catch (error) {
+        console.error("Error al cargar el logo:", error);
+      }
+    };
+    
+    // Añadir logo en la primera página
+    addLogoToPage();
+    
+    // Hook para añadir pie y firmas en cada nueva página
+    const originalAddPage = doc.addPage;
+    doc.addPage = function() {
+      originalAddPage.apply(this, arguments);
+      addLogoToPage();
+      addFooterAndSignatures();
+      return this;
+    };
 
     const addSectionTitle = (title: string) => {
-      if (yPosition > 260) {
+      if (yPosition > 240) { // Reducido para dejar espacio para las firmas
         doc.addPage();
-        yPosition = 20;
+        yPosition = 25; // Reiniciar posición en la nueva página
       }
       doc.setFontSize(14);
       doc.setFont('helvetica', 'bold');
       doc.text(title, margin, yPosition);
-      yPosition += 10;
+      yPosition += 12; // Mayor espaciado
     };
 
     const addText = (text: string, label = '') => {
       if (!text) return;
-      if (yPosition > 270) {
+      if (yPosition > 240) { // Reducido para dejar espacio para las firmas
         doc.addPage();
-        yPosition = 20;
+        yPosition = 25; // Reiniciar posición en la nueva página
       }
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
       doc.text(label, margin, yPosition);
       doc.setFont('helvetica', 'normal');
-      const lines = doc.splitTextToSize(text, contentWidth - (label ? 15 : 0));
-      doc.text(lines, margin + (label ? 15 : 0), yPosition);
-      yPosition += lines.length * 5 + 4;
+      const lines = doc.splitTextToSize(text, contentWidth - (label ? 20 : 0)); // Mayor espacio para el contenido
+      doc.text(lines, margin + (label ? 20 : 0), yPosition); // Mayor indentación
+      yPosition += lines.length * 6 + 6; // Mayor espaciado entre líneas y párrafos
     };
 
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
     doc.text('Informe de Ciclo OPR', pageWidth / 2, yPosition, { align: 'center' });
-    yPosition += 15;
+    yPosition += 18; // Mayor espaciado después del título
 
     addSectionTitle('1. Datos Generales');
     const infoData = [
@@ -618,10 +669,19 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
       body: infoData,
       startY: yPosition,
       theme: 'plain',
-      styles: { fontSize: 10 },
-      columnStyles: { 0: { fontStyle: 'bold' } },
+      styles: { 
+        fontSize: 10,
+        cellPadding: 3,
+        lineWidth: 0.1,
+        lineColor: [220, 220, 220]
+      },
+      columnStyles: { 
+        0: { fontStyle: 'bold', cellWidth: 30 },
+        1: { cellWidth: 'auto' }
+      },
+      margin: { left: margin, right: margin },
     });
-    yPosition = (doc as any).lastAutoTable.finalY + 10;
+    yPosition = (doc as any).lastAutoTable.finalY + 15; // Mayor espaciado después de la tabla
 
     addSectionTitle('2. Registro Detallado de Observación');
     const tableData = formData.detallesObservacion.map((d) => [
@@ -635,42 +695,171 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
       body: tableData,
       startY: yPosition,
       theme: 'grid',
-      headStyles: { fillColor: [41, 128, 185], textColor: 255 },
-      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { 
+        fillColor: [41, 128, 185], 
+        textColor: 255, 
+        fontSize: 10,
+        cellPadding: 4,
+        halign: 'center'
+      },
+      styles: { 
+        fontSize: 9, 
+        cellPadding: 4,
+        overflow: 'linebreak',
+        lineWidth: 0.1
+      },
+      columnStyles: {
+        0: { cellWidth: 15, halign: 'center' }, // Minuto
+        1: { cellWidth: 'auto' }, // Acciones del Docente
+        2: { cellWidth: 'auto' }, // Acciones de Estudiantes
+        3: { cellWidth: 'auto' }  // Actividades
+      },
+      margin: { left: margin, right: margin },
       didDrawPage: (data) => {
-        yPosition = data.cursor?.y || 20;
+        yPosition = data.cursor?.y || 25; // Posición estándar en nueva página
       },
     });
-    yPosition = (doc as any).lastAutoTable.finalY + 10;
+    yPosition = (doc as any).lastAutoTable.finalY + 15; // Mayor espaciado después de la tabla
 
     addSectionTitle('3. Retroalimentación Docente');
-    addText(formData.retroalimentacion.exito, 'Éxito:');
-    addText(formData.retroalimentacion.modelo, 'Modelo:');
-    addText(formData.retroalimentacion.foco, 'Foco:');
-    addText(formData.retroalimentacion.elementosIdentificar, 'Elementos a Identificar:');
+    
+    // Crear una tabla para la retroalimentación para mejor formato y espaciado
+    const retroData = [];
+    
+    // Añadir datos de retroalimentación
+    if (formData.retroalimentacion.exito) {
+      retroData.push(['Éxito:', formData.retroalimentacion.exito]);
+    }
+    
+    if (formData.retroalimentacion.modelo) {
+      retroData.push(['Modelo:', formData.retroalimentacion.modelo]);
+    }
+    
+    if (formData.retroalimentacion.foco) {
+      retroData.push(['Foco:', formData.retroalimentacion.foco]);
+    }
+    
+    if (formData.retroalimentacion.elementosIdentificar) {
+      retroData.push(['Elementos a Identificar:', formData.retroalimentacion.elementosIdentificar]);
+    }
+    
+    // Crear tabla para retroalimentación
+    if (retroData.length > 0) {
+      autoTable(doc, {
+        body: retroData,
+        startY: yPosition,
+        theme: 'plain',
+        styles: { 
+          fontSize: 10,
+          cellPadding: 4,
+          overflow: 'linebreak'
+        },
+        columnStyles: { 
+          0: { fontStyle: 'bold', cellWidth: 40 },
+          1: { cellWidth: 'auto' }
+        },
+        margin: { left: margin, right: margin },
+      });
+      yPosition = (doc as any).lastAutoTable.finalY + 10;
+    }
 
-    yPosition += 5;
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Análisis de Brecha', margin, yPosition);
-    yPosition += 7;
-    addText(
-      `${formData.retroalimentacion.brecha.minutoInicial} a ${formData.retroalimentacion.brecha.minutoFinal}`,
-      'Minutos:'
-    );
-    addText(formData.retroalimentacion.brecha.preguntas, 'Preguntas:');
-    addText(formData.retroalimentacion.brecha.indicadores, 'Indicadores:');
+    // Añadir sección de brecha si existe
+    if (formData.retroalimentacion.brecha) {
+      // Verificar si necesitamos pasar a la siguiente página
+      if (yPosition > 240) {
+        doc.addPage();
+        yPosition = 15 + 15 + 10; // Reiniciar posición después del logo
+      }
+      
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Análisis de Brecha', margin, yPosition);
+      yPosition += 8;
+      
+      const brechaData = [];
+      
+      // Verificar que existan los campos minutoInicial y minutoFinal
+      const minutoInicial = formData.retroalimentacion.brecha.minutoInicial;
+      const minutoFinal = formData.retroalimentacion.brecha.minutoFinal;
+      
+      if (minutoInicial && minutoFinal) {
+        brechaData.push(['Minutos:', `${minutoInicial} a ${minutoFinal}`]);
+      }
+      
+      // Verificar que existan los campos preguntas e indicadores
+      if (formData.retroalimentacion.brecha.preguntas) {
+        brechaData.push(['Preguntas:', formData.retroalimentacion.brecha.preguntas]);
+      }
+      
+      if (formData.retroalimentacion.brecha.indicadores) {
+        brechaData.push(['Indicadores:', formData.retroalimentacion.brecha.indicadores]);
+      }
+      
+      // Crear tabla para brecha
+      if (brechaData.length > 0) {
+        autoTable(doc, {
+          body: brechaData,
+          startY: yPosition,
+          theme: 'plain',
+          styles: { 
+            fontSize: 10,
+            cellPadding: 4,
+            overflow: 'linebreak'
+          },
+          columnStyles: { 
+            0: { fontStyle: 'bold', cellWidth: 30 },
+            1: { cellWidth: 'auto' }
+          },
+          margin: { left: margin + 5, right: margin }, // Indentación adicional
+        });
+        yPosition = (doc as any).lastAutoTable.finalY + 10;
+      }
+    }
 
     addSectionTitle('4. Planificación de Práctica');
-    addText(formData.planificacion.preparacion, 'Preparación:');
-    addText(formData.planificacion.objetivo, 'Objetivo:');
-    addText(formData.planificacion.actividad, 'Actividad:');
-    addText(formData.planificacion.tiempo, 'Tiempo:');
+    
+    // Crear tabla para planificación
+    const planData = [];
+    
+    if (formData.planificacion.preparacion) {
+      planData.push(['Preparación:', formData.planificacion.preparacion]);
+    }
+    
+    if (formData.planificacion.objetivo) {
+      planData.push(['Objetivo:', formData.planificacion.objetivo]);
+    }
+    
+    if (formData.planificacion.actividad) {
+      planData.push(['Actividad:', formData.planificacion.actividad]);
+    }
+    
+    if (formData.planificacion.tiempo) {
+      planData.push(['Tiempo:', formData.planificacion.tiempo]);
+    }
+    
+    // Crear tabla para planificación
+    if (planData.length > 0) {
+      autoTable(doc, {
+        body: planData,
+        startY: yPosition,
+        theme: 'plain',
+        styles: { 
+          fontSize: 10,
+          cellPadding: 4,
+          overflow: 'linebreak'
+        },
+        columnStyles: { 
+          0: { fontStyle: 'bold', cellWidth: 30 },
+          1: { cellWidth: 'auto' }
+        },
+        margin: { left: margin, right: margin },
+      });
+      yPosition = (doc as any).lastAutoTable.finalY + 10;
+    }
 
-    addSectionTitle('5. Seguimiento');
-    addText(new Date(formData.seguimiento.fecha).toLocaleDateString('es-CL'), 'Fecha:');
-    addText(formData.seguimiento.firma, 'Firma (Registrado por):');
-
+    // Añadir pie de página y firmas en la primera página también
+    addFooterAndSignatures();
+    
     doc.save(`Informe_OPR_${basicData.docente}_${formData.fecha}.pdf`);
   };
 
