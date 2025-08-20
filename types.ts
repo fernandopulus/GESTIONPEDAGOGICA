@@ -237,6 +237,7 @@ export interface TotalesDocenteCarga {
   totalHorasLectivas?: number;   // Total horas lectivas (sumCursos + sumFuncionesLectivas)
   restantesHA: number;           // Horas lectivas restantes
   restantesHB: number;           // Horas no lectivas restantes
+  horasContrato: number;         // Horas totales del contrato del docente
   valido: boolean;               // Si cumple las validaciones
   warnings: string[];            // Advertencias
   errors: string[];              // Errores

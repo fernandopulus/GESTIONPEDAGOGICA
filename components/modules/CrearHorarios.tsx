@@ -1,37 +1,99 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { 
-  Search, 
-  Upload, 
-  Download, 
-  Save, 
-  CheckCircle, 
-  AlertTriangle, 
+import {
+  Search,
+  Upload,
+  Download,
+  Save,
+  AlertTriangle,
   XCircle,
-  Filter,
   BarChart3,
   Plus,
   Trash2,
-  FileText,
-  Eye,
   AlertCircle,
-  UserPlus
+  UserPlus,
+  X as CloseIcon,
+  FilterIcon,
+  Clock,
+  Check,
+  School,
+  BookOpen,
+  UserCog,
+  Briefcase,
+  PieChart,
+  RefreshCw,
+  Calendar,
+  FileSpreadsheet,
+  Loader2,
+  HelpCircle,
+  Users,
 } from 'lucide-react';
+
+// Estilos para animaciones y scrollbar personalizado
+const styles = `
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes scaleIn {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  @keyframes slideInFromBottom {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+
+  .animate-scaleIn {
+    animation: scaleIn 0.3s ease-out forwards;
+  }
+
+  .animate-slideIn {
+    animation: slideInFromBottom 0.3s ease-out forwards;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(0,0,0,0.05);
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.15);
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(0,0,0,0.25);
+  }
+
+  .dark .custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.05);
+  }
+
+  .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+  }
+
+  .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.25);
+  }
+`;
 import * as XLSX from 'xlsx';
 
-// Imports desde constants.tsx (fuente única de verdad)
+import { CURSOS, ASIGNATURAS } from '../../constants';
 import {
-  CURSOS,
-  ASIGNATURAS,
-  LECTIVAS_PCT,
-  NO_LECTIVAS_PCT
-} from "../../constants";
-
-import { 
   subscribeToDocentes,
   subscribeToAsignacionesCarga,
-  addAsignacionCarga,
-  updateAsignacionCarga,
-  deleteAsignacionCarga,
   saveAsignacionesBatch,
   calcularHA,
   calcularHB,
@@ -39,202 +101,107 @@ import {
   calcularTotalesDocente,
   validarDocente,
   normalizarHeaderCurso,
-  crearNuevoDocente
+  crearNuevoDocente,
 } from '../../src/firebaseHelpers/cargaHorariaHelper';
 
-// Importación de tipos desde types.ts
-import { AsignacionCargaHoraria, FuncionLectiva as FuncionLectivaType } from '../../types';
-
-// --- TIPOS Y UTILIDADES ---
-
-type CursoId = typeof CURSOS[number];
-
-interface Docente {
-  id: string;
-  nombre: string;
-  departamento?: string;
-  horasContrato: number;
-  perfil: "PROFESORADO";
-  email?: string;
-}
-
-interface FuncionLectiva {
-  id: string;
-  nombre: string;
-  horas: number;
-}
-
-interface Asignacion {
-  id: string;
-  docenteId: string;
-  docenteNombre: string;
-  asignaturaOModulo?: string;
-  otraFuncion?: string; // Mantener por compatibilidad
-  funcionesLectivas?: FuncionLectiva[];
-  funcionesNoLectivas?: FuncionLectiva[]; // Para compatibilidad
-  horasPorCurso: Partial<Record<CursoId, number>>;
-  horasXAsig?: number;
-}
-
-interface TotalesDocente {
-  HA: number;
-  HB: number;
-  sumCursos: number;
-  sumFunciones: number;
-  restantesHA: number;
-  restantesHB: number;
-  valido: boolean;
-  warnings: string[];
-  errors: string[];
-}
-
-interface ValidationResult {
-  asignacionId: string;
-  docenteId: string;
-  tipo: 'error' | 'warning';
-  mensaje: string;
-}
-
-// Utilizamos las utilidades del helper
-
-// --- COMPONENTE PRINCIPAL ---
+import {
+  AsignacionCargaHoraria,
+  DocenteCargaHoraria,
+  FuncionLectiva,
+  CursoId,
+  TotalesDocenteCarga,
+  ValidationResultCarga,
+} from '../../types';
 
 const CrearHorarios: React.FC = () => {
-  // Estados principales
-  const [docentes, setDocentes] = useState<Docente[]>([]);
-  const [asignaciones, setAsignaciones] = useState<Asignacion[]>([]);
-  const [filtros, setFiltros] = useState({
-    busqueda: '',
-    curso: '',
-    asignatura: '',
-    departamento: ''
-  });
+  // Añadir estilos CSS para animaciones y elementos personalizados
+  useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.innerHTML = styles;
+    document.head.appendChild(styleElement);
+    return () => {
+      document.head.removeChild(styleElement);
+    };
+  }, []);
+
+  const [docentes, setDocentes] = useState<DocenteCargaHoraria[]>([]);
+  const [asignaciones, setAsignaciones] = useState<AsignacionCargaHoraria[]>([]);
+  const [filtros, setFiltros] = useState({ busqueda: '', curso: '', asignatura: '', departamento: '' });
   const [mostrarResumen, setMostrarResumen] = useState(false);
   const [vistaResumen, setVistaResumen] = useState<'docentes' | 'cursos' | 'funciones' | 'totales'>('docentes');
-  const [validaciones, setValidaciones] = useState<ValidationResult[]>([]);
+  const [validaciones, setValidaciones] = useState<ValidationResultCarga[]>([]);
   const [loading, setLoading] = useState(false);
-  
-  // Estado para modal de nuevo docente
+
   const [showAddDocenteModal, setShowAddDocenteModal] = useState(false);
   const [nuevoDocente, setNuevoDocente] = useState<{
     nombre: string;
     email: string;
     departamento: string;
     horasContrato: number;
-    perfil: "PROFESORADO" | "SUBDIRECCION" | "COORDINACION_TP";
-  }>({
-    nombre: '',
-    email: '',
-    departamento: 'General',
-    horasContrato: 44,
-    perfil: 'PROFESORADO'
-  });
+    perfil: 'PROFESORADO' | 'SUBDIRECCION' | 'COORDINACION_TP';
+  }>({ nombre: '', email: '', departamento: 'General', horasContrato: 44, perfil: 'PROFESORADO' });
   const [docenteSearch, setDocenteSearch] = useState('');
 
-  // Suscripción a docentes con perfil PROFESORADO
   useEffect(() => {
-    const unsubscribe = subscribeToDocentes((docentesData) => {
-      setDocentes(docentesData);
-    });
-
-    return unsubscribe;
+    const unsub = subscribeToDocentes((d) => setDocentes(d));
+    return unsub;
   }, []);
-  
-  // Suscripción a asignaciones de carga horaria
+
   useEffect(() => {
-    const unsubscribe = subscribeToAsignacionesCarga((asignacionesData) => {
-      // Convertir las asignaciones de Firestore al formato local
-      const asignacionesConvertidas = asignacionesData.map(asig => {
-        // Convertir las funcionesNoLectivas (campo antiguo) a funcionesLectivas si es necesario
+    const unsub = subscribeToAsignacionesCarga((data) => {
+      const asignacionesConvertidas = data.map((asig) => {
         let funcionesLectivas = asig.funcionesLectivas || [];
-        
         if (!funcionesLectivas.length && asig.funcionesNoLectivas && asig.funcionesNoLectivas.length) {
           funcionesLectivas = asig.funcionesNoLectivas;
         } else if (!funcionesLectivas.length && asig.otraFuncion) {
-          funcionesLectivas = [{
-            id: `func_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            nombre: asig.otraFuncion,
-            horas: parseInt(asig.otraFuncion) || 0
-          }];
+          funcionesLectivas = [
+            { id: `func_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, nombre: asig.otraFuncion, horas: parseInt(asig.otraFuncion) || 0 },
+          ];
         }
-        
-        return {
-          ...asig,
-          funcionesLectivas
-        };
+        const { funcionesNoLectivas, otraFuncion, ...rest } = asig as any;
+        return { ...rest, funcionesLectivas } as AsignacionCargaHoraria;
       });
-      
       setAsignaciones(asignacionesConvertidas);
     });
-
-    return unsubscribe;
+    return unsub;
   }, []);
 
-  // Calcular totales por docente
   const totalesByDocente = useMemo(() => {
-    const totales: Record<string, TotalesDocente> = {};
-    docentes.forEach(docente => {
-      const asignacionesDocente = asignaciones.filter(a => a.docenteId === docente.id);
-      totales[docente.id] = calcularTotalesDocente(docente, asignacionesDocente);
+    const totales: Record<string, TotalesDocenteCarga> = {};
+    docentes.forEach((doc) => {
+      const asignacionesDocente = asignaciones.filter((a) => a.docenteId === doc.id);
+      totales[doc.id] = calcularTotalesDocente(doc, asignacionesDocente);
     });
     return totales;
   }, [docentes, asignaciones]);
 
-  // Validaciones en tiempo real
   useEffect(() => {
-    const nuevasValidaciones: ValidationResult[] = [];
-    docentes.forEach(docente => {
-      const validacionesDocente = validarDocente(docente, asignaciones);
-      nuevasValidaciones.push(...validacionesDocente);
-    });
-    setValidaciones(nuevasValidaciones);
+    const nuevas: ValidationResultCarga[] = [];
+    docentes.forEach((doc) => nuevas.push(...validarDocente(doc, asignaciones)));
+    setValidaciones(nuevas);
   }, [docentes, asignaciones]);
 
-  // Filtrar docentes por búsqueda
   const docentesFiltrados = useMemo(() => {
     if (!docenteSearch) return docentes;
-    
-    return docentes.filter(docente => 
-      docente.nombre.toLowerCase().includes(docenteSearch.toLowerCase()) ||
-      docente.email?.toLowerCase().includes(docenteSearch.toLowerCase())
-    );
+    return docentes.filter((d) => d.nombre.toLowerCase().includes(docenteSearch.toLowerCase()) || d.email?.toLowerCase().includes(docenteSearch.toLowerCase()));
   }, [docentes, docenteSearch]);
 
-  // Filtrar asignaciones
   const asignacionesFiltradas = useMemo(() => {
-    const filtradas = asignaciones.filter(asignacion => {
-      const docente = docentes.find(d => d.id === asignacion.docenteId);
-      if (!docente) return false;
-
-      if (filtros.busqueda && !docente.nombre.toLowerCase().includes(filtros.busqueda.toLowerCase())) {
-        return false;
-      }
-      if (filtros.asignatura && asignacion.asignaturaOModulo !== filtros.asignatura) {
-        return false;
-      }
-      if (filtros.departamento && docente.departamento !== filtros.departamento) {
-        return false;
-      }
+    const filtradas = asignaciones.filter((a) => {
+      const d = docentes.find((dd) => dd.id === a.docenteId);
+      if (!d) return false;
+      if (filtros.busqueda && !d.nombre.toLowerCase().includes(filtros.busqueda.toLowerCase())) return false;
+      if (filtros.asignatura && a.asignaturaOModulo !== filtros.asignatura) return false;
+      if (filtros.departamento && d.departamento !== filtros.departamento) return false;
       if (filtros.curso) {
-        const tieneCurso = Object.keys(asignacion.horasPorCurso).includes(filtros.curso);
+        const tieneCurso = Object.keys(a.horasPorCurso).includes(filtros.curso);
         if (!tieneCurso) return false;
       }
-
       return true;
     });
-    
-    // Ordenar por docenteId para agrupar visualmente las asignaciones del mismo docente
-    return filtradas.sort((a, b) => {
-      // Primero ordenar por docenteId
-      if (a.docenteId !== b.docenteId) {
-        return a.docenteId.localeCompare(b.docenteId);
-      }
-      // Si son del mismo docente, ordenar por asignatura
-      return (a.asignaturaOModulo || '').localeCompare(b.asignaturaOModulo || '');
-    });
+    return filtradas.sort((a, b) => (a.docenteId !== b.docenteId ? a.docenteId.localeCompare(b.docenteId) : (a.asignaturaOModulo || '').localeCompare(b.asignaturaOModulo || '')));
   }, [asignaciones, docentes, filtros]);
 
-  // Manejar creación de nuevo docente
   const handleCrearDocente = async () => {
     try {
       setLoading(true);
@@ -243,405 +210,268 @@ const CrearHorarios: React.FC = () => {
         setLoading(false);
         return;
       }
-      
       await crearNuevoDocente(nuevoDocente);
       setShowAddDocenteModal(false);
-      setNuevoDocente({
-        nombre: '',
-        email: '',
-        departamento: 'General',
-        horasContrato: 44,
-        perfil: 'PROFESORADO'
-      });
+      setNuevoDocente({ nombre: '', email: '', departamento: 'General', horasContrato: 44, perfil: 'PROFESORADO' });
       alert('Docente creado exitosamente');
-    } catch (error) {
-      console.error('Error al crear docente:', error);
+    } catch (e) {
+      console.error(e);
       alert('Error al crear docente');
     } finally {
       setLoading(false);
     }
   };
 
-  // Handlers
-  // Función para agregar una asignación general (al primer docente por defecto)
   const agregarAsignacion = useCallback(() => {
     if (docentes.length === 0) return;
-    
-    const nuevaAsignacion: Asignacion = {
+    const n: AsignacionCargaHoraria = {
       id: `asig_${Date.now()}`,
       docenteId: docentes[0].id,
       docenteNombre: docentes[0].nombre,
       asignaturaOModulo: ASIGNATURAS[0],
-      funcionesLectivas: [], // Inicializar con array vacío
+      funcionesLectivas: [],
       horasPorCurso: {},
-      horasXAsig: 0
+      horasXAsig: 0,
     };
-    
-    setAsignaciones(prev => [...prev, nuevaAsignacion]);
+    setAsignaciones((p) => [...p, n]);
   }, [docentes]);
-  
-  // Función para agregar una asignación a un docente específico
-  const agregarAsignaturaMismoDocente = useCallback((docenteId: string, docenteNombre: string) => {
-    // Buscar asignaturas que ya tiene el docente
-    const asignaturasActuales = asignaciones
-      .filter(a => a.docenteId === docenteId)
-      .map(a => a.asignaturaOModulo);
-    
-    // Buscar la primera asignatura que no tenga asignada
-    let nuevaAsignatura = ASIGNATURAS[0];
-    for (const asignatura of ASIGNATURAS) {
-      if (!asignaturasActuales.includes(asignatura)) {
-        nuevaAsignatura = asignatura;
-        break;
-      }
-    }
-    
-    const nuevaAsignacion: Asignacion = {
-      id: `asig_${Date.now()}`,
-      docenteId,
-      docenteNombre,
-      asignaturaOModulo: nuevaAsignatura,
-      funcionesLectivas: [], // Inicializar con array vacío
-      horasPorCurso: {},
-      horasXAsig: 0
-    };
-    
-    setAsignaciones(prev => [...prev, nuevaAsignacion]);
-  }, [asignaciones]);
 
-  const eliminarAsignacion = useCallback((id: string) => {
-    setAsignaciones(prev => prev.filter(a => a.id !== id));
-  }, []);
-
-  // Función para agregar una nueva función lectiva a una asignación
-  const agregarFuncionLectiva = useCallback((asignacionId: string) => {
-    setAsignaciones(prev => prev.map(asig => {
-      if (asig.id !== asignacionId) return asig;
-      
-      const nuevaFuncion: FuncionLectiva = {
-        id: `func_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        nombre: '',
-        horas: 0
-      };
-      
-      const funcionesActuales = asig.funcionesLectivas || [];
-      
-      return {
-        ...asig,
-        funcionesLectivas: [...funcionesActuales, nuevaFuncion]
-      };
-    }));
-  }, []);
-  
-  // Función para actualizar una función lectiva
-  const actualizarFuncionLectiva = useCallback((asignacionId: string, funcionId: string, campo: string, valor: any) => {
-    setAsignaciones(prev => prev.map(asig => {
-      if (asig.id !== asignacionId) return asig;
-      
-      const funcionesActualizadas = (asig.funcionesLectivas || []).map(func => {
-        if (func.id !== funcionId) return func;
-        return { ...func, [campo]: valor };
-      });
-      
-      return {
-        ...asig,
-        funcionesLectivas: funcionesActualizadas
-      };
-    }));
-  }, []);
-  
-  // Función para eliminar una función lectiva
-  const eliminarFuncionLectiva = useCallback((asignacionId: string, funcionId: string) => {
-    setAsignaciones(prev => prev.map(asig => {
-      if (asig.id !== asignacionId) return asig;
-      
-      const funcionesActualizadas = (asig.funcionesLectivas || []).filter(func => func.id !== funcionId);
-      
-      return {
-        ...asig,
-        funcionesLectivas: funcionesActualizadas
-      };
-    }));
-  }, []);
-
-  const actualizarAsignacion = useCallback((id: string, campo: string, valor: any) => {
-    setAsignaciones(prev => prev.map(asig => {
-      if (asig.id !== id) return asig;
-      
-      const nuevaAsignacion = { ...asig, [campo]: valor };
-      
-      // Si cambió el docente, actualizar el nombre
-      if (campo === 'docenteId') {
-        const docente = docentes.find(d => d.id === valor);
-        if (docente) {
-          nuevaAsignacion.docenteNombre = docente.nombre;
+  const agregarAsignaturaMismoDocente = useCallback(
+    (docenteId: string, docenteNombre: string) => {
+      const actuales = asignaciones.filter((a) => a.docenteId === docenteId).map((a) => a.asignaturaOModulo);
+      let nueva = ASIGNATURAS[0];
+      for (const a of ASIGNATURAS) {
+        if (!actuales.includes(a)) {
+          nueva = a;
+          break;
         }
       }
-      
-      // Recalcular horasXAsig si cambió horasPorCurso
-      if (campo === 'horasPorCurso') {
-        nuevaAsignacion.horasXAsig = sumarHorasCursos(valor);
-      }
-      
-      return nuevaAsignacion;
-    }));
-  }, [docentes]);
+      const n: AsignacionCargaHoraria = { id: `asig_${Date.now()}`, docenteId, docenteNombre, asignaturaOModulo: nueva, funcionesLectivas: [], horasPorCurso: {}, horasXAsig: 0 };
+      setAsignaciones((p) => [...p, n]);
+    },
+    [asignaciones]
+  );
+
+  const eliminarAsignacion = useCallback((id: string) => setAsignaciones((p) => p.filter((a) => a.id !== id)), []);
+
+  const agregarFuncionLectiva = useCallback((asignacionId: string) => {
+    setAsignaciones((prev) =>
+      prev.map((asig) => {
+        if (asig.id !== asignacionId) return asig;
+        const nueva: FuncionLectiva = { id: `func_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, nombre: '', horas: 0 };
+        return { ...asig, funcionesLectivas: [...(asig.funcionesLectivas || []), nueva] };
+      })
+    );
+  }, []);
+
+  const actualizarFuncionLectiva = useCallback((asignacionId: string, funcionId: string, campo: string, valor: any) => {
+    setAsignaciones((prev) =>
+      prev.map((asig) => {
+        if (asig.id !== asignacionId) return asig;
+        const funciones = (asig.funcionesLectivas || []).map((f) => (f.id === funcionId ? { ...f, [campo]: valor } : f));
+        return { ...asig, funcionesLectivas: funciones };
+      })
+    );
+  }, []);
+
+  const eliminarFuncionLectiva = useCallback((asignacionId: string, funcionId: string) => {
+    setAsignaciones((prev) =>
+      prev.map((asig) => {
+        if (asig.id !== asignacionId) return asig;
+        const funciones = (asig.funcionesLectivas || []).filter((f) => f.id !== funcionId);
+        return { ...asig, funcionesLectivas: funciones };
+      })
+    );
+  }, []);
+
+  const actualizarAsignacion = useCallback(
+    (id: string, campo: string, valor: any) => {
+      setAsignaciones((prev) =>
+        prev.map((asig) => {
+          if (asig.id !== id) return asig;
+          const nueva = { ...asig, [campo]: valor } as AsignacionCargaHoraria;
+          if (campo === 'docenteId') {
+            const doc = docentes.find((d) => d.id === valor);
+            if (doc) nueva.docenteNombre = doc.nombre;
+          }
+          if (campo === 'horasPorCurso') {
+            nueva.horasXAsig = sumarHorasCursos(valor);
+          }
+          return nueva;
+        })
+      );
+    },
+    [docentes]
+  );
 
   const actualizarHorasCurso = useCallback((asignacionId: string, curso: CursoId, horas: number) => {
-    setAsignaciones(prev => prev.map(asig => {
-      if (asig.id !== asignacionId) return asig;
-      
-      const nuevasHoras = { ...asig.horasPorCurso };
-      if (horas === 0) {
-        delete nuevasHoras[curso];
-      } else {
-        nuevasHoras[curso] = horas;
-      }
-      
-      return {
-        ...asig,
-        horasPorCurso: nuevasHoras,
-        horasXAsig: sumarHorasCursos(nuevasHoras)
-      };
-    }));
+    setAsignaciones((prev) =>
+      prev.map((asig) => {
+        if (asig.id !== asignacionId) return asig;
+        const nuevas = { ...asig.horasPorCurso };
+        if (horas === 0) delete nuevas[curso];
+        else nuevas[curso] = horas;
+        return { ...asig, horasPorCurso: nuevas, horasXAsig: sumarHorasCursos(nuevas) };
+      })
+    );
   }, []);
 
-  // Importar Excel
-  const importarExcel = useCallback((file: File) => {
-    setLoading(true);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const worksheet = workbook.Sheets['Docentes 2025'] || workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+  const importarExcel = useCallback(
+    (file: File) => {
+      setLoading(true);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const worksheet = workbook.Sheets['Docentes 2025'] || workbook.Sheets[workbook.SheetNames[0]];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
 
-        // Buscar fila de encabezado
-        let headerRowIndex = -1;
-        for (let i = 0; i < jsonData.length; i++) {
-          const row = jsonData[i];
-          if (row && row.some((cell: any) => 
-            typeof cell === 'string' && 
-            (cell.includes('Docente') || cell.includes('ASIGNATURA') || CURSOS.some(curso => cell.includes(curso.replace('º', ''))))
-          )) {
-            headerRowIndex = i;
-            break;
+          let headerRowIndex = -1;
+          for (let i = 0; i < jsonData.length; i++) {
+            const row = jsonData[i];
+            if (
+              row &&
+              row.some((cell: any) => typeof cell === 'string' && (cell.includes('Docente') || cell.includes('ASIGNATURA') || CURSOS.some((curso) => cell.includes(curso.replace('º', '')))))
+            ) {
+              headerRowIndex = i;
+              break;
+            }
           }
-        }
+          if (headerRowIndex === -1) {
+            alert('No se encontró la fila de encabezado en el archivo');
+            return;
+          }
 
-        if (headerRowIndex === -1) {
-          alert('No se encontró la fila de encabezado en el archivo');
-          return;
-        }
+          const headers = jsonData[headerRowIndex];
+          const nuevas: AsignacionCargaHoraria[] = [];
+          for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+            const row = jsonData[i];
+            if (!row || row.length === 0) continue;
+            const docenteNombre = row[headers.indexOf('Docente')] || '';
+            if (!docenteNombre) continue;
+            const docente = docentes.find((d) => d.nombre.toLowerCase().includes(docenteNombre.toLowerCase()));
+            if (!docente) continue;
 
-        const headers = jsonData[headerRowIndex];
-        const nuevasAsignaciones: Asignacion[] = [];
-
-        for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
-          const row = jsonData[i];
-          if (!row || row.length === 0) continue;
-
-          const docenteNombre = row[headers.indexOf('Docente')] || '';
-          if (!docenteNombre) continue;
-
-          // Buscar docente en la lista
-          const docente = docentes.find(d => d.nombre.toLowerCase().includes(docenteNombre.toLowerCase()));
-          if (!docente) continue;
-
-          const horasPorCurso: Partial<Record<CursoId, number>> = {};
-          
-          // Mapear columnas de cursos
-          headers.forEach((header: string, index: number) => {
-            if (typeof header === 'string') {
-              const cursoNormalizado = normalizarHeaderCurso(header.trim());
-              if (CURSOS.includes(cursoNormalizado as CursoId)) {
-                const horas = parseInt(row[index]) || 0;
-                if (horas > 0) {
-                  horasPorCurso[cursoNormalizado as CursoId] = horas;
+            const horasPorCurso: Partial<Record<CursoId, number>> = {};
+            headers.forEach((header: string, index: number) => {
+              if (typeof header === 'string') {
+                const cursoNormalizado = normalizarHeaderCurso(header.trim());
+                if ((CURSOS as string[]).includes(cursoNormalizado as string)) {
+                  const horas = parseInt(row[index]) || 0;
+                  if (horas > 0) horasPorCurso[cursoNormalizado as CursoId] = horas;
                 }
               }
-            }
-          });
-
-          // Procesar el campo de funciones lectivas
-          let funcionesLectivas: FuncionLectiva[] = [];
-          const funcionesTexto = row[headers.indexOf('FUNCIONES LECTIVAS')] || row[headers.indexOf('FUNCIONES NO LECTIVAS')] || row[headers.indexOf('OTRA FUNCIÓN')] || '';
-          
-          // Si hay funciones con el formato "nombre: horas" separadas por comas, procesarlas
-          if (funcionesTexto.includes(':')) {
-            const funcionesArray = funcionesTexto.split(',').map(f => f.trim());
-            funcionesLectivas = funcionesArray.map(funcStr => {
-              const [nombre, horasStr] = funcStr.split(':').map(p => p.trim());
-              const horas = parseInt(horasStr) || 0;
-              return {
-                id: `func_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                nombre,
-                horas
-              };
             });
-          }
-          // Si es un formato antiguo, mantener la compatibilidad
-          else if (funcionesTexto) {
-            funcionesLectivas = [{
-              id: `func_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-              nombre: funcionesTexto,
-              horas: 0
-            }];
-          }
-          
-          const asignacion: Asignacion = {
-            id: `import_${Date.now()}_${i}`,
-            docenteId: docente.id,
-            docenteNombre: docente.nombre,
-            asignaturaOModulo: row[headers.indexOf('ASIGNATURA O MÓDULO')] || '',
-            funcionesLectivas,
-            horasPorCurso,
-            horasXAsig: sumarHorasCursos(horasPorCurso)
-          };
 
-          nuevasAsignaciones.push(asignacion);
+            let funcionesLectivas: FuncionLectiva[] = [];
+            const funcionesTexto = row[headers.indexOf('FUNCIONES LECTIVAS')] || row[headers.indexOf('FUNCIONES NO LECTIVAS')] || row[headers.indexOf('OTRA FUNCIÓN')] || '';
+            if (typeof funcionesTexto === 'string' && funcionesTexto.includes(':')) {
+              funcionesLectivas = funcionesTexto.split(',').map((f: string) => {
+                const [nombre, horasStr] = f.split(':').map((p: string) => p.trim());
+                return { id: `func_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, nombre, horas: parseInt(horasStr) || 0 };
+              });
+            } else if (funcionesTexto) {
+              funcionesLectivas = [{ id: `func_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, nombre: funcionesTexto, horas: 0 }];
+            }
+
+            const asig: AsignacionCargaHoraria = {
+              id: `import_${Date.now()}_${i}`,
+              docenteId: docente.id,
+              docenteNombre: docente.nombre,
+              asignaturaOModulo: row[headers.indexOf('ASIGNATURA O MÓDULO')] || '',
+              funcionesLectivas,
+              horasPorCurso,
+              horasXAsig: sumarHorasCursos(horasPorCurso),
+            };
+            nuevas.push(asig);
+          }
+
+          setAsignaciones(nuevas);
+          alert(`Se importaron ${nuevas.length} asignaciones exitosamente`);
+        } catch (error) {
+          console.error('Error al importar:', error);
+          alert('Error al procesar el archivo. Verifique el formato.');
+        } finally {
+          setLoading(false);
         }
+      };
+      reader.readAsArrayBuffer(file);
+    },
+    [docentes]
+  );
 
-        setAsignaciones(nuevasAsignaciones);
-        alert(`Se importaron ${nuevasAsignaciones.length} asignaciones exitosamente`);
-      } catch (error) {
-        console.error('Error al importar:', error);
-        alert('Error al procesar el archivo. Verifique el formato.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  }, [docentes]);
-
-  // Exportar Excel
   const exportarExcel = useCallback(() => {
-    const datos = asignaciones.map(asig => {
-      const docente = docentes.find(d => d.id === asig.docenteId);
-      const totales = totalesByDocente[asig.docenteId];
-      
-      // Determinar la descripción de funciones para Excel
+    const datos = asignaciones.map((asig) => {
+      const docente = docentes.find((d) => d.id === asig.docenteId);
+  const totales = totalesByDocente[asig.docenteId];
       let funcionesTexto = '';
-      
       if (asig.funcionesLectivas && asig.funcionesLectivas.length > 0) {
-        funcionesTexto = asig.funcionesLectivas.map(f => `${f.nombre}: ${f.horas}h`).join(', ');
-      } else if (asig.funcionesNoLectivas && asig.funcionesNoLectivas.length > 0) {
-        // Para compatibilidad con datos anteriores
-        funcionesTexto = asig.funcionesNoLectivas.map(f => `${f.nombre}: ${f.horas}h`).join(', ');
-      } else if (asig.otraFuncion) {
-        funcionesTexto = asig.otraFuncion;
+        funcionesTexto = asig.funcionesLectivas.map((f) => `${f.nombre}: ${f.horas}h`).join(', ');
+  } else if ((asig as any).funcionesNoLectivas && (asig as any).funcionesNoLectivas.length > 0) {
+        funcionesTexto = (asig as any).funcionesNoLectivas.map((f: any) => `${f.nombre}: ${f.horas}h`).join(', ');
+      } else if ((asig as any).otraFuncion) {
+        funcionesTexto = (asig as any).otraFuncion;
       }
-      
       const fila: any = {
-        'Docente': asig.docenteNombre,
+        Docente: asig.docenteNombre,
         'ASIGNATURA O MÓDULO': asig.asignaturaOModulo || '',
         'FUNCIONES LECTIVAS': funcionesTexto,
-        'HORAS X ASIG.': asig.horasXAsig || 0
+        'HORAS X ASIG.': asig.horasXAsig || 0,
       };
-
-      // Agregar columnas por curso
-      CURSOS.forEach(curso => {
-        fila[curso] = asig.horasPorCurso[curso] || 0;
-      });
-
+      CURSOS.forEach((curso) => (fila[curso] = asig.horasPorCurso[curso as CursoId] || 0));
       if (totales) {
         fila['HORAS LECTIVAS (HA)'] = totales.HA;
         fila['HORAS NO LECTIVAS (HB)'] = totales.HB;
         fila['HORAS CONTRATO'] = docente?.horasContrato || 0;
       }
-
       return fila;
     });
-
     const ws = XLSX.utils.json_to_sheet(datos);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Horarios');
     XLSX.writeFile(wb, `horarios_${new Date().toISOString().split('T')[0]}.xlsx`);
   }, [asignaciones, docentes, totalesByDocente]);
 
-  // Guardar
   const guardar = useCallback(async () => {
-    const errores = validaciones.filter(v => v.tipo === 'error');
+    const errores = validaciones.filter((v) => v.tipo === 'error');
     if (errores.length > 0) {
       alert('No se puede guardar. Hay errores que deben corregirse primero.');
       return;
     }
-    
     try {
       setLoading(true);
-      
-      // Recopilar asignaciones para actualizar
-      const asignacionesConId: AsignacionCargaHoraria[] = [];
-      // Recopilar asignaciones nuevas para agregar
-      const asignacionesNuevas: Omit<AsignacionCargaHoraria, 'id'>[] = [];
-      
-      // Procesar cada asignación
-      asignaciones.forEach(asignacion => {
-        // Asegurarse de que todas las asignaciones tengan el campo funcionesLectivas
-        // y convertir otraFuncion o funcionesNoLectivas (antiguo) a funcionesLectivas si es necesario
+      const conId: AsignacionCargaHoraria[] = [];
+      const nuevas: Omit<AsignacionCargaHoraria, 'id'>[] = [];
+      asignaciones.forEach((asignacion) => {
         let funcionesLectivasActualizadas = asignacion.funcionesLectivas || [];
-        
-        // Si hay funcionesNoLectivas pero no hay funcionesLectivas, migrar al nuevo formato
-        if (asignacion.funcionesNoLectivas && asignacion.funcionesNoLectivas.length > 0 && funcionesLectivasActualizadas.length === 0) {
-          funcionesLectivasActualizadas = asignacion.funcionesNoLectivas.map(f => ({
-            id: `func_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            nombre: f.nombre,
-            horas: f.horas
-          }));
+        if ((asignacion as any).funcionesNoLectivas && (asignacion as any).funcionesNoLectivas.length > 0 && funcionesLectivasActualizadas.length === 0) {
+          funcionesLectivasActualizadas = (asignacion as any).funcionesNoLectivas.map((f: any) => ({ id: `func_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, nombre: f.nombre, horas: f.horas }));
+        } else if ((asignacion as any).otraFuncion && funcionesLectivasActualizadas.length === 0) {
+          funcionesLectivasActualizadas = [
+            { id: `func_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, nombre: (asignacion as any).otraFuncion, horas: parseInt((asignacion as any).otraFuncion) || 0 },
+          ];
         }
-        // Si hay otraFuncion pero no hay funcionesLectivas, convertir a nuevo formato
-        else if (asignacion.otraFuncion && funcionesLectivasActualizadas.length === 0) {
-          funcionesLectivasActualizadas = [{
-            id: `func_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            nombre: asignacion.otraFuncion,
-            horas: parseInt(asignacion.otraFuncion) || 0
-          }];
-        }
-        
-        // Eliminamos los campos antiguos para no guardarlos en Firestore
-        const { funcionesNoLectivas, otraFuncion, ...restSinCamposAntiguos } = asignacion;
-        
-        // Preparar asignación actualizada
-        const asignacionActualizada = {
-          ...restSinCamposAntiguos,
-          funcionesLectivas: funcionesLectivasActualizadas
-        };
-        
-        // Si tiene ID que comienza con "asig_" o "import_", es una asignación nueva
+        const { funcionesNoLectivas, otraFuncion, ...rest } = asignacion as any;
+        const asignacionActualizada: any = { ...rest, funcionesLectivas: funcionesLectivasActualizadas };
         if (asignacion.id.startsWith('asig_') || asignacion.id.startsWith('import_')) {
           const { id, ...sinId } = asignacionActualizada;
-          asignacionesNuevas.push(sinId);
+          nuevas.push(sinId);
         } else {
-          asignacionesConId.push(asignacionActualizada);
+          conId.push(asignacionActualizada);
         }
       });
-      
-      // Eliminar asignaciones existentes y añadir todas las asignaciones nuevamente
-      // Esto asegura que los cambios se reflejen completamente
-      if (asignacionesConId.length > 0 || asignacionesNuevas.length > 0) {
-        // Convertir asignaciones con ID para guardarlas también
-        const asignacionesParaGuardar = [
-          ...asignacionesConId.map(({ id, ...rest }) => rest),
-          ...asignacionesNuevas
-        ];
-        
-        // Guardar en Firestore reemplazando todo
-        await saveAsignacionesBatch(asignacionesParaGuardar, true);
-        
-        alert('Horarios guardados exitosamente');
-      } else {
-        alert('No hay cambios para guardar');
-      }
+      const paraGuardar = [...conId.map(({ id, ...rest }) => rest), ...nuevas];
+      await saveAsignacionesBatch(paraGuardar, true);
+      alert('Horarios guardados exitosamente');
     } catch (error) {
       console.error('Error al guardar horarios:', error);
-      alert(`Error al guardar los horarios: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+      alert('Error al guardar los horarios');
     } finally {
       setLoading(false);
     }
   }, [validaciones, asignaciones]);
 
-  // Obtener color de semáforo
   const getSemaforoColor = (docenteId: string) => {
     const totales = totalesByDocente[docenteId];
     if (!totales) return 'gray';
@@ -650,102 +480,155 @@ const CrearHorarios: React.FC = () => {
     return 'green';
   };
 
-  // Modal para agregar docente
   const AddDocenteModal = () => {
     if (!showAddDocenteModal) return null;
-    
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-96 max-w-full">
-          <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Añadir Nuevo Docente</h2>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Nombre Completo *
-              </label>
-              <input
-                type="text"
-                value={nuevoDocente.nombre}
-                onChange={e => setNuevoDocente({...nuevoDocente, nombre: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg"
-                placeholder="Nombre Apellido"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Email *
-              </label>
-              <input
-                type="email"
-                value={nuevoDocente.email}
-                onChange={e => setNuevoDocente({...nuevoDocente, email: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg"
-                placeholder="correo@ejemplo.com"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Departamento
-              </label>
-              <input
-                type="text"
-                value={nuevoDocente.departamento}
-                onChange={e => setNuevoDocente({...nuevoDocente, departamento: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg"
-                placeholder="Departamento"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Horas Contrato
-              </label>
-              <input
-                type="number"
-                value={nuevoDocente.horasContrato}
-                onChange={e => setNuevoDocente({...nuevoDocente, horasContrato: parseInt(e.target.value) || 0})}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg"
-                min="1"
-                max="44"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Perfil
-              </label>
-              <select
-                value={nuevoDocente.perfil}
-                onChange={e => setNuevoDocente({...nuevoDocente, perfil: e.target.value as "PROFESORADO" | "SUBDIRECCION" | "COORDINACION_TP"})}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-96 max-w-full overflow-hidden animate-scaleIn">
+          {/* Encabezado del modal */}
+          <div className="p-5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <UserPlus className="w-5 h-5" />
+                Añadir Nuevo Docente
+              </h2>
+              <button 
+                onClick={() => setShowAddDocenteModal(false)} 
+                className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/20 transition-all duration-200"
+                disabled={loading}
               >
-                <option value="PROFESORADO">Profesorado</option>
-                <option value="SUBDIRECCION">Subdirección</option>
-                <option value="COORDINACION_TP">Coordinación TP</option>
-              </select>
+                <CloseIcon className="w-5 h-5" />
+              </button>
             </div>
           </div>
           
-          <div className="mt-6 flex justify-end gap-2">
-            <button
-              onClick={() => setShowAddDocenteModal(false)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300"
-              disabled={loading}
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleCrearDocente}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              disabled={loading}
-            >
-              {loading ? 'Guardando...' : 'Guardar'}
-            </button>
+          {/* Cuerpo del modal */}
+          <div className="p-6">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                  Nombre Completo
+                </label>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    value={nuevoDocente.nombre} 
+                    onChange={(e) => setNuevoDocente({ ...nuevoDocente, nombre: e.target.value })} 
+                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200" 
+                    placeholder="Nombre Apellido" 
+                    required 
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                  Email
+                </label>
+                <div className="relative">
+                  <input 
+                    type="email" 
+                    value={nuevoDocente.email} 
+                    onChange={(e) => setNuevoDocente({ ...nuevoDocente, email: e.target.value })} 
+                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200" 
+                    placeholder="correo@ejemplo.com" 
+                    required 
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  Departamento
+                </label>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    value={nuevoDocente.departamento} 
+                    onChange={(e) => setNuevoDocente({ ...nuevoDocente, departamento: e.target.value })} 
+                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200" 
+                    placeholder="Ej: Matemáticas, Lenguaje, etc." 
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  Horas Contrato
+                </label>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    value={nuevoDocente.horasContrato} 
+                    onChange={(e) => setNuevoDocente({ ...nuevoDocente, horasContrato: parseInt(e.target.value) || 0 })} 
+                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200" 
+                    min={1} 
+                    max={44} 
+                  />
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs">
+                    horas
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  Perfil
+                </label>
+                <div className="relative">
+                  <select 
+                    value={nuevoDocente.perfil} 
+                    onChange={(e) => setNuevoDocente({ ...nuevoDocente, perfil: e.target.value as any })} 
+                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 appearance-none"
+                  >
+                    <option value="PROFESORADO">Profesorado</option>
+                    <option value="SUBDIRECCION">Subdirección</option>
+                    <option value="COORDINACION_TP">Coordinación TP</option>
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                    <svg className="w-4 h-4 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-8 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowAddDocenteModal(false)} 
+                className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200" 
+                disabled={loading}
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleCrearDocente} 
+                className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm disabled:opacity-50 transition-all duration-200 flex items-center gap-2" 
+                disabled={loading || !nuevoDocente.nombre || !nuevoDocente.email}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Guardando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Guardar</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+          
+          <div className="bg-gray-50 dark:bg-gray-750 px-6 py-3 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-1">
+              <HelpCircle className="w-3.5 h-3.5" />
+              <span>Los campos marcados con <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span> son obligatorios</span>
+            </div>
           </div>
         </div>
       </div>
@@ -754,387 +637,453 @@ const CrearHorarios: React.FC = () => {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      {/* Encabezado */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-          Crear Horarios
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Gestión de carga horaria docente con validación 65%/35%
-        </p>
+      {/* Header con diseño moderno */}
+      <div className="mb-6 bg-gradient-to-r from-blue-600 to-indigo-700 dark:from-blue-800 dark:to-indigo-900 rounded-xl p-6 shadow-lg relative overflow-hidden">
+        <div className="absolute inset-0 bg-white dark:bg-gray-900 opacity-5">
+          <div className="w-96 h-96 rounded-full bg-white dark:bg-blue-600 absolute -top-20 -right-20 opacity-20"></div>
+          <div className="w-64 h-64 rounded-full bg-white dark:bg-indigo-600 absolute -bottom-10 -left-10 opacity-20"></div>
+        </div>
+        <div className="relative z-10">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-white mb-2 flex items-center">
+                <Calendar className="mr-3 h-8 w-8" />
+                Crear Horarios
+              </h1>
+              <p className="text-blue-100 dark:text-blue-200 max-w-2xl">
+                Sistema de gestión de carga horaria docente con validación 65%/35% y visualización en tiempo real
+              </p>
+            </div>
+            <div className="mt-4 md:mt-0 flex gap-3">
+              <button 
+                onClick={() => setMostrarResumen(true)} 
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white text-sm rounded-lg transition-all duration-200 border border-white border-opacity-30"
+              >
+                <PieChart className="w-4 h-4" />
+                <span>Ver estadísticas</span>
+              </button>
+              <button 
+                onClick={guardar} 
+                disabled={validaciones.some((v) => v.tipo === 'error') || loading} 
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+              >
+                <Save className="w-4 h-4" />
+                <span>{loading ? 'Guardando...' : 'Guardar cambios'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
-        <div className="flex flex-wrap gap-4 items-center justify-between">
-          <div className="flex flex-wrap gap-4 items-center">
-            {/* Buscador de Docentes */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Buscar docente..."
-                className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                value={docenteSearch}
-                onChange={(e) => setDocenteSearch(e.target.value)}
-              />
+      {/* Panel de controles con filtros y acciones */}
+      <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden border border-gray-100 dark:border-gray-700">
+        {/* Título del panel de control */}
+        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-750 border-b border-gray-100 dark:border-gray-700 flex items-center">
+          <FilterIcon className="w-5 h-5 text-gray-500 dark:text-gray-400 mr-2" />
+          <h3 className="font-medium text-gray-700 dark:text-gray-300">Filtros y acciones</h3>
+        </div>
+        
+        {/* Contenido del panel con filtros y botones */}
+        <div className="p-5">
+          {/* Fila de filtros */}
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+            <div className="flex-1 md:max-w-xs">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="text-gray-400 w-4 h-4" />
+                </div>
+                <input 
+                  type="text" 
+                  placeholder="Buscar docente..." 
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200" 
+                  value={docenteSearch} 
+                  onChange={(e) => setDocenteSearch(e.target.value)} 
+                />
+              </div>
             </div>
             
-            {/* Botón para agregar docente */}
-            <button
-              onClick={() => setShowAddDocenteModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-            >
-              <UserPlus className="w-4 h-4" />
-              Nuevo Docente
-            </button>
-
-            {/* Filtros */}
-            <select
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              value={filtros.curso}
-              onChange={(e) => setFiltros(prev => ({ ...prev, curso: e.target.value }))}
-            >
-              <option value="">Todos los cursos</option>
-              {CURSOS.map(curso => (
-                <option key={curso} value={curso}>{curso}</option>
-              ))}
-            </select>
-
-            <select
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              value={filtros.asignatura}
-              onChange={(e) => setFiltros(prev => ({ ...prev, asignatura: e.target.value }))}
-            >
-              <option value="">Todas las asignaturas</option>
-              {ASIGNATURAS.map(asig => (
-                <option key={asig} value={asig}>{asig}</option>
-              ))}
-            </select>
+            <div className="flex gap-3 flex-wrap">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <School className="text-gray-400 w-4 h-4" />
+                </div>
+                <select 
+                  className="pl-10 pr-8 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 min-w-[150px]"
+                  value={filtros.curso} 
+                  onChange={(e) => setFiltros((p) => ({ ...p, curso: e.target.value }))}
+                >
+                  <option value="">Todos los cursos</option>
+                  {CURSOS.map((curso) => (
+                    <option key={curso} value={curso}>{curso}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <BookOpen className="text-gray-400 w-4 h-4" />
+                </div>
+                <select 
+                  className="pl-10 pr-8 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 min-w-[180px]"
+                  value={filtros.asignatura} 
+                  onChange={(e) => setFiltros((p) => ({ ...p, asignatura: e.target.value }))}
+                >
+                  <option value="">Todas las asignaturas</option>
+                  {ASIGNATURAS.map((asig) => (
+                    <option key={asig} value={asig}>{asig}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
-
-          {/* Botones de acción */}
-          <div className="flex gap-2">
-            <button
-              onClick={agregarAsignacion}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          
+          {/* Fila de botones de acción */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <button 
+              onClick={() => setShowAddDocenteModal(true)} 
+              className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-lg transition-all duration-200 shadow-sm group"
             >
-              <Plus className="w-4 h-4" />
-              Agregar docente con asignatura
+              <UserPlus className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
+              <span className="text-xs font-medium mt-1">Nuevo Docente</span>
             </button>
-
-            <label className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 cursor-pointer">
-              <Upload className="w-4 h-4" />
-              Importar
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) importarExcel(file);
-                }}
-              />
+            
+            <button 
+              onClick={agregarAsignacion} 
+              className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg transition-all duration-200 shadow-sm group"
+            >
+              <Plus className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
+              <span className="text-xs font-medium mt-1">Agregar Asignatura</span>
+            </button>
+            
+            <label 
+              className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white rounded-lg transition-all duration-200 shadow-sm cursor-pointer group"
+            >
+              <Upload className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
+              <span className="text-xs font-medium mt-1">Importar Excel</span>
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => e.target.files?.[0] && importarExcel(e.target.files[0])} />
             </label>
-
-            <button
-              onClick={exportarExcel}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+            
+            <button 
+              onClick={exportarExcel} 
+              className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-purple-500 to-violet-600 hover:from-purple-600 hover:to-violet-700 text-white rounded-lg transition-all duration-200 shadow-sm group"
             >
-              <Download className="w-4 h-4" />
-              Exportar
+              <FileSpreadsheet className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
+              <span className="text-xs font-medium mt-1">Exportar Excel</span>
             </button>
-
-            <button
-              onClick={() => setMostrarResumen(!mostrarResumen)}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+            
+            <button 
+              onClick={() => setMostrarResumen(true)} 
+              className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white rounded-lg transition-all duration-200 shadow-sm group"
             >
-              <BarChart3 className="w-4 h-4" />
-              Resumen
+              <BarChart3 className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
+              <span className="text-xs font-medium mt-1">Abrir Resumen</span>
             </button>
-
-            <button
-              onClick={guardar}
-              disabled={validaciones.filter(v => v.tipo === 'error').length > 0 || loading}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            
+            <button 
+              onClick={guardar} 
+              disabled={validaciones.some((v) => v.tipo === 'error') || loading} 
+              className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-lg transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-amber-500 disabled:hover:to-orange-600 group"
             >
-              <Save className="w-4 h-4" />
-              {loading ? 'Guardando...' : 'Guardar'}
+              {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Save className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
+              )}
+              <span className="text-xs font-medium mt-1">{loading ? 'Guardando...' : 'Guardar'}</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Panel de validaciones */}
       {validaciones.length > 0 && (
-        <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
-          <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-            <AlertCircle className="w-5 h-5" />
-            Validaciones ({validaciones.length})
-          </h3>
-          <div className="space-y-2 max-h-32 overflow-y-auto">
-            {validaciones.map((validacion, index) => (
-              <div
-                key={index}
-                className={`flex items-center gap-2 p-2 rounded ${
-                  validacion.tipo === 'error' 
-                    ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300' 
-                    : 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300'
-                }`}
-              >
-                {validacion.tipo === 'error' ? (
-                  <XCircle className="w-4 h-4" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4" />
-                )}
-                <span className="text-sm">{validacion.mensaje}</span>
-              </div>
-            ))}
+        <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden border border-gray-100 dark:border-gray-700">
+          <div className="px-6 py-4 bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-800/30 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" /> 
+              <h3 className="font-medium text-red-700 dark:text-red-300">Validaciones y Alertas ({validaciones.length})</h3>
+            </div>
+            <div className="flex gap-2">
+              <span className="px-2 py-1 bg-red-100 dark:bg-red-800/30 text-red-700 dark:text-red-300 text-xs rounded-md flex items-center gap-1">
+                <XCircle className="w-3 h-3" /> {validaciones.filter(v => v.tipo === 'error').length} Errores
+              </span>
+              <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-800/30 text-yellow-700 dark:text-yellow-300 text-xs rounded-md flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> {validaciones.filter(v => v.tipo === 'warning').length} Advertencias
+              </span>
+            </div>
+          </div>
+          <div className="p-5">
+            <div className="space-y-2.5 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+              {validaciones.map((v, i) => (
+                <div key={i} className={`flex items-center gap-2 p-3 rounded-lg shadow-sm ${
+                  v.tipo === 'error' 
+                    ? 'bg-red-50 dark:bg-red-900/10 text-red-700 dark:text-red-300 border-l-4 border-red-500 dark:border-red-600' 
+                    : 'bg-yellow-50 dark:bg-yellow-900/10 text-yellow-700 dark:text-yellow-300 border-l-4 border-yellow-500 dark:border-yellow-600'
+                }`}>
+                  {v.tipo === 'error' ? <XCircle className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
+                  <span className="text-sm">{v.mensaje}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Tabla principal */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
+      {/* Contenedor principal de la tabla con mejor manejo responsivo */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-750 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+          <div className="flex items-center">
+            <Briefcase className="w-5 h-5 text-gray-500 dark:text-gray-400 mr-2" />
+            <h3 className="font-medium text-gray-700 dark:text-gray-300">Asignaciones de Carga Horaria</h3>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+              <span className="text-xs text-gray-500 dark:text-gray-400">Correcto</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full bg-yellow-500"></div>
+              <span className="text-xs text-gray-500 dark:text-gray-400">Advertencia</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
+              <span className="text-xs text-gray-500 dark:text-gray-400">Error</span>
+            </div>
+          </div>
+        </div>
+        <div className="overflow-x-auto custom-scrollbar">
+          {/* Agregar clase min-w-[1000px] para forzar el scroll horizontal en dispositivos pequeños */}
+          <table className="w-full min-w-[1000px]">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider sticky left-0 bg-gray-50 dark:bg-gray-700">
-                  Estado
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider sticky left-0 z-20 bg-gray-50 dark:bg-gray-700 shadow-sm">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-500"></div>
+                    <span>Estado</span>
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider sticky left-12 bg-gray-50 dark:bg-gray-700">
-                  Docente
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider sticky left-14 z-20 bg-gray-50 dark:bg-gray-700 shadow-sm">
+                  <div className="flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Docente</span>
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Asignatura/Módulo
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <div className="flex items-center gap-1.5">
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Asignatura</span>
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Funciones Lectivas
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <div className="flex items-center gap-1.5">
+                    <UserCog className="w-3.5 h-3.5" />
+                    <span>Func. Lectivas</span>
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Horas X Asig.
+                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <div className="flex items-center justify-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Hrs</span>
+                  </div>
                 </th>
-                {CURSOS.map(curso => (
-                  <th key={curso} className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    {curso}
-                  </th>
-                ))}
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  HA/HB
+                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" colSpan={CURSOS.length}>
+                  <div className="flex justify-center items-center gap-1.5">
+                    <School className="w-3.5 h-3.5" />
+                    <span>Cursos</span>
+                    <span className="ml-1 text-xs text-gray-400 font-normal">(horas por curso)</span>
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Acciones
+                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <div className="flex items-center justify-center gap-1.5">
+                    <PieChart className="w-3.5 h-3.5" />
+                    <span>HA/HB</span>
+                  </div>
+                </th>
+                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider sticky right-0 z-20 bg-gray-50 dark:bg-gray-700 shadow-sm">
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>Acciones</span>
+                  </div>
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {asignacionesFiltradas.map((asignacion, index) => {
-                const docente = docentes.find(d => d.id === asignacion.docenteId);
                 const totales = totalesByDocente[asignacion.docenteId];
                 const semaforoColor = getSemaforoColor(asignacion.docenteId);
-                
-                // Determinar si es la primera asignación del docente (para mostrar borde superior)
-                const esPrimeraAsignacionDocente = index === 0 || 
-                  asignacionesFiltradas[index - 1].docenteId !== asignacion.docenteId;
-                
-                // Determinar si es la última asignación del docente (para mostrar borde inferior)
-                const esUltimaAsignacionDocente = index === asignacionesFiltradas.length - 1 || 
-                  asignacionesFiltradas[index + 1].docenteId !== asignacion.docenteId;
-                
-                // Determinar cuántas asignaciones tiene este docente
-                const asignacionesDocente = asignacionesFiltradas.filter(a => a.docenteId === asignacion.docenteId);
+                const esPrimeraAsignacionDocente = index === 0 || asignacionesFiltradas[index - 1].docenteId !== asignacion.docenteId;
+                const esUltimaAsignacionDocente = index === asignacionesFiltradas.length - 1 || asignacionesFiltradas[index + 1].docenteId !== asignacion.docenteId;
+                const asignacionesDocente = asignacionesFiltradas.filter((a) => a.docenteId === asignacion.docenteId);
                 const tieneMultiplesAsignaturas = asignacionesDocente.length > 1;
-                
-                // Determinar estilo de borde y fondo
-                let estiloFila = "hover:bg-gray-50 dark:hover:bg-gray-750 ";
-                
+                let estiloFila = 'hover:bg-gray-50 dark:hover:bg-gray-750 ';
                 if (tieneMultiplesAsignaturas) {
                   if (esPrimeraAsignacionDocente) {
-                    estiloFila += "border-t-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 ";
+                    estiloFila += 'border-t-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 ';
                   } else {
-                    estiloFila += "bg-blue-50 dark:bg-blue-900/10 ";
+                    estiloFila += 'bg-blue-50 dark:bg-blue-900/10 ';
                   }
-                  
                   if (esUltimaAsignacionDocente) {
-                    estiloFila += "border-b-2 border-blue-200 dark:border-blue-800 mb-1 ";
+                    estiloFila += 'border-b-2 border-blue-200 dark:border-blue-800 mb-1 ';
                   }
                 }
-
                 return (
                   <tr key={asignacion.id} className={estiloFila}>
-                    {/* Estado (semáforo) */}
-                    <td className="px-4 py-4 sticky left-0 bg-white dark:bg-gray-800">
+                    {/* Estado - Columna sticky */}
+                    <td className="px-1 py-2 sticky left-0 z-10 bg-inherit">
                       <div className="flex flex-col items-center">
-                        <div className={`w-3 h-3 rounded-full ${
-                          semaforoColor === 'green' ? 'bg-green-500' :
-                          semaforoColor === 'yellow' ? 'bg-yellow-500' :
-                          semaforoColor === 'red' ? 'bg-red-500' : 'bg-gray-500'
-                        }`} />
+                        <div 
+                          className={`w-3 h-3 rounded-full ${
+                            semaforoColor === 'green' ? 'bg-green-500' : 
+                            semaforoColor === 'yellow' ? 'bg-yellow-500' : 
+                            semaforoColor === 'red' ? 'bg-red-500' : 'bg-gray-500'
+                          }`} 
+                        />
                         {tieneMultiplesAsignaturas && esPrimeraAsignacionDocente && (
-                          <span className="text-xs text-blue-600 dark:text-blue-400 font-medium mt-1">
-                            {asignacionesDocente.length} asig.
-                          </span>
+                          <span className="text-xs text-blue-600 dark:text-blue-400 font-medium mt-1">{asignacionesDocente.length}</span>
                         )}
                       </div>
                     </td>
-
-                    {/* Docente */}
-                    <td className="px-4 py-4 sticky left-12 bg-white dark:bg-gray-800">
-                      {/* Si tiene múltiples asignaturas, solo mostrar el selector en la primera fila */}
-                      {(!tieneMultiplesAsignaturas || esPrimeraAsignacionDocente) ? (
+                    
+                    {/* Docente - Columna sticky */}
+                    <td className="px-1 py-2 sticky left-10 z-10 bg-inherit">
+                      {!tieneMultiplesAsignaturas || esPrimeraAsignacionDocente ? (
                         <div>
-                          <select
-                            value={asignacion.docenteId}
+                          <select 
+                            value={asignacion.docenteId} 
                             onChange={(e) => actualizarAsignacion(asignacion.id, 'docenteId', e.target.value)}
-                            className={`w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm ${tieneMultiplesAsignaturas ? 'font-medium' : ''}`}
+                            className={`w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs ${tieneMultiplesAsignaturas ? 'font-medium' : ''}`}
                           >
-                            {docentesFiltrados.length > 0 ? docentesFiltrados.map(docente => (
-                              <option key={docente.id} value={docente.id}>
-                                {docente.nombre} ({docente.perfil})
-                              </option>
-                            )) : docentes.map(docente => (
-                              <option key={docente.id} value={docente.id}>
-                                {docente.nombre} ({docente.perfil})
-                              </option>
+                            {(docentesFiltrados.length > 0 ? docentesFiltrados : docentes).map((d) => (
+                              <option key={d.id} value={d.id}>{d.nombre}</option>
                             ))}
                           </select>
-                          {tieneMultiplesAsignaturas && (
+                          {tieneMultiplesAsignaturas && 
                             <div className="mt-1 text-xs text-blue-600 dark:text-blue-400">
-                              {asignacionesDocente.length} asignaturas
+                              {asignacionesDocente.length} asig.
                             </div>
-                          )}
+                          }
                         </div>
                       ) : (
-                        <div className="pl-6 italic text-gray-500 dark:text-gray-400 text-sm">
-                          ↳ Misma docente
-                        </div>
+                        <div className="pl-1 italic text-gray-500 dark:text-gray-400 text-xs whitespace-nowrap">↳ Mismo</div>
                       )}
                     </td>
-
-                    {/* Asignatura/Módulo */}
-                    <td className="px-4 py-4">
-                      <select
-                        value={asignacion.asignaturaOModulo || ''}
+                    
+                    {/* Asignatura */}
+                    <td className="px-1 py-2">
+                      <select 
+                        value={asignacion.asignaturaOModulo || ''} 
                         onChange={(e) => actualizarAsignacion(asignacion.id, 'asignaturaOModulo', e.target.value)}
-                        className={`w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm ${tieneMultiplesAsignaturas ? 'border-blue-300 dark:border-blue-700' : ''}`}
+                        className={`w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs ${tieneMultiplesAsignaturas ? 'border-blue-300 dark:border-blue-700' : ''}`}
                       >
                         <option value="">Seleccionar...</option>
-                        {ASIGNATURAS.map(asig => (
+                        {ASIGNATURAS.map((asig) => (
                           <option key={asig} value={asig}>{asig}</option>
                         ))}
                       </select>
-                      {tieneMultiplesAsignaturas && !esPrimeraAsignacionDocente && (
-                        <div className="mt-1 text-xs text-blue-600 dark:text-blue-400">
-                          Asignatura adicional
-                        </div>
-                      )}
+                      {tieneMultiplesAsignaturas && !esPrimeraAsignacionDocente && 
+                        <div className="mt-1 text-xs text-blue-600 dark:text-blue-400">Adicional</div>
+                      }
                     </td>
-
-                    {/* Funciones no lectivas */}
-                    <td className="px-4 py-4">
-                      <div className="space-y-2">
-                        {/* Lista de funciones existentes */}
+                    
+                    {/* Funciones lectivas - Diseño más compacto */}
+                    <td className="px-1 py-2">
+                      <div className="space-y-1 w-full min-w-[200px]">
                         {(asignacion.funcionesLectivas || []).map((funcion) => (
-                          <div key={funcion.id} className="flex gap-2 items-center">
-                            <input
-                              type="text"
-                              value={funcion.nombre}
+                          <div key={funcion.id} className="flex gap-1 items-center">
+                            <input 
+                              type="text" 
+                              value={funcion.nombre} 
                               onChange={(e) => actualizarFuncionLectiva(asignacion.id, funcion.id, 'nombre', e.target.value)}
-                              placeholder="Nombre de función"
-                              className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                              placeholder="Nombre" 
+                              className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-l bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs"
                             />
-                            <input
-                              type="number"
-                              value={funcion.horas}
+                            <input 
+                              type="number" 
+                              value={funcion.horas} 
                               onChange={(e) => actualizarFuncionLectiva(asignacion.id, funcion.id, 'horas', parseInt(e.target.value) || 0)}
-                              min="0"
-                              max="44"
-                              className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm text-center"
+                              min={0} max={44} 
+                              className="w-10 px-1 py-1 border-y border-r border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center"
                             />
-                            <button
+                            <button 
                               onClick={() => eliminarFuncionLectiva(asignacion.id, funcion.id)}
-                              className="text-red-500 hover:text-red-700"
+                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-r" 
                               title="Eliminar función"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
                         ))}
-                        
-                        {/* Para mantener compatibilidad con el campo anterior */}
                         {!asignacion.funcionesLectivas && (
-                          <div className="flex gap-2 items-center">
-                            <input
-                              type="text"
-                              value={asignacion.otraFuncion || ''}
+                          <div className="flex gap-1 items-center">
+                            <input 
+                              type="text" 
+                              value={(asignacion as any).otraFuncion || ''} 
                               onChange={(e) => actualizarAsignacion(asignacion.id, 'otraFuncion', e.target.value)}
-                              placeholder="Ej: Coordinador"
-                              className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                              placeholder="Ej: Coordinador" 
+                              className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs"
                             />
                           </div>
                         )}
-                        
-                        {/* Botón para agregar nueva función */}
                         <button 
                           onClick={() => agregarFuncionLectiva(asignacion.id)}
-                          className="flex items-center gap-1 text-sm text-blue-500 hover:text-blue-700"
+                          className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 px-2 py-0.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
                         >
-                          <Plus className="w-3 h-3" /> Agregar función
+                          <Plus className="w-3 h-3" /> <span className="text-xs">Agregar</span>
                         </button>
                       </div>
                     </td>
-
-                    {/* Horas X Asig. */}
-                    <td className="px-4 py-4 text-center">
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {asignacion.horasXAsig || 0}
-                      </span>
+                    
+                    {/* Horas por asignatura */}
+                    <td className="px-1 py-2 text-center">
+                      <span className="text-xs font-medium text-gray-900 dark:text-white">{asignacion.horasXAsig || 0}</span>
                     </td>
-
-                    {/* Columnas por curso */}
-                    {CURSOS.map(curso => (
-                      <td key={curso} className="px-3 py-4">
-                        <input
-                          type="number"
-                          min="0"
-                          value={asignacion.horasPorCurso[curso] || ''}
-                          onChange={(e) => actualizarHorasCurso(asignacion.id, curso, parseInt(e.target.value) || 0)}
-                          className="w-16 px-1 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm text-center"
-                        />
-                      </td>
-                    ))}
-
+                    
+                    {/* Cursos - Grid adaptable */}
+                    <td className="px-1 py-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1">
+                        {CURSOS.map((curso) => (
+                          <div key={curso} className="flex flex-col items-center bg-gray-50 dark:bg-gray-750 p-1 rounded">
+                            <label className="text-xs text-gray-500 dark:text-gray-400">{curso}</label>
+                            <input 
+                              type="number" 
+                              min={0} 
+                              value={asignacion.horasPorCurso[curso as CursoId] || ''} 
+                              onChange={(e) => actualizarHorasCurso(asignacion.id, curso as CursoId, parseInt(e.target.value) || 0)}
+                              className="w-10 h-7 px-1 py-0 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center" 
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                    
                     {/* HA/HB */}
-                    <td className="px-4 py-4 text-center text-sm">
+                    <td className="px-1 py-2 text-center whitespace-nowrap">
                       {totales && (
-                        <div className="space-y-1">
-                          <div className="text-blue-600 dark:text-blue-400">
+                        <div className="space-y-0">
+                          <div className="text-blue-600 dark:text-blue-400 text-xs">
                             HA: {totales.HA} ({totales.restantesHA >= 0 ? '+' : ''}{totales.restantesHA})
                           </div>
-                          <div className="text-green-600 dark:text-green-400">
+                          <div className="text-green-600 dark:text-green-400 text-xs">
                             HB: {totales.HB} ({totales.restantesHB >= 0 ? '+' : ''}{totales.restantesHB})
                           </div>
                         </div>
                       )}
                     </td>
-
-                    {/* Acciones */}
-                    <td className="px-4 py-4 text-center">
-                      <div className="flex items-center justify-center gap-3">
-                        <button
+                    
+                    {/* Acciones - Columna sticky */}
+                    <td className="px-1 py-2 text-center sticky right-0 z-10 bg-inherit">
+                      <div className="flex flex-col items-center gap-1">
+                        <button 
                           onClick={() => agregarAsignaturaMismoDocente(asignacion.docenteId, asignacion.docenteNombre)}
-                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                          className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded" 
                           title="Agregar otra asignatura a este docente"
                         >
-                          <Plus className="w-4 h-4" />
+                          <Plus className="w-3.5 h-3.5" />
                         </button>
-                        <button
+                        <button 
                           onClick={() => eliminarAsignacion(asignacion.id)}
-                          className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                          className="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded" 
                           title="Eliminar esta asignación"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
@@ -1146,603 +1095,462 @@ const CrearHorarios: React.FC = () => {
         </div>
       </div>
 
-      {/* Panel de resumen */}
       {mostrarResumen && (
-        <div className="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow">
-          {/* Tabs de navegación */}
-          <div className="border-b border-gray-200 dark:border-gray-700">
-            <nav className="flex -mb-px">
-              <button
-                onClick={() => setVistaResumen('docentes')}
-                className={`px-6 py-3 font-medium text-sm ${
-                  vistaResumen === 'docentes'
-                    ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400'
-                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                }`}
-              >
-                Por Docente
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-7xl w-full max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-xl font-bold">Panel de Resumen</h2>
+              <button onClick={() => setMostrarResumen(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                <CloseIcon />
               </button>
-              <button
-                onClick={() => setVistaResumen('cursos')}
-                className={`px-6 py-3 font-medium text-sm ${
-                  vistaResumen === 'cursos'
-                    ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400'
-                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                }`}
-              >
-                Por Curso
-              </button>
-              <button
-                onClick={() => setVistaResumen('funciones')}
-                className={`px-6 py-3 font-medium text-sm ${
-                  vistaResumen === 'funciones'
-                    ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400'
-                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                }`}
-              >
-                Por Función
-              </button>
-              <button
-                onClick={() => setVistaResumen('totales')}
-                className={`px-6 py-3 font-medium text-sm ${
-                  vistaResumen === 'totales'
-                    ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400'
-                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                }`}
-              >
-                Totales Generales
-              </button>
-            </nav>
-          </div>
+            </div>
 
-          {/* Contenido del tab seleccionado */}
-          <div className="p-6">
-            {/* Vista por docente */}
-            {vistaResumen === 'docentes' && (
-              <>
-                <h3 className="text-xl font-semibold mb-4">Resumen por Docente</h3>
-                <div className="grid gap-4">
-                  {docentes.map(docente => {
-                    const totales = totalesByDocente[docente.id];
-                    const asignacionesDocente = asignaciones.filter(a => a.docenteId === docente.id);
-                    
-                    return (
-                      <div key={docente.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-medium text-gray-900 dark:text-white">{docente.nombre}</h4>
-                          <div className={`w-3 h-3 rounded-full ${
-                            getSemaforoColor(docente.id) === 'green' ? 'bg-green-500' :
-                            getSemaforoColor(docente.id) === 'yellow' ? 'bg-yellow-500' :
-                            getSemaforoColor(docente.id) === 'red' ? 'bg-red-500' : 'bg-gray-500'
-                          }`} />
-                        </div>
-                        
-                        {totales && (
-                          <>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-2">
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Contrato:</span>
-                                <span className="ml-1 font-medium">{docente.horasContrato}h</span>
+            <div className="border-b border-gray-200 dark:border-gray-700">
+              <nav className="flex -mb-px px-6">
+                <button onClick={() => setVistaResumen('docentes')} className={`px-6 py-3 font-medium text-sm ${vistaResumen === 'docentes' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}>
+                  Por Docente
+                </button>
+                <button onClick={() => setVistaResumen('cursos')} className={`px-6 py-3 font-medium text-sm ${vistaResumen === 'cursos' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}>
+                  Por Curso
+                </button>
+                <button onClick={() => setVistaResumen('funciones')} className={`px-6 py-3 font-medium text-sm ${vistaResumen === 'funciones' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}>
+                  Por Función
+                </button>
+                <button onClick={() => setVistaResumen('totales')} className={`px-6 py-3 font-medium text-sm ${vistaResumen === 'totales' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}>
+                  Totales Generales
+                </button>
+              </nav>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-grow">
+              {vistaResumen === 'docentes' && (
+                <div>
+                  <h3 className="text-xl font-semibold mb-4">Resumen por Docente</h3>
+                  <div className="grid gap-4">
+                    {docentes.map((docente) => {
+                      const totales = totalesByDocente[docente.id];
+                      const asignacionesDocente = asignaciones.filter((a) => a.docenteId === docente.id);
+                      return (
+                        <div key={docente.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium text-gray-900 dark:text-white">{docente.nombre}</h4>
+                            <div className={`w-3 h-3 rounded-full ${getSemaforoColor(docente.id) === 'green' ? 'bg-green-500' : getSemaforoColor(docente.id) === 'yellow' ? 'bg-yellow-500' : getSemaforoColor(docente.id) === 'red' ? 'bg-red-500' : 'bg-gray-500'}`} />
+                          </div>
+                          {totales && (
+                            <div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-2">
+                                <div>
+                                  <span className="text-gray-600 dark:text-gray-400">Contrato:</span>
+                                  <span className="ml-1 font-medium">{docente.horasContrato}h</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-600 dark:text-gray-400">HA:</span>
+                                  <span className="ml-1 font-medium text-blue-600 dark:text-blue-400">{totales.sumCursos}/{totales.HA}</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-600 dark:text-gray-400">HB:</span>
+                                  <span className="ml-1 font-medium text-green-600 dark:text-green-400">{totales.sumFunciones}/{totales.HB}</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-600 dark:text-gray-400">Asignaciones:</span>
+                                  <span className="ml-1 font-medium">{asignacionesDocente.length}</span>
+                                </div>
                               </div>
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">HA:</span>
-                                <span className="ml-1 font-medium text-blue-600 dark:text-blue-400">
-                                  {totales.sumCursos}/{totales.HA}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">HB:</span>
-                                <span className="ml-1 font-medium text-green-600 dark:text-green-400">
-                                  {totales.sumFunciones}/{totales.HB}
-                              </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Asignaciones:</span>
-                                <span className="ml-1 font-medium">{asignacionesDocente.length}</span>
-                              </div>
-                            </div>
-                            
-                            {/* Sección de asignaturas */}
-                            {asignacionesDocente.length > 0 && (
-                              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* Asignaturas */}
-                                <div className="border-t border-gray-100 dark:border-gray-700 pt-2">
-                                  <h5 className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
-                                    Asignaturas asignadas:
-                                  </h5>
+                              {asignacionesDocente.length > 0 && (
+                                <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div className="border-t border-gray-100 dark:border-gray-700 pt-2">
+                                    <h5 className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">Asignaturas asignadas:</h5>
+                                    <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
+                                      {asignacionesDocente.map((asig) => (
+                                        <li key={asig.id} className="flex justify-between">
+                                          <span>{asig.asignaturaOModulo || 'Sin asignatura'}</span>
+                                          <span className="text-blue-600 dark:text-blue-400 font-medium">{asig.horasXAsig || 0}h</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                  <div className="border-t border-gray-100 dark:border-gray-700 pt-2">
+                                    <h5 className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">Distribución por curso:</h5>
+                                    <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
+                                      {CURSOS.filter((curso) => asignacionesDocente.some((asig) => asig.horasPorCurso[curso as CursoId])).map((curso) => {
+                                        const horasTotalesCurso = asignacionesDocente.reduce((total, asig) => total + (asig.horasPorCurso[curso as CursoId] || 0), 0);
+                                        return (
+                                          <li key={curso} className="flex justify-between">
+                                            <span>{curso}</span>
+                                            <span className="text-blue-600 dark:text-blue-400 font-medium">{horasTotalesCurso}h</span>
+                                          </li>
+                                        );
+                                      })}
+                                    </ul>
+                                  </div>
+                                </div>
+                              )}
+                              {asignacionesDocente.some((asig) => (asig.funcionesLectivas || []).length > 0) && (
+                                <div className="mt-2 border-t border-gray-100 dark:border-gray-700 pt-2">
+                                  <h5 className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">Funciones lectivas:</h5>
                                   <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
-                                    {asignacionesDocente.map(asig => (
+                                    {asignacionesDocente
+                                      .flatMap((asig) => (asig.funcionesLectivas || []).map((funcion) => ({ id: `${asig.id}_${funcion.id}`, nombre: funcion.nombre, horas: funcion.horas })))
+                                      .map((funcion) => (
+                                        <li key={funcion.id} className="flex justify-between">
+                                          <span>{funcion.nombre || 'Sin nombre'}</span>
+                                          <span className="text-green-600 dark:text-green-400 font-medium">{funcion.horas}h</span>
+                                        </li>
+                                      ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {vistaResumen === 'cursos' && (
+                <div>
+                  <h3 className="text-xl font-semibold mb-4">Resumen por Curso</h3>
+                  <div className="grid gap-4">
+                    {CURSOS.filter((curso) => asignaciones.some((asig) => asig.horasPorCurso[curso as CursoId])).map((curso) => {
+                      const asignacionesCurso = asignaciones.filter((asig) => asig.horasPorCurso[curso as CursoId]);
+                      const docentesEnCurso: { id: string; nombre: string; asignaciones: AsignacionCargaHoraria[] }[] = [];
+                      asignacionesCurso.forEach((asig) => {
+                        const index = docentesEnCurso.findIndex((d) => d.id === asig.docenteId);
+                        if (index === -1) docentesEnCurso.push({ id: asig.docenteId, nombre: asig.docenteNombre, asignaciones: [asig] });
+                        else docentesEnCurso[index].asignaciones.push(asig);
+                      });
+                      const totalHorasCurso = asignacionesCurso.reduce((total, asig) => total + (asig.horasPorCurso[curso as CursoId] || 0), 0);
+                      return (
+                        <div key={curso} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium text-gray-900 dark:text-white">{curso}</h4>
+                            <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-md">Total: {totalHorasCurso}h</span>
+                          </div>
+                          <div className="mt-2">
+                            <h5 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Docentes asignados:</h5>
+                            <div className="grid gap-2">
+                              {docentesEnCurso.map((doc) => (
+                                <div key={doc.id} className="px-3 py-2 bg-gray-50 dark:bg-gray-750 rounded">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-medium">{doc.nombre}</span>
+                                    <span className="text-sm text-blue-600 dark:text-blue-400">
+                                      {doc.asignaciones.reduce((sum, asig) => sum + (asig.horasPorCurso[curso as CursoId] || 0), 0)}h
+                                    </span>
+                                  </div>
+                                  <ul className="mt-1 text-xs text-gray-600 dark:text-gray-400 space-y-1 ml-2">
+                                    {doc.asignaciones.filter((asig) => asig.horasPorCurso[curso as CursoId]).map((asig) => (
                                       <li key={asig.id} className="flex justify-between">
                                         <span>{asig.asignaturaOModulo || 'Sin asignatura'}</span>
-                                        <span className="text-blue-600 dark:text-blue-400 font-medium">{asig.horasXAsig || 0}h</span>
+                                        <span>{asig.horasPorCurso[curso as CursoId]}h</span>
                                       </li>
                                     ))}
                                   </ul>
                                 </div>
-                                
-                                {/* Cursos */}
-                                <div className="border-t border-gray-100 dark:border-gray-700 pt-2">
-                                  <h5 className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
-                                    Distribución por curso:
-                                  </h5>
-                                  <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
-                                    {CURSOS.filter(curso => {
-                                      // Mostrar solo los cursos que tienen horas asignadas
-                                      return asignacionesDocente.some(asig => asig.horasPorCurso[curso]);
-                                    }).map(curso => {
-                                      // Sumar todas las horas del curso entre todas las asignaciones
-                                      const horasTotalesCurso = asignacionesDocente.reduce(
-                                        (total, asig) => total + (asig.horasPorCurso[curso] || 0), 
-                                        0
-                                      );
-                                      
-                                      return (
-                                        <li key={curso} className="flex justify-between">
-                                          <span>{curso}</span>
-                                          <span className="text-blue-600 dark:text-blue-400 font-medium">{horasTotalesCurso}h</span>
-                                        </li>
-                                      );
-                                    })}
-                                  </ul>
-                                </div>
-                              </div>
-                            )}
-                            
-                            {/* Funciones lectivas */}
-                            {asignacionesDocente.some(asig => 
-                              asig.funcionesLectivas && asig.funcionesLectivas.length > 0
-                            ) && (
-                              <div className="mt-2 border-t border-gray-100 dark:border-gray-700 pt-2">
-                                <h5 className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
-                                  Funciones lectivas:
-                                </h5>
-                                <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
-                                  {asignacionesDocente.flatMap(asig => 
-                                    (asig.funcionesLectivas || []).map(funcion => ({
-                                      id: `${asig.id}_${funcion.id}`,
-                                      nombre: funcion.nombre,
-                                      horas: funcion.horas
-                                    }))
-                                  ).map(funcion => (
-                                    <li key={funcion.id} className="flex justify-between">
-                                      <span>{funcion.nombre || 'Sin nombre'}</span>
-                                      <span className="text-green-600 dark:text-green-400 font-medium">{funcion.horas}h</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-
-            {/* Vista por curso */}
-            {vistaResumen === 'cursos' && (
-              <>
-                <h3 className="text-xl font-semibold mb-4">Resumen por Curso</h3>
-                <div className="grid gap-4">
-                  {CURSOS.filter(curso => {
-                    // Filtrar solo los cursos que tienen asignaciones
-                    return asignaciones.some(asig => asig.horasPorCurso[curso]);
-                  }).map(curso => {
-                    // Obtener todas las asignaciones para este curso
-                    const asignacionesCurso = asignaciones.filter(asig => asig.horasPorCurso[curso]);
-                    
-                    // Agrupar por docente
-                    const docentesEnCurso = [];
-                    asignacionesCurso.forEach(asig => {
-                      const index = docentesEnCurso.findIndex(d => d.id === asig.docenteId);
-                      if (index === -1) {
-                        // Si no existe el docente, agregarlo
-                        docentesEnCurso.push({
-                          id: asig.docenteId,
-                          nombre: asig.docenteNombre,
-                          asignaciones: [asig]
-                        });
-                      } else {
-                        // Si ya existe, agregar la asignación
-                        docentesEnCurso[index].asignaciones.push(asig);
-                      }
-                    });
-                    
-                    // Calcular total de horas por curso
-                    const totalHorasCurso = asignacionesCurso.reduce(
-                      (total, asig) => total + (asig.horasPorCurso[curso] || 0), 
-                      0
-                    );
-
-                    return (
-                      <div key={curso} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-medium text-gray-900 dark:text-white">{curso}</h4>
-                          <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-md">
-                            Total: {totalHorasCurso}h
-                          </span>
-                        </div>
-
-                        <div className="mt-2">
-                          <h5 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                            Docentes asignados:
-                          </h5>
-                          <div className="grid gap-2">
-                            {docentesEnCurso.map(docente => (
-                              <div key={docente.id} className="px-3 py-2 bg-gray-50 dark:bg-gray-750 rounded">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-medium">{docente.nombre}</span>
-                                  <span className="text-sm text-blue-600 dark:text-blue-400">
-                                    {docente.asignaciones.reduce((sum, asig) => sum + (asig.horasPorCurso[curso] || 0), 0)}h
-                                  </span>
-                                </div>
-                                
-                                {/* Asignaturas del docente en este curso */}
-                                <ul className="mt-1 text-xs text-gray-600 dark:text-gray-400 space-y-1 ml-2">
-                                  {docente.asignaciones.filter(asig => asig.horasPorCurso[curso]).map(asig => (
-                                    <li key={asig.id} className="flex justify-between">
-                                      <span>{asig.asignaturaOModulo || 'Sin asignatura'}</span>
-                                      <span>{asig.horasPorCurso[curso]}h</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </>
-            )}
+              )}
 
-            {/* Vista por función */}
-            {vistaResumen === 'funciones' && (
-              <>
-                <h3 className="text-xl font-semibold mb-4">Resumen por Funciones Lectivas</h3>
-                
-                {/* Lista de todas las funciones lectivas */}
-                {(() => {
-                  // Extraer todas las funciones lectivas únicas
-                  const todasLasFunciones = [];
-                  
-                  // Agrupar por nombre de función
-                  asignaciones.forEach(asig => {
-                    (asig.funcionesLectivas || []).forEach(funcion => {
-                      if (!funcion.nombre) return;
-                      
-                      const funcionExistente = todasLasFunciones.find(f => f.nombre === funcion.nombre);
-                      
-                      if (!funcionExistente) {
-                        todasLasFunciones.push({
-                          nombre: funcion.nombre,
-                          docentes: [{
-                            id: asig.docenteId,
-                            nombre: asig.docenteNombre,
-                            horas: funcion.horas
-                          }],
-                          totalHoras: funcion.horas
-                        });
-                      } else {
-                        // Verificar si ya existe el docente para esta función
-                        const docenteExistente = funcionExistente.docentes.find(d => d.id === asig.docenteId);
-                        
-                        if (!docenteExistente) {
-                          funcionExistente.docentes.push({
-                            id: asig.docenteId,
-                            nombre: asig.docenteNombre,
-                            horas: funcion.horas
-                          });
+              {vistaResumen === 'funciones' && (
+                <div>
+                  <h3 className="text-xl font-semibold mb-4">Resumen por Funciones Lectivas</h3>
+                  {(() => {
+                    const todas: { nombre: string; docentes: { id: string; nombre: string; horas: number }[]; totalHoras: number }[] = [];
+                    asignaciones.forEach((asig) => {
+                      (asig.funcionesLectivas || []).forEach((funcion) => {
+                        if (!funcion.nombre) return;
+                        const existente = todas.find((f) => f.nombre === funcion.nombre);
+                        if (!existente) {
+                          todas.push({ nombre: funcion.nombre, docentes: [{ id: asig.docenteId, nombre: asig.docenteNombre, horas: funcion.horas }], totalHoras: funcion.horas });
                         } else {
-                          docenteExistente.horas += funcion.horas;
+                          const doc = existente.docentes.find((d) => d.id === asig.docenteId);
+                          if (!doc) existente.docentes.push({ id: asig.docenteId, nombre: asig.docenteNombre, horas: funcion.horas });
+                          else doc.horas += funcion.horas;
+                          existente.totalHoras += funcion.horas;
                         }
-                        
-                        funcionExistente.totalHoras += funcion.horas;
-                      }
+                      });
                     });
-                  });
-                  
-                  // Ordenar por total de horas (descendente)
-                  todasLasFunciones.sort((a, b) => b.totalHoras - a.totalHoras);
-                  
-                  if (todasLasFunciones.length === 0) {
+                    todas.sort((a, b) => b.totalHoras - a.totalHoras);
+                    if (todas.length === 0)
+                      return (
+                        <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-750">
+                          <p className="text-gray-500 dark:text-gray-400 text-center">No hay funciones lectivas asignadas.</p>
+                        </div>
+                      );
                     return (
-                      <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-750">
-                        <p className="text-gray-500 dark:text-gray-400 text-center">
-                          No hay funciones lectivas asignadas.
-                        </p>
-                      </div>
-                    );
-                  }
-                  
-                  return (
-                    <div className="grid gap-4">
-                      {todasLasFunciones.map((funcion, index) => (
-                        <div key={index} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="font-medium text-gray-900 dark:text-white">{funcion.nombre}</h4>
-                            <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs rounded-md">
-                              Total: {funcion.totalHoras}h
-                            </span>
-                          </div>
-                          
-                          <div className="mt-2">
-                            <h5 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                              Docentes asignados:
-                            </h5>
+                      <div className="grid gap-4">
+                        {todas.map((funcion, i) => (
+                          <div key={i} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="font-medium text-gray-900 dark:text-white">{funcion.nombre}</h4>
+                              <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs rounded-md">Total: {funcion.totalHoras}h</span>
+                            </div>
+                            <h5 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Docentes asignados:</h5>
                             <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
-                              {funcion.docentes.sort((a, b) => b.horas - a.horas).map(docente => (
-                                <li key={docente.id} className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
-                                  <span>{docente.nombre}</span>
-                                  <span className="text-green-600 dark:text-green-400 font-medium">{docente.horas}h</span>
+                              {funcion.docentes.sort((a, b) => b.horas - a.horas).map((doc) => (
+                                <li key={doc.id} className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                                  <span>{doc.nombre}</span>
+                                  <span className="text-green-600 dark:text-green-400 font-medium">{doc.horas}h</span>
                                 </li>
                               ))}
                             </ul>
                           </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {vistaResumen === 'totales' && (
+                <div>
+                  <h3 className="text-xl font-semibold mb-6">Resumen de Totales Generales</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 shadow-md">
+                      <h4 className="text-lg font-bold text-blue-800 dark:text-blue-300 mb-2">Total de Horas Lectivas</h4>
+                      <div className="flex items-end justify-between">
+                        <div className="text-4xl font-bold text-blue-600 dark:text-blue-400">
+                          {(() => {
+                            let totalLectivas = 0;
+                            asignaciones.forEach((asig) => {
+                              if (asig.horasPorCurso) Object.values(asig.horasPorCurso).forEach((h) => typeof h === 'number' && (totalLectivas += h));
+                              (asig.funcionesLectivas || []).forEach((f) => typeof f.horas === 'number' && (totalLectivas += f.horas));
+                            });
+                            return totalLectivas;
+                          })()}
                         </div>
-                      ))}
+                        <span className="text-sm text-blue-500 dark:text-blue-300">horas</span>
+                      </div>
+                      <p className="mt-3 text-sm text-blue-600 dark:text-blue-400">Total de horas lectivas asignadas (HA)</p>
                     </div>
-                  );
-                })()}
-              </>
-            )}
-            
-            {/* Vista de Totales Generales */}
-            {vistaResumen === 'totales' && (
-              <>
-                <h3 className="text-xl font-semibold mb-6">Resumen de Totales Generales</h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                  {/* Total de Horas Lectivas */}
-                  <div className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 shadow-md">
-                    <h4 className="text-lg font-bold text-blue-800 dark:text-blue-300 mb-2">Total de Horas Lectivas</h4>
-                    <div className="flex items-end justify-between">
-                      <div className="text-4xl font-bold text-blue-600 dark:text-blue-400">
+                    <div className="p-6 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-900/20 rounded-xl border border-green-200 dark:border-green-800 shadow-md">
+                      <h4 className="text-lg font-bold text-green-800 dark:text-green-300 mb-2">Total de Horas No Lectivas</h4>
+                      <div className="flex items-end justify-between">
+                        <div className="text-4xl font-bold text-green-600 dark:text-green-400">
+                          {(() => {
+                            let totalNoLectivas = 0;
+                            docentes.forEach((doc) => {
+                              const horasContrato = typeof doc.horasContrato === 'number' ? doc.horasContrato : 0;
+                              totalNoLectivas += calcularHB(horasContrato);
+                            });
+                            return totalNoLectivas;
+                          })()}
+                        </div>
+                        <span className="text-sm text-green-500 dark:text-green-300">horas</span>
+                      </div>
+                      <p className="mt-3 text-sm text-green-600 dark:text-green-400">Total de horas no lectivas (HB)</p>
+                    </div>
+                    <div className="p-6 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 shadow-md">
+                      <h4 className="text-lg font-bold text-amber-800 dark:text-amber-300 mb-2">Total de Horas Contrato</h4>
+                      <div className="flex items-end justify-between">
+                        <div className="text-4xl font-bold text-amber-600 dark:text-amber-400">
+                          {(() => {
+                            // Calcular el total real de horas contrato sumando las horas de cada docente
+                            const totalContrato = docentes.reduce((total, doc) => {
+                              const horasContrato = typeof doc.horasContrato === 'number' ? doc.horasContrato : 0;
+                              return total + horasContrato;
+                            }, 0);
+                            return totalContrato;
+                          })()}
+                        </div>
+                        <span className="text-sm text-amber-500 dark:text-amber-300">horas</span>
+                      </div>
+                      <p className="mt-3 text-sm text-amber-600 dark:text-amber-400">Total de horas contratadas (Lectivas + No lectivas)</p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-md">
+                    <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-3">Distribución de Horas</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <h5 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-2">Distribución Porcentual</h5>
                         {(() => {
                           let totalLectivas = 0;
-                          
-                          // Sumar horas por cursos
-                          asignaciones.forEach(asig => {
-                            if (asig.horasPorCurso) {
-                              Object.values(asig.horasPorCurso).forEach(horas => {
-                                if (typeof horas === 'number') {
-                                  totalLectivas += horas;
-                                }
-                              });
-                            }
-                          });
-                          
-                          // Sumar horas de funciones lectivas
-                          asignaciones.forEach(asig => {
-                            (asig.funcionesLectivas || []).forEach(funcion => {
-                              if (typeof funcion.horas === 'number') {
-                                totalLectivas += funcion.horas;
-                              }
-                            });
-                          });
-                          
-                          return totalLectivas;
-                        })()}
-                      </div>
-                      <span className="text-sm text-blue-500 dark:text-blue-300">horas</span>
-                    </div>
-                    <p className="mt-3 text-sm text-blue-600 dark:text-blue-400">
-                      Total de horas lectivas asignadas (HA)
-                    </p>
-                  </div>
-                  
-                  {/* Total de Horas No Lectivas */}
-                  <div className="p-6 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-900/20 rounded-xl border border-green-200 dark:border-green-800 shadow-md">
-                    <h4 className="text-lg font-bold text-green-800 dark:text-green-300 mb-2">Total de Horas No Lectivas</h4>
-                    <div className="flex items-end justify-between">
-                      <div className="text-4xl font-bold text-green-600 dark:text-green-400">
-                        {(() => {
                           let totalNoLectivas = 0;
-                          
-                          // Calculamos HB para cada docente según su contrato (35%)
-                          docentes.forEach(docente => {
-                            const horasContrato = typeof docente.horasContrato === 'number' ? docente.horasContrato : 0;
-                            totalNoLectivas += Math.round(horasContrato * 0.35);
+                          asignaciones.forEach((asig) => {
+                            if (asig.horasPorCurso) Object.values(asig.horasPorCurso).forEach((h) => typeof h === 'number' && (totalLectivas += h));
+                            (asig.funcionesLectivas || []).forEach((f) => typeof f.horas === 'number' && (totalLectivas += f.horas));
                           });
-                          
-                          return totalNoLectivas;
+                          docentes.forEach((doc) => {
+                            const horasContrato = typeof doc.horasContrato === 'number' ? doc.horasContrato : 0;
+                            totalNoLectivas += calcularHB(horasContrato);
+                          });
+                          const totalContratoReal = totalLectivas + totalNoLectivas;
+                          const pctL = totalContratoReal > 0 ? Math.round((totalLectivas / totalContratoReal) * 100) : 0;
+                          const pctNL = totalContratoReal > 0 ? Math.round((totalNoLectivas / totalContratoReal) * 100) : 0;
+                          return (
+                            <div>
+                              <div className="mb-4">
+                                <div className="flex justify-between text-xs mb-1">
+                                  <span className="font-medium text-blue-700 dark:text-blue-300">Horas Lectivas (HA)</span>
+                                  <span className="font-bold">{pctL}%</span>
+                                </div>
+                                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                  <div className="h-full bg-blue-500 dark:bg-blue-600 rounded-full" style={{ width: `${pctL}%` }}></div>
+                                </div>
+                              </div>
+                              <div className="mb-4">
+                                <div className="flex justify-between text-xs mb-1">
+                                  <span className="font-medium text-green-700 dark:text-green-300">Horas No Lectivas (HB)</span>
+                                  <span className="font-bold">{pctNL}%</span>
+                                </div>
+                                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                  <div className="h-full bg-green-500 dark:bg-green-600 rounded-full" style={{ width: `${pctNL}%` }}></div>
+                                </div>
+                              </div>
+                              <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-750 rounded-lg text-xs text-gray-700 dark:text-gray-300">
+                                <p>
+                                  <strong>Distribución Objetivo:</strong>
+                                </p>
+                                <p>• Horas Lectivas (HA): 65% del contrato</p>
+                                <p>• Horas No Lectivas (HB): 35% del contrato</p>
+                                <p>• Horas Contrato Total = Horas Lectivas + Horas No Lectivas</p>
+                                <div className="mt-2">{Math.abs(pctL - 65) <= 5 ? <p className="text-green-600 dark:text-green-400 font-medium">✓ La distribución está dentro de los parámetros recomendados</p> : <p className="text-orange-600 dark:text-orange-400 font-medium">⚠️ La distribución difiere de los parámetros recomendados</p>}</div>
+                              </div>
+                            </div>
+                          );
                         })()}
                       </div>
-                      <span className="text-sm text-green-500 dark:text-green-300">horas</span>
-                    </div>
-                    <p className="mt-3 text-sm text-green-600 dark:text-green-400">
-                      Total de horas no lectivas (HB)
-                    </p>
-                  </div>
-                  
-                  {/* Total de Horas Contrato */}
-                  <div className="p-6 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 shadow-md">
-                    <h4 className="text-lg font-bold text-amber-800 dark:text-amber-300 mb-2">Total de Horas Contrato</h4>
-                    <div className="flex items-end justify-between">
-                      <div className="text-4xl font-bold text-amber-600 dark:text-amber-400">
-                        {docentes.reduce((total, docente) => total + (typeof docente.horasContrato === 'number' ? docente.horasContrato : 0), 0)}
-                      </div>
-                      <span className="text-sm text-amber-500 dark:text-amber-300">horas</span>
-                    </div>
-                    <p className="mt-3 text-sm text-amber-600 dark:text-amber-400">
-                      Total de horas contratadas
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Información adicional sobre distribución de horas */}
-                <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-md">
-                  <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-3">Distribución de Horas</h4>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Gráfico de distribución */}
-                    <div>
-                      <h5 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-2">Distribución Porcentual</h5>
-                      
-                      {(() => {
-                        // Calcular totales
-                        let totalLectivas = 0;
-                        let totalNoLectivas = 0;
-                        let totalContrato = 0;
-                        
-                        // Horas lectivas
-                        asignaciones.forEach(asig => {
-                          if (asig.horasPorCurso) {
-                            Object.values(asig.horasPorCurso).forEach(horas => {
-                              if (typeof horas === 'number') {
-                                totalLectivas += horas;
-                              }
-                            });
-                          }
-                          
-                          (asig.funcionesLectivas || []).forEach(funcion => {
-                            if (typeof funcion.horas === 'number') {
-                              totalLectivas += funcion.horas;
-                            }
-                          });
-                        });
-                        
-                        // Total contrato
-                        docentes.forEach(docente => {
-                          if (typeof docente.horasContrato === 'number') {
-                            totalContrato += docente.horasContrato;
-                          }
-                        });
-                        
-                        // Horas no lectivas
-                        totalNoLectivas = totalContrato - totalLectivas;
-                        
-                        // Calcular porcentajes
-                        const porcentajeLectivas = totalContrato > 0 ? Math.round((totalLectivas / totalContrato) * 100) : 0;
-                        const porcentajeNoLectivas = totalContrato > 0 ? Math.round((totalNoLectivas / totalContrato) * 100) : 0;
-                        
-                        return (
-                          <div>
-                            {/* Barra lectivas */}
-                            <div className="mb-4">
-                              <div className="flex justify-between text-xs mb-1">
-                                <span className="font-medium text-blue-700 dark:text-blue-300">Horas Lectivas (HA)</span>
-                                <span className="font-bold">{porcentajeLectivas}%</span>
-                              </div>
-                              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-blue-500 dark:bg-blue-600 rounded-full" 
-                                  style={{ width: `${porcentajeLectivas}%` }}
-                                ></div>
-                              </div>
-                            </div>
-                            
-                            {/* Barra no lectivas */}
-                            <div className="mb-4">
-                              <div className="flex justify-between text-xs mb-1">
-                                <span className="font-medium text-green-700 dark:text-green-300">Horas No Lectivas (HB)</span>
-                                <span className="font-bold">{porcentajeNoLectivas}%</span>
-                              </div>
-                              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-green-500 dark:bg-green-600 rounded-full" 
-                                  style={{ width: `${porcentajeNoLectivas}%` }}
-                                ></div>
-                              </div>
-                            </div>
-                            
-                            {/* Distribución ideal */}
-                            <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-750 rounded-lg text-xs text-gray-700 dark:text-gray-300">
-                              <p><strong>Distribución Objetivo:</strong></p>
-                              <p>• Horas Lectivas (HA): 65% del contrato</p>
-                              <p>• Horas No Lectivas (HB): 35% del contrato</p>
-                              <div className="mt-2">
-                                {Math.abs(porcentajeLectivas - 65) <= 5 ? (
-                                  <p className="text-green-600 dark:text-green-400 font-medium">✓ La distribución está dentro de los parámetros recomendados</p>
-                                ) : (
-                                  <p className="text-orange-600 dark:text-orange-400 font-medium">⚠️ La distribución difiere de los parámetros recomendados</p>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                    
-                    {/* Información */}
-                    <div className="space-y-4">
-                      <div>
-                        <h5 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-2">Estadísticas Generales</h5>
-                        
-                        <ul className="space-y-3 text-sm">
-                          <li className="flex justify-between border-b border-gray-100 dark:border-gray-700 pb-2">
-                            <span className="text-gray-600 dark:text-gray-400">Total de docentes:</span>
-                            <span className="font-semibold">{docentes.length}</span>
-                          </li>
-                          <li className="flex justify-between border-b border-gray-100 dark:border-gray-700 pb-2">
-                            <span className="text-gray-600 dark:text-gray-400">Total de asignaciones:</span>
-                            <span className="font-semibold">{asignaciones.length}</span>
-                          </li>
-                          <li className="flex justify-between border-b border-gray-100 dark:border-gray-700 pb-2">
-                            <span className="text-gray-600 dark:text-gray-400">Promedio horas contrato:</span>
-                            <span className="font-semibold">
-                              {docentes.length > 0 
-                                ? (docentes.reduce((total, docente) => total + (typeof docente.horasContrato === 'number' ? docente.horasContrato : 0), 0) / docentes.length).toFixed(1)
-                                : '0'} horas
-                            </span>
-                          </li>
-                        </ul>
-                      </div>
-                      
-                      {validaciones.length > 0 && (
-                        <div className="mt-4">
-                          <h5 className="text-md font-medium text-red-700 dark:text-red-300 mb-2">Advertencias ({validaciones.length})</h5>
-                          <div className="max-h-32 overflow-y-auto p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                            <ul className="text-xs space-y-1 text-red-600 dark:text-red-400">
-                              {validaciones.slice(0, 5).map((validacion, index) => (
-                                <li key={index} className="flex items-center gap-1">
-                                  {validacion.tipo === 'error' ? '❌' : '⚠️'}
-                                  <span>{validacion.mensaje}</span>
-                                </li>
-                              ))}
-                              {validaciones.length > 5 && (
-                                <li className="italic">Y {validaciones.length - 5} más...</li>
-                              )}
-                            </ul>
-                          </div>
+                      <div className="space-y-4">
+                        <div>
+                          <h5 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-2">Estadísticas Generales</h5>
+                          <ul className="space-y-3 text-sm">
+                            <li className="flex justify-between border-b border-gray-100 dark:border-gray-700 pb-2">
+                              <span className="text-gray-600 dark:text-gray-400">Total de docentes:</span>
+                              <span className="font-semibold">{docentes.length}</span>
+                            </li>
+                            <li className="flex justify-between border-b border-gray-100 dark:border-gray-700 pb-2">
+                              <span className="text-gray-600 dark:text-gray-400">Total de asignaciones:</span>
+                              <span className="font-semibold">{asignaciones.length}</span>
+                            </li>
+                            <li className="flex justify-between border-b border-gray-100 dark:border-gray-700 pb-2">
+                              <span className="text-gray-600 dark:text-gray-400">Promedio horas contrato:</span>
+                              <span className="font-semibold">{docentes.length > 0 ? (docentes.reduce((t, d) => t + (typeof d.horasContrato === 'number' ? d.horasContrato : 0), 0) / docentes.length).toFixed(1) : '0'} horas</span>
+                            </li>
+                          </ul>
                         </div>
-                      )}
+                        {validaciones.length > 0 && (
+                          <div className="mt-4">
+                            <h5 className="text-md font-medium text-red-700 dark:text-red-300 mb-2">Advertencias ({validaciones.length})</h5>
+                            <div className="max-h-32 overflow-y-auto p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                              <ul className="text-xs space-y-1 text-red-600 dark:text-red-400">
+                                {validaciones.slice(0, 5).map((v, i) => (
+                                  <li key={i} className="flex items-center gap-1">{v.tipo === 'error' ? '❌' : '⚠️'}<span>{v.mensaje}</span></li>
+                                ))}
+                                {validaciones.length > 5 && <li className="italic">Y {validaciones.length - 5} más...</li>}
+                              </ul>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Tooltip de ayuda */}
-      <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-        <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">
-          Distribución de Horas
-        </h4>
-        <p className="text-sm text-blue-700 dark:text-blue-300">
-          • <strong>Horas Lectivas (HA):</strong> Según tabla oficial (ej: 44h → {calcularHA(44)}h, 30h → {calcularHA(30)}h)
-          <br />
-          • <strong>Funciones Lectivas:</strong> Las horas de las funciones se suman a las horas lectivas (HA)
-          <br />
-          • <strong>Horas No Lectivas (HB):</strong> El resto del contrato (ej: 44h → {calcularHB(44)}h, 30h → {calcularHB(30)}h)
-          <br />
-          • <strong>Semáforo:</strong> 🟢 Completo | 🟡 Faltan horas | 🔴 Excede límites
-        </p>
+      <div className="mt-8 p-0 bg-gradient-to-r from-blue-500/5 to-indigo-500/5 dark:from-blue-900/10 dark:to-indigo-900/10 rounded-xl overflow-hidden border border-blue-200 dark:border-blue-800 shadow-sm">
+        <div className="px-6 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
+          <div className="flex items-center gap-2">
+            <PieChart className="w-5 h-5" />
+            <h4 className="font-medium">Información sobre Distribución de Horas</h4>
+          </div>
+        </div>
+        
+        <div className="p-6 grid md:grid-cols-2 gap-6">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-300 shrink-0">
+                <School className="w-5 h-5" />
+              </div>
+              <div>
+                <h5 className="font-medium text-blue-900 dark:text-blue-100">Horas Lectivas (HA)</h5>
+                <p className="text-sm text-blue-700 dark:text-blue-300">Según tabla oficial (ej: 44h → {calcularHA(44)}h, 30h → {calcularHA(30)}h)</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-700 dark:text-green-300 shrink-0">
+                <Briefcase className="w-5 h-5" />
+              </div>
+              <div>
+                <h5 className="font-medium text-green-900 dark:text-green-100">Funciones Lectivas</h5>
+                <p className="text-sm text-green-700 dark:text-green-300">Las horas de las funciones se suman a las horas lectivas (HA)</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-700 dark:text-amber-300 shrink-0">
+                <UserCog className="w-5 h-5" />
+              </div>
+              <div>
+                <h5 className="font-medium text-amber-900 dark:text-amber-100">Horas No Lectivas (HB)</h5>
+                <p className="text-sm text-amber-700 dark:text-amber-300">El resto del contrato (ej: 44h → {calcularHB(44)}h, 30h → {calcularHB(30)}h)</p>
+              </div>
+            </div>
+          </div>
+          
+          <div>
+            <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 mb-4">
+              <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Fórmulas de cálculo</h5>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-mono">HA</div>
+                  <span className="text-gray-600 dark:text-gray-400">Horas Lectivas = 65% del Contrato</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded text-xs font-mono">HB</div>
+                  <span className="text-gray-600 dark:text-gray-400">Horas No Lectivas = 35% del Contrato</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="px-2 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded text-xs font-mono">HC</div>
+                  <span className="text-gray-600 dark:text-gray-400">Horas Contrato = HA + HB</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700">
+              <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Guía de semáforos</h5>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="flex flex-col items-center p-2 bg-gray-50 dark:bg-gray-750 rounded">
+                  <div className="w-5 h-5 rounded-full bg-green-500 mb-1"></div>
+                  <span className="text-xs text-gray-700 dark:text-gray-300">Completo</span>
+                </div>
+                <div className="flex flex-col items-center p-2 bg-gray-50 dark:bg-gray-750 rounded">
+                  <div className="w-5 h-5 rounded-full bg-yellow-500 mb-1"></div>
+                  <span className="text-xs text-gray-700 dark:text-gray-300">Faltan horas</span>
+                </div>
+                <div className="flex flex-col items-center p-2 bg-gray-50 dark:bg-gray-750 rounded">
+                  <div className="w-5 h-5 rounded-full bg-red-500 mb-1"></div>
+                  <span className="text-xs text-gray-700 dark:text-gray-300">Excede límites</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Modal para añadir nuevo docente */}
       <AddDocenteModal />
 
       {loading && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-2 text-gray-600 dark:text-gray-400">Procesando...</p>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl flex flex-col items-center animate-pulse">
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-blue-200 dark:border-blue-800 border-solid rounded-full"></div>
+              <div className="w-16 h-16 border-4 border-blue-600 dark:border-blue-400 border-t-transparent animate-spin rounded-full absolute top-0 left-0"></div>
+            </div>
+            <p className="mt-4 text-lg font-medium text-gray-700 dark:text-gray-300">Procesando solicitud...</p>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Por favor, espere un momento</p>
           </div>
         </div>
       )}

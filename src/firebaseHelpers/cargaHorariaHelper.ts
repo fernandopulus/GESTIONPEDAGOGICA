@@ -310,6 +310,7 @@ export const calcularTotalesDocente = (
     totalHorasLectivas,
     restantesHA,
     restantesHB,
+    horasContrato: docente.horasContrato,
     valido: errors.length === 0,
     warnings,
     errors
