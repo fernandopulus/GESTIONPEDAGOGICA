@@ -148,7 +148,11 @@ const TopBar: React.FC<TopBarProps> = ({
               <MenuIcon />
             </button>
             <div className="flex items-center gap-2 cursor-pointer" onClick={() => onNavigate('Dashboard')}>
-              <svg className="w-8 h-8 text-slate-700 dark:text-slate-200" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V6.5A2.5 2.5 0 0 0 17.5 4h-11A2.5 2.5 0 0 0 4 6.5v13Z" stroke="currentColor" strokeWidth="1.5"/><path d="M16 4.5V17" stroke="currentColor" strokeWidth="1.5"/></svg>
+              <img 
+                src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754153206/ChatGPT_Image_2_ago_2025_12_46_35_p.m._qsqj5e.png" 
+                alt="Logo LIR" 
+                className="w-8 h-8 object-contain" 
+              />
               <span className="text-xl font-bold text-slate-800 dark:text-slate-200 hidden sm:block">Gestión LIR</span>
             </div>
           </div>
@@ -160,13 +164,7 @@ const TopBar: React.FC<TopBarProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-3">
-              <img
-                src="https://res.cloudinary.com/dwncmu1wu/image/upload/v1754153206/ChatGPT_Image_2_ago_2025_12_46_35_p.m._qsqj5e.png"
-                alt="Logo LIR"
-                className="h-10 w-10 object-contain"
-              />
-            </div>
+            {/* Espacio para notificaciones */}
 
             {/* Anuncios */}
             <Dropdown
