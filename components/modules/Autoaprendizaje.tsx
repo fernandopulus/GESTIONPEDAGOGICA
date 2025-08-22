@@ -860,6 +860,14 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
 
   const handleStartActivity = (actividad: ActividadRemota) => {
     console.log('🔍 Iniciando actividad:', actividad.asignatura);
+    
+    // Verificar si la actividad ya ha sido completada anteriormente
+    if (completedActivityIds.has(actividad.id)) {
+      // Si ya fue completada, mostrar mensaje de error y no permitir iniciarla nuevamente
+      setError("Esta actividad ya ha sido completada. No es posible realizarla nuevamente.");
+      return;
+    }
+    
     setSelectedActividad(actividad);
     setView('activity');
     setError(null);
@@ -942,6 +950,7 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
   }, [selectedActividad, currentUser.id]);
 
   // OPTIMIZADO: Cálculos con mejor manejo de errores
+  // Esta función mantiene un registro de las actividades que ya han sido completadas
   const completedActivityIds = useMemo(() => {
     if (respuestas.length === 0) return new Set<string>();
     
@@ -950,9 +959,11 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
     return ids;
   }, [respuestas]);
 
+  // Esta función filtra las actividades para mostrar solo las que NO han sido completadas
   const actividadesPendientes = useMemo(() => {
     if (actividades.length === 0) return [];
     
+    // Solo muestra actividades que NO están en el conjunto de IDs completados
     const pendientes = actividades.filter(act => !completedActivityIds.has(act.id));
     console.log('⏳ Actividades pendientes:', pendientes.length);
     return pendientes;
@@ -1198,22 +1209,11 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
               setLastResult(null); 
               setError(null); 
             }}
-            className="flex-1 bg-slate-800 text-white font-bold py-3 rounded-lg hover:bg-slate-700 transition-colors"
+            className="w-full bg-slate-800 text-white font-bold py-3 rounded-lg hover:bg-slate-700 transition-colors"
           >
             Volver a Actividades
           </button>
-          {selectedActividad && (
-            <button
-              onClick={() => {
-                setView('activity');
-                setLastResult(null);
-                setError(null);
-              }}
-              className="flex-1 bg-amber-600 text-white font-bold py-3 rounded-lg hover:bg-amber-700 transition-colors"
-            >
-              Repetir Actividad
-            </button>
-          )}
+          {/* Se eliminó el botón "Repetir Actividad" para que los estudiantes no puedan repetir una actividad ya completada */}
         </div>
       </div>
     );
@@ -1229,7 +1229,15 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
 
       <div>
         <h2 className="text-2xl font-bold text-slate-800 mb-2">Actividades Pendientes</h2>
-        <p className="text-slate-500 mb-6">Completa las actividades asignadas por tus profesores.</p>
+        <p className="text-slate-500 mb-2">Completa las actividades asignadas por tus profesores.</p>
+        <p className="text-amber-600 text-sm font-medium mb-6">
+          <span className="bg-amber-100 p-1 rounded inline-flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            Importante: Cada actividad solo puede ser respondida una vez.
+          </span>
+        </p>
         
         <div className="space-y-4">
           {actividadesPendientes.length > 0 ? (
