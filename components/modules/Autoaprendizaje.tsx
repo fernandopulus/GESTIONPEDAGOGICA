@@ -161,6 +161,27 @@ const logSuspiciousObject = (obj: any, context: string) => {
 const ultraSafeStringify = (value: any, context?: string): string => {
   if (context) logSuspiciousObject(value, context);
   
+  // Caso especial para panelDidactico
+  if (context === 'panelDidactico' || context?.includes('panelDidactico')) {
+    if (typeof value === 'string') return value;
+    if (value === null || value === undefined) return '';
+    
+    try {
+      // Para objetos complejos en panelDidactico, intentar obtener el texto completo
+      if (typeof value === 'object') {
+        if (typeof value.texto === 'string') return value.texto;
+        if (typeof value.contenido === 'string') return value.contenido;
+        
+        // Si es un objeto sin campos de texto reconocibles, convertirlo directamente
+        return JSON.stringify(value);
+      }
+      return String(value);
+    } catch {
+      return '[Error al procesar el panel didáctico]';
+    }
+  }
+  
+  // Manejo normal para otros contextos
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value;
   if (typeof value === 'number') return String(value);
@@ -513,6 +534,66 @@ const ActivityPlayer: React.FC<ActivityPlayerProps> = ({ actividad, onComplete, 
         <div className="text-slate-700 whitespace-pre-wrap">
           <UltraSafeRenderer content={actividad.introduccion} context="actividad-introduccion" />
         </div>
+        
+        {/* Panel didáctico */}
+        {actividad.panelDidactico && (
+          <div className="mt-5 p-5 bg-emerald-50 border-l-4 border-emerald-500 rounded-r-lg shadow-md">
+            <h3 className="font-bold text-emerald-800 text-lg mb-3 flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              Material de Estudio - Lee con Atención
+            </h3>
+            <div className="prose prose-emerald max-w-none text-slate-700">
+              {(() => {
+                try {
+                  // Intentar analizar como JSON si comienza con '{'
+                  if (typeof actividad.panelDidactico === 'string' && actividad.panelDidactico.trim().startsWith('{')) {
+                    const jsonData = JSON.parse(actividad.panelDidactico);
+                    return (
+                      <div className="space-y-4">
+                        {/* Título principal si existe */}
+                        {jsonData.titulo && (
+                          <h2 className="text-xl font-bold text-emerald-800">{jsonData.titulo}</h2>
+                        )}
+                        
+                        {/* Subtítulos con su contenido */}
+                        {Array.isArray(jsonData.subtitulos) && jsonData.subtitulos.map((sub, i) => (
+                          <div key={i} className="mb-4">
+                            <h3 className="text-lg font-semibold text-emerald-700 mb-2">{sub.titulo}</h3>
+                            <p className="whitespace-pre-line">{sub.texto}</p>
+                          </div>
+                        ))}
+                        
+                        {/* Conceptos clave si existen */}
+                        {Array.isArray(jsonData.conceptosClave) && jsonData.conceptosClave.length > 0 && (
+                          <div className="mt-4">
+                            <h3 className="text-lg font-semibold text-emerald-700 mb-2">Conceptos Clave</h3>
+                            <ul className="list-disc pl-5 space-y-1">
+                              {jsonData.conceptosClave.map((concepto, i) => (
+                                <li key={i} className="text-emerald-800">{concepto}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        
+                        {/* Contenido adicional si no hay estructura específica */}
+                        {!jsonData.subtitulos && !jsonData.conceptosClave && (
+                          <div className="whitespace-pre-line">{JSON.stringify(jsonData, null, 2)}</div>
+                        )}
+                      </div>
+                    );
+                  }
+                  // Si no es JSON o hay error, mostrar como texto plano
+                  return <p className="whitespace-pre-wrap">{actividad.panelDidactico}</p>;
+                } catch (err) {
+                  // Si hay error en el parseo, mostrar como texto plano
+                  return <p className="whitespace-pre-wrap">{actividad.panelDidactico}</p>;
+                }
+              })()}
+            </div>
+          </div>
+        )}
         
         {/* Recursos adicionales (enlaces y archivos) */}
         {actividad.recursos && (

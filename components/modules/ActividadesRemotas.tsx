@@ -315,78 +315,184 @@ const ActividadesRemotas: React.FC = () => {
   /* ---------------------- Prompts IA ---------------------- */
   const buildPrompt = () => {
     const { tipos, contenido, asignatura, nivel, cantidadPreguntas } = formData;
-    let prompt = `Eres un experto diseñador de actividades pedagógicas. Genera un objeto JSON que se ajuste al esquema, sin texto adicional.
+    let prompt = `Eres un experto diseñador de actividades pedagógicas con énfasis en la Taxonomía de Bloom y metodologías activas de aprendizaje. Genera un objeto JSON que se ajuste al esquema, sin texto adicional.
 
 Contenido base: "${contenido}"
 Asignatura: ${asignatura}
-Nivel: ${nivel}
+Nivel educativo: ${nivel}
+
+REQUISITOS PEDAGÓGICOS:
+1. Asegura que las preguntas sean claras, concisas y libres de ambigüedades
+2. Distribuye las preguntas según Taxonomía de Bloom: 20% conocimiento, 30% comprensión, 30% aplicación, 20% análisis/evaluación 
+3. Evita preguntas demasiado simples o demasiado complejas para el nivel educativo
+4. Incluye contextos reales y aplicaciones prácticas cuando sea posible
+5. Para múltiple opción, todas las opciones deben ser plausibles (no incluir opciones obviamente incorrectas)
+6. Las rúbricas de desarrollo deben incluir criterios específicos y niveles de desempeño claros
+7. En comprensión lectora, genera textos originales y preguntas de distinta complejidad cognitiva
 
 Genera los siguientes elementos:
-- introduccion: breve y motivadora
+- introduccion: breve y motivadora que contextualice el aprendizaje
+- panelDidactico: Un objeto JSON con la siguiente estructura:
+  {
+    "titulo": "Título descriptivo del tema central",
+    "subtitulos": [
+      {
+        "titulo": "Primer subtítulo",
+        "texto": "Explicación detallada (80-120 palabras) con ejemplos y definiciones"
+      },
+      {
+        "titulo": "Segundo subtítulo",
+        "texto": "Explicación detallada (80-120 palabras) con ejemplos y definiciones"
+      },
+      {
+        "titulo": "Tercer subtítulo (opcional)",
+        "texto": "Explicación detallada (80-120 palabras) con ejemplos y definiciones"
+      }
+    ],
+    "conceptosClave": [
+      "Concepto 1: breve definición",
+      "Concepto 2: breve definición",
+      "Concepto 3: breve definición"
+    ]
+  }
+  En total debe tener entre 300-500 palabras con contenido educativo detallado que explique los conceptos clave del tema, incluya ejemplos claros y conocimiento esencial que el estudiante necesita para responder las actividades.
 - actividades: objeto con propiedades por tipo:\n`;
+    
     tipos.forEach((tipo) => {
       const cantidad = cantidadPreguntas[tipo] || ITEM_QUANTITIES[tipo][0];
       switch (tipo) {
         case 'Quiz':
-          prompt += `- "Quiz": Array de ${cantidad} objetos { pregunta, opciones[4], respuestaCorrecta, puntaje(1) }\n`;
+          prompt += `- "Quiz": Array de ${cantidad} objetos { 
+  pregunta: clara y contextualizada,
+  opciones: array de 4 alternativas plausibles con opciones de distinta dificultad,
+  respuestaCorrecta: la opción correcta (no ambigua),
+  puntaje: 1 para cada pregunta
+}\n`;
           break;
         case 'Comprensión de Lectura':
-          prompt += `- "Comprensión de Lectura": Objeto { texto(150-200 palabras), preguntas: Array de ${cantidad} { pregunta, opciones[4], respuestaCorrecta, puntaje } }\n`; // prettier-ignore
+          prompt += `- "Comprensión de Lectura": Objeto { 
+  texto: texto original de 200-300 palabras adaptado al nivel con información relevante,
+  preguntas: Array de ${cantidad} objetos {
+    pregunta: enfocadas en distintos niveles de comprensión (literal, inferencial y crítica),
+    opciones: array de 4 alternativas plausibles sin pistas obvias,
+    respuestaCorrecta: la opción correcta basada en el texto,
+    puntaje: 1 para cada pregunta
+  }
+}\n`; 
           break;
         case 'Términos Pareados':
-          prompt += `- "Términos Pareados": Array de ${cantidad} { concepto, definicion }\n`;
+          prompt += `- "Términos Pareados": Array de ${cantidad} objetos {
+  concepto: término clave del contenido, claro y específico,
+  definicion: explicación precisa y única que no sea ambigua
+}\n`;
           break;
         case 'Desarrollo':
-          prompt += `- "Desarrollo": Array de ${cantidad} { pregunta, rubrica }\n`;
+          prompt += `- "Desarrollo": Array de ${cantidad} objetos {
+  pregunta: pregunta que fomente el pensamiento crítico y la aplicación de conocimientos,
+  rubrica: criterios de evaluación detallados con niveles de desempeño específicos (sobresaliente, adecuado, en desarrollo, inicial)
+}\n`;
           break;
       }
     });
+    
+    // Agregar ejemplos de alta calidad para cada tipo de actividad
+    prompt += "\nEJEMPLOS DE ALTA CALIDAD POR TIPO:\n";
+    
+    if (tipos.includes('Quiz')) {
+      prompt += `
+Quiz de ejemplo: {
+  "pregunta": "En el contexto de la función fotosintética de las plantas, ¿qué ocurriría si una planta se expone a luz con longitudes de onda exclusivamente verdes?",
+  "opciones": [
+    "La planta aumentaría su tasa fotosintética debido a la mayor disponibilidad de luz",
+    "La planta moriría inmediatamente por exceso de radiación",
+    "La tasa fotosintética disminuiría significativamente ya que el pigmento clorofila refleja la luz verde",
+    "No habría cambios en la fotosíntesis porque las plantas no dependen del espectro luminoso"
+  ],
+  "respuestaCorrecta": "La tasa fotosintética disminuiría significativamente ya que el pigmento clorofila refleja la luz verde",
+  "puntaje": 1
+}\n`;
+    }
+    
+    if (tipos.includes('Comprensión de Lectura')) {
+      prompt += `
+Comprensión de Lectura de ejemplo: {
+  "texto": "La revolución industrial transformó profundamente las estructuras sociales y económicas de Europa durante el siglo XIX. El paso de una economía agraria y artesanal a una dominada por la industria y la manufactura mecanizada significó cambios sin precedentes en las condiciones laborales. Las jornadas extenuantes de 14-16 horas, el trabajo infantil y la falta de seguridad caracterizaron los primeros años de industrialización. No obstante, este periodo también representó un aumento en la producción de bienes, mejoras en el transporte y comunicaciones, y eventualmente, el surgimiento de una clase media con mayor acceso a productos manufacturados. Estos cambios sentaron las bases para movimientos obreros que, con el tiempo, lograron mejoras significativas en los derechos laborales que persisten hasta la actualidad.",
+  "preguntas": [
+    {
+      "pregunta": "Según el texto, ¿cuál fue una consecuencia negativa inmediata de la revolución industrial?",
+      "opciones": [
+        "El desplome de los sistemas de transporte",
+        "Las extenuantes jornadas laborales de 14-16 horas",
+        "La disminución en la producción de bienes manufacturados",
+        "La eliminación de la clase media europea"
+      ],
+      "respuestaCorrecta": "Las extenuantes jornadas laborales de 14-16 horas",
+      "puntaje": 1
+    }
+  ]
+}\n`;
+    }
+    
     return prompt;
   };
 
   const buildPruebaPrompt = () => {
     const { contenido, objetivosAprendizaje, asignatura, nivel } = pruebaFormData;
-    return `Eres experto en evaluación educativa y diseño de pruebas SIMCE.
-Responde SOLO con JSON válido.
+    return `Eres un experto pedagogo especializado en evaluación educativa y diseño de pruebas estandarizadas tipo SIMCE.
+Responde EXCLUSIVAMENTE con JSON válido según la estructura solicitada.
 
-INFORMACIÓN:
+INFORMACIÓN CURRICULAR:
 - Asignatura: ${asignatura}
-- Nivel: ${nivel}
-- Contenido: ${contenido}
-- Objetivos: ${objetivosAprendizaje}
+- Nivel educativo: ${nivel}
+- Contenido principal: ${contenido}
+- Objetivos de Aprendizaje: ${objetivosAprendizaje}
 
+REQUISITOS PEDAGÓGICOS:
+1. Genera preguntas equilibradas en dificultad: 25% básicas, 50% intermedias, 25% avanzadas
+2. Usa contextos reales y significativos para los estudiantes
+3. Distribuye las habilidades cognitivas de manera equilibrada según taxonomía SIMCE
+4. Las preguntas deben evaluar aprendizajes significativos, no memorización de detalles irrelevantes
+5. Los distractores (opciones incorrectas) deben ser plausibles y revelar concepciones erróneas comunes
+6. Los textos deben ser originales, apropiados para el nivel, y con complejidad adecuada
+7. Las preguntas deben evaluar distintos niveles de comprensión y aplicación
+
+FORMATO REQUERIDO:
 {
-  "titulo": "Título",
-  "instrucciones": "Instrucciones",
+  "titulo": "Título descriptivo de la prueba",
+  "instrucciones": "Instrucciones claras y detalladas para los estudiantes",
   "textos": [
     {
       "id": 1,
-      "titulo": "Título del texto",
-      "contenido": "200-300 palabras",
-      "tipo": "narrativo",
-      "palabras": 250
+      "titulo": "Título representativo del texto",
+      "contenido": "Texto original y apropiado de 250-350 palabras con complejidad adecuada al nivel",
+      "tipo": "narrativo/informativo/argumentativo/poetico",
+      "palabras": 300
     }
   ],
   "preguntas": [
     {
       "numero": 1,
-      "pregunta": "Enunciado",
-      "opciones": ["Opción A", "Opción B", "Opción C", "Opción D"],
+      "pregunta": "Enunciado claro que evalúe una habilidad específica",
+      "opciones": ["Alternativa correcta", "Distractor plausible 1", "Distractor plausible 2", "Distractor plausible 3"],
       "respuestaCorrecta": "A",
-      "habilidad": "Localizar información",
-      "justificacion": "Breve explicación",
+      "habilidad": "Habilidad SIMCE específica que evalúa",
+      "justificacion": "Explicación pedagógica de por qué es correcta y los errores conceptuales en los distractores",
       "textoId": 1
     }
   ]
 }
 
-Reglas:
-- ${asignatura === 'Lenguaje y Comunicación' || asignatura === 'Lengua y Literatura' ? '3-4 textos de distintos tipos' : '2-3 textos informativos'}
-- Exactamente 30 preguntas numeradas 1..30
-- 4 opciones por pregunta (A-D)
-- Habilidades válidas: ${HABILIDADES_SIMCE.join(', ')}
-- Para preguntas basadas en textos: incluir "textoId"
-- Sin comentarios fuera del JSON`;
+REQUISITOS ESPECÍFICOS:
+- ${asignatura === 'Lenguaje y Comunicación' || asignatura === 'Lengua y Literatura' ? 
+  '3-4 textos de distintos tipos (narrativo, informativo, argumentativo y/o poético) con temáticas complementarias' : 
+  '2-3 textos informativos con contenido relevante para el objetivo de aprendizaje'}
+- Exactamente 30 preguntas numeradas del 1 al 30
+- 4 opciones por pregunta (A-D) con una única respuesta correcta
+- Habilidades a evaluar según SIMCE: ${HABILIDADES_SIMCE.join(', ')}
+- Para preguntas basadas en textos: incluir el "textoId" correspondiente
+- Sin comentarios, explicaciones ni marcas fuera de la estructura JSON
+
+IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser usado directamente en un contexto escolar real.`;
   };
 
   /* ---------------------- Adaptación de contenido IA ULTRA SEGURA ---------------------- */
@@ -530,7 +636,17 @@ Reglas:
       if (!apiKey) throw new Error('No se encontró la API Key de Gemini.');
 
       const ai = new GoogleGenAI(apiKey);
-      const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+      // Usando gemini-1.5-pro para mayor calidad en generación de preguntas
+      const model = ai.getGenerativeModel({ 
+        model: 'gemini-1.5-pro',
+        generationConfig: {
+          temperature: 0.7,           // Control de creatividad (balanceado)
+          topP: 0.9,                  // Diversidad controlada
+          topK: 40,                   // Mayor variedad de vocabulario
+          maxOutputTokens: 8192,      // Asegurar respuestas completas
+        }
+      });
+      
       const prompt = buildPrompt();
       const result = await model.generateContent(prompt);
       const response = await result.response;
@@ -547,12 +663,21 @@ Reglas:
         adaptedContent[tipo] = ultraSafeAutoAdaptContent(tipo, rawContent);
       }
 
+      // Procesar el panel didáctico de manera especial para evitar truncamiento
+      let panelContent = '';
+      if (generatedData.panelDidactico) {
+        panelContent = typeof generatedData.panelDidactico === 'string' 
+          ? generatedData.panelDidactico 
+          : JSON.stringify(generatedData.panelDidactico);
+      }
+
       const newActividad: ActividadRemota = {
         id: '',
         fechaCreacion: new Date().toISOString(),
         ...formData,
         recursos: { ...formData.recursos, archivos: processedFiles },
         introduccion: ultraSafeStringify(generatedData.introduccion, 'introduccion') || 'Actividad generada para reforzar el aprendizaje.',
+        panelDidactico: panelContent,
         generatedContent: adaptedContent,
       };
 
@@ -579,7 +704,16 @@ Reglas:
       if (!apiKey) throw new Error('No se encontró la API Key de Gemini.');
 
       const ai = new GoogleGenAI(apiKey);
-      const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+      // Usando gemini-1.5-pro para mayor calidad en generación de evaluaciones
+      const model = ai.getGenerativeModel({ 
+        model: 'gemini-1.5-pro',
+        generationConfig: {
+          temperature: 0.65,          // Control preciso para evaluación
+          topP: 0.85,                 // Diversidad controlada para preguntas coherentes
+          topK: 30,                   // Control de vocabulario específico
+          maxOutputTokens: 12288,     // Mayor capacidad para generar evaluaciones completas con 30 preguntas
+        }
+      });
       const prompt = buildPruebaPrompt();
       const result = await model.generateContent(prompt);
       const response = await result.response;
@@ -1333,6 +1467,65 @@ Reglas:
             <UltraSafeRenderer content={previewData?.introduccion} context="preview-introduccion" />
           </p>
         </div>
+
+        {previewData?.panelDidactico && (
+          <div className="p-5 bg-emerald-50 border-l-4 border-emerald-500 rounded-r-lg shadow-md">
+            <h3 className="font-bold text-emerald-800 text-lg mb-3 flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              Panel Didáctico - Material de Apoyo
+            </h3>
+            <div className="prose prose-emerald max-w-none text-slate-700">
+              {(() => {
+                try {
+                  // Intentar analizar como JSON si comienza con '{'
+                  if (typeof previewData.panelDidactico === 'string' && previewData.panelDidactico.trim().startsWith('{')) {
+                    const jsonData = JSON.parse(previewData.panelDidactico);
+                    return (
+                      <div className="space-y-4">
+                        {/* Título principal si existe */}
+                        {jsonData.titulo && (
+                          <h2 className="text-xl font-bold text-emerald-800">{jsonData.titulo}</h2>
+                        )}
+                        
+                        {/* Subtítulos con su contenido */}
+                        {Array.isArray(jsonData.subtitulos) && jsonData.subtitulos.map((sub, i) => (
+                          <div key={i} className="mb-4">
+                            <h3 className="text-lg font-semibold text-emerald-700 mb-2">{sub.titulo}</h3>
+                            <p className="whitespace-pre-line">{sub.texto}</p>
+                          </div>
+                        ))}
+                        
+                        {/* Conceptos clave si existen */}
+                        {Array.isArray(jsonData.conceptosClave) && jsonData.conceptosClave.length > 0 && (
+                          <div className="mt-4">
+                            <h3 className="text-lg font-semibold text-emerald-700 mb-2">Conceptos Clave</h3>
+                            <ul className="list-disc pl-5 space-y-1">
+                              {jsonData.conceptosClave.map((concepto, i) => (
+                                <li key={i} className="text-emerald-800">{concepto}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        
+                        {/* Contenido adicional si no hay estructura específica */}
+                        {!jsonData.subtitulos && !jsonData.conceptosClave && (
+                          <div className="whitespace-pre-line">{JSON.stringify(jsonData, null, 2)}</div>
+                        )}
+                      </div>
+                    );
+                  }
+                  // Si no es JSON o hay error, mostrar como texto plano
+                  return <p className="whitespace-pre-wrap">{previewData.panelDidactico}</p>;
+                } catch (err) {
+                  // Si hay error en el parseo, mostrar como texto plano
+                  return <p className="whitespace-pre-wrap">{previewData.panelDidactico}</p>;
+                }
+              })()}
+            </div>
+          </div>
+        )}
 
         {previewData?.recursos && (previewData.recursos.instrucciones || previewData.recursos.enlaces || previewData.recursos.archivos?.length) && (
           <div className="p-4 bg-indigo-50 border-l-4 border-indigo-400 rounded-r-lg">

@@ -679,6 +679,7 @@ export interface ActividadRemota {
   tipos: TipoActividadRemota[];
   cantidadPreguntas: Partial<Record<TipoActividadRemota, number>>;
   introduccion: string;
+  panelDidactico?: string; // Panel informativo con contenido didáctico para el estudiante
   generatedContent: Partial<{
     'Quiz': QuizQuestion[];
     'Comprensión de Lectura': ComprensionLecturaContent;
