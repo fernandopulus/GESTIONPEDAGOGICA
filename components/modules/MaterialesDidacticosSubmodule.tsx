@@ -165,29 +165,28 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
         enlaces: formData.enlaces ? formData.enlaces.split(/[\s,]+/).filter(Boolean) : [],
       };
       
-      // Guardar presentación en estado 'generando'
-      const presentacionId = await savePresentacion({
-        ...presentacionData,
-        userId,
-        fechaCreacion: new Date().toISOString(),
-        estado: 'generando',
-        urlPresentacion: ''
-      }, userId);
+      console.log('Datos para presentación:', presentacionData);
       
       // Llamar a la Cloud Function para generar la presentación
+      // La función generateSlides ya maneja la creación del documento en Firestore
       const result = await generateSlides({
         ...presentacionData,
         userId
       });
+      
+      console.log('Resultado de la función:', result);
       
       // Actualizar la presentación con la URL generada
       if (result && result.url) {
         // La presentación se actualizará automáticamente a través de la suscripción
         console.log('Presentación generada:', result.url);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error al generar presentación:', err);
-      setError('Error al generar la presentación. Inténtalo de nuevo.');
+      // Mostrar más detalles del error
+      const errorMessage = err?.message || 'Error desconocido';
+      const errorCode = err?.code || 'unknown';
+      setError(`Error (${errorCode}): ${errorMessage}`);
     } finally {
       setGenerando(false);
     }
@@ -478,16 +477,35 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
                     </ul>
                   </div>
                   
+                  {/* Mensaje de error o nota de demostración */}
+                  {presentacion.mensajeError && (
+                    <div className="mt-2 text-xs italic text-amber-600 dark:text-amber-400">
+                      {presentacion.mensajeError}
+                    </div>
+                  )}
+                  
                   <div className="mt-3 flex justify-between">
                     {presentacion.estado === 'completada' ? (
                       <a
-                        href={presentacion.urlPresentacion}
+                        href={presentacion.esDemoMode || presentacion.urlPresentacion.includes("example.com") 
+                          ? "#" // Evitar navegar a URLs de ejemplo
+                          : presentacion.urlPresentacion}
+                        onClick={(e) => {
+                          if (presentacion.esDemoMode || presentacion.urlPresentacion.includes("example.com")) {
+                            e.preventDefault();
+                            alert("Esta es una versión de demostración. En la versión final, aquí verás una presentación real de Google Slides.");
+                          }
+                        }}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
+                        className={`inline-flex items-center gap-1 text-sm ${
+                          presentacion.esDemoMode || presentacion.urlPresentacion.includes("example.com") 
+                            ? "text-amber-600 hover:text-amber-800"
+                            : "text-blue-600 hover:text-blue-800"
+                        }`}
                       >
                         <ExternalLink className="w-3 h-3" />
-                        Abrir
+                        {presentacion.esDemoMode || presentacion.urlPresentacion.includes("example.com") ? "Ver Demo" : "Abrir en Google Slides"}
                       </a>
                     ) : (
                       <span className="text-gray-400 text-sm italic">

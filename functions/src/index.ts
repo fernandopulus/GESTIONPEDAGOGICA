@@ -100,83 +100,46 @@ desarrollo profesional docente.`;
 // =================================================================
 
 // =================================================================
-// INICIO: FUNCIÓN PARA GENERAR PRESENTACIONES (STUB)
+// NOTA: La función para generar presentaciones se ha movido al archivo
+// materialesDidacticos.ts y se importa a continuación
 // =================================================================
 
-export const generateSlides = onCall({
-  enforceAppCheck: true,
-  timeoutSeconds: 180, // 3 minutos para generar presentaciones
-}, async (request: CallableRequest) => {
-  if (!request.auth) {
-    throw new HttpsError(
-      "unauthenticated",
-      "La función debe ser llamada por un usuario autenticado."
-    );
-  }
+import {generateSlides} from "./materialesDidacticos";
+import {onRequest} from "firebase-functions/v2/https";
+import {SlidesIntegration} from "./slidesIntegration";
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data = request.data as any;
-  const tema = data.tema;
-  const curso = data.curso;
-  const asignatura = data.asignatura;
-  const objetivosAprendizaje = data.objetivosAprendizaje;
-  const numDiapositivas = data.numDiapositivas;
-  const estilo = data.estilo;
-  const incluirImagenes = data.incluirImagenes;
-  const contenidoFuente = data.contenidoFuente;
-  const enlaces = data.enlaces;
-  const planificacionId = data.planificacionId;
+export {generateSlides};
 
-  // Validaciones básicas
-  if (!tema || !asignatura || !objetivosAprendizaje ||
-    objetivosAprendizaje.length === 0) {
-    throw new HttpsError(
-      "invalid-argument",
-      "Faltan datos esenciales para generar la presentación."
-    );
-  }
+// Inicializar el servicio de integración con Google Slides
+const slidesIntegration = new SlidesIntegration();
 
+// Función para manejar el callback de OAuth de Google
+export const oauthCallback = onRequest({
+  timeoutSeconds: 60,
+}, async (req, res) => {
   try {
-    // TODO: Implementar la integración real con Google Slides API
-    // Por ahora, simulamos un retardo y devolvemos un enlace ficticio
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    // Registrar en Firestore
-    const presentacionRef = db.collection("presentacionesDidacticas").doc();
-    await presentacionRef.set({
-      id: presentacionRef.id,
-      userId: request.auth.uid,
-      planificacionId,
-      tema,
-      curso: curso || "",
-      asignatura,
-      objetivosAprendizaje,
-      numDiapositivas: numDiapositivas || 8,
-      estilo: estilo || "sobrio",
-      incluirImagenes: incluirImagenes || false,
-      contenidoFuente: contenidoFuente || "",
-      enlaces: enlaces || [],
-      fechaCreacion: new Date().toISOString(),
-      urlPresentacion: `https://docs.google.com/presentation/d/example-${Date.now()}/edit`,
-      estado: "completada",
-    });
-
-    return {
-      url: `https://docs.google.com/presentation/d/example-${Date.now()}/edit`,
-      presentacionId: presentacionRef.id,
-    };
-  } catch (error) {
-    console.error("Error generando presentación:", error);
-    throw new HttpsError(
-      "internal",
-      "Error al generar la presentación",
-      error
+    const {code, state} = req.query;
+    
+    if (!code || !state) {
+      throw new Error("Parámetros de callback incompletos");
+    }
+    
+    // Procesar el callback con nuestro nuevo servicio de integración
+    const userId = await slidesIntegration.handleOAuthCallback(
+      code.toString(),
+      state.toString()
     );
+    
+    // Redirigir al usuario de vuelta a la aplicación
+    res.redirect(`/materialesDidacticos?auth=success&userId=${userId}`);
+  } catch (error: any) {
+    console.error("Error en el callback de OAuth:", error);
+    res.status(500).send(`Error en la autorización: ${error.message}`);
   }
 });
 
 // =================================================================
-// FIN: FUNCIÓN PARA GENERAR PRESENTACIONES (STUB)
+// FIN: IMPORTACIÓN DE LA FUNCIÓN PARA GENERAR PRESENTACIONES
 // =================================================================
 
 // --- TUS FUNCIONES EXISTENTES (SIN CAMBIOS) ---

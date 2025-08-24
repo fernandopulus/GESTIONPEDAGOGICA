@@ -13,7 +13,7 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../firebase';
+import { db, functions, auth } from '../firebase';
 import { PresentacionDidactica } from '../../types';
 
 // Colección para materiales didácticos
@@ -88,13 +88,106 @@ export const subscribeToPresentacionesByPlanificacion = (userId: string, planifi
 
 // Llamar a la Cloud Function para generar una presentación
 export const generateSlides = async (presentacionData: Omit<PresentacionDidactica, 'id' | 'fechaCreacion' | 'estado' | 'urlPresentacion'>) => {
+  // Guardar el ID de la presentación para actualizarla en caso de error
+  let presentacionId: string | null = null;
+  
   try {
+    
+    // Verificar que el usuario esté autenticado antes de llamar a la función
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error("Usuario no autenticado. Debe iniciar sesión para generar presentaciones.");
+    }
+    
+    console.log("Estado de autenticación:", {
+      isLoggedIn: !!currentUser,
+      uid: currentUser.uid,
+      email: currentUser.email,
+    });
+    
+    // Actualizar el token de autenticación antes de llamar a la función
+    const token = await currentUser.getIdToken(true);
+    console.log("Token actualizado correctamente, longitud:", token.length);
+    
     // Esta función debería existir en Firebase Functions
     const generateSlidesFunction = httpsCallable(functions, 'generateSlides');
-    const result = await generateSlidesFunction(presentacionData);
-    return result.data as { url: string };
-  } catch (error) {
+    
+    // Asegúrate de que los datos se envían correctamente formateados como espera la función
+    const datos = {
+      tema: presentacionData.tema,
+      asignatura: presentacionData.asignatura,
+      objetivosAprendizaje: presentacionData.objetivosAprendizaje,
+      curso: presentacionData.curso,
+      numDiapositivas: presentacionData.numDiapositivas,
+      estilo: presentacionData.estilo,
+      incluirImagenes: presentacionData.incluirImagenes,
+      contenidoFuente: presentacionData.contenidoFuente || "",
+      enlaces: presentacionData.enlaces || [],
+      planificacionId: presentacionData.planificacionId
+    };
+    
+    // Guardar la presentación antes de llamar a la función
+    presentacionId = await savePresentacion({
+      ...presentacionData,
+      userId: currentUser.uid,
+      fechaCreacion: new Date().toISOString(),
+      estado: 'generando',
+      urlPresentacion: ''
+    }, currentUser.uid);
+    
+    console.log("Presentación guardada con ID:", presentacionId);
+    console.log("Enviando solicitud a generateSlides con usuario:", currentUser.uid);
+    console.log("Datos enviados:", datos);
+    
+    const result = await generateSlidesFunction(datos);
+    console.log("Respuesta de función:", result);
+    
+    const responseData = result.data as { 
+      url: string, 
+      presentacionId: string, 
+      message?: string,
+      demoMode?: boolean 
+    };
+    
+    // Actualizar la presentación con los datos recibidos de la función
+    if (responseData.presentacionId && responseData.url) {
+      try {
+        const updates: Partial<PresentacionDidactica> = {
+          estado: 'completada',
+          urlPresentacion: responseData.url
+        };
+        
+        // Si es una demo, añadir indicador visual
+        if (responseData.demoMode) {
+          updates.mensajeError = "NOTA: Esta es una versión de demostración. La presentación no existe realmente.";
+        }
+        
+        // Actualizar el estado y URL de la presentación
+        await updatePresentacion(presentacionId, updates);
+      } catch (updateError) {
+        console.warn("Error al actualizar la presentación en Firestore:", updateError);
+        // Continuamos a pesar del error ya que la presentación fue creada exitosamente
+      }
+    }
+    
+    return responseData;
+  } catch (error: any) {
     console.error("Error al generar presentación:", error);
+    console.error("Código:", error?.code, "Mensaje:", error?.message, "Detalles:", error?.details);
+    
+    // Si tenemos un ID de presentación, actualizar su estado a 'error'
+    if (presentacionId) {
+      try {
+        await updatePresentacion(presentacionId, {
+          estado: 'error',
+          mensajeError: error?.message || 'Error desconocido al generar la presentación'
+        });
+        console.warn(`Presentación ${presentacionId} marcada como fallida`);
+      } catch (updateError) {
+        console.error("Error al actualizar el estado de la presentación:", updateError);
+      }
+    }
+    
     throw error;
   }
 };

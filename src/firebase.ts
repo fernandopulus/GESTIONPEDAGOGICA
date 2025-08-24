@@ -2,7 +2,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, connectAuthEmulator } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage"; // ✅ Import correcto
-import { getFunctions } from "firebase/functions";
+import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAfL9dpeLfpWQPg4orpFSh3X5dzXrSsBwc",
@@ -18,11 +18,20 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 
-if (import.meta.env.MODE === "development") {
-  connectAuthEmulator(auth, "http://localhost:9099");
-}
+// Asegurarse de que la autenticación esté configurada correctamente
+// Para uso en producción, no conectamos al emulador
+// if (import.meta.env.MODE === "development") {
+//   connectAuthEmulator(auth, "http://localhost:9099");
+// }
 
 export const db = getFirestore(app);
 export const storage = getStorage(app); // ✅ Ahora no dará error
-export const functions = getFunctions(app);
+
+// Configuramos explícitamente la región para las funciones
+export const functions = getFunctions(app, 'us-central1'); // Especificar la región us-central1
+
+// Descomenta esta línea para conectar con las funciones locales (solo en desarrollo)
+// if (import.meta.env.MODE === "development") {
+//   connectFunctionsEmulator(functions, "localhost", 5001);
+// }
 export const GEMINI_API_KEY = 'AIzaSyDn2nxyD4XMxRJdyLgo_9MNRlPPb7f0u5w'; // API key for Gemini AI

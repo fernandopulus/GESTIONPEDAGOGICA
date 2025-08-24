@@ -1086,6 +1086,7 @@ export interface PresentacionDidactica {
     urlPresentacion: string;
     estado: 'generando' | 'completada' | 'error';
     mensajeError?: string;
+    esDemoMode?: boolean; // Indica si la presentación es una demo (no real)
 }
 
 // --- Gestión de Empresas y Prácticas TP (Refactorizado) ---
