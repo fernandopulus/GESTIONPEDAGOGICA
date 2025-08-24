@@ -55,6 +55,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Importación diferida del componente de PDF
 const PdfDownloadButton = lazy(() => import('../pdf/PdfDownloadButton'));
+import MaterialesDidacticosSubmodule from './MaterialesDidacticosSubmodule';
 import { 
   BookOpen, 
   Calendar, 
@@ -69,6 +70,7 @@ import {
   BookMarked,
   School2,
   Sparkles,
+  Files,
   LayoutDashboard
 } from 'lucide-react';
 // import { saveCalendarEvent } from '../../src/firebaseHelpers/calendar'; // Función no disponible
@@ -1066,7 +1068,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   const [editingPlanificacion, setEditingPlanificacion] = useState<PlanificacionUnidad | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'unidad' | 'clase' | 'calendario'>('unidad');
+  const [activeTab, setActiveTab] = useState<'unidad' | 'clase' | 'calendario' | 'materiales'>('unidad');
   const [viewingClassPlan, setViewingClassPlan] = useState<PlanificacionClase | null>(null);
   const [editingLesson, setEditingLesson] = useState<{ planId: string; lessonIndex: number; lessonData: DetalleLeccion } | null>(null);
 
@@ -1908,12 +1910,24 @@ Para las actividades de cada clase, ten en cuenta que:
             <Calendar className="w-4 h-4" />
             <span>Actividades Calendario</span>
           </button>
+          <button 
+            onClick={() => setActiveTab('materiales')} 
+            className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
+              activeTab === 'materiales' 
+                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
+                : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/50'
+            }`}
+          >
+            <Files className="w-4 h-4" />
+            <span>Mis Materiales</span>
+          </button>
         </nav>
       </div>
 
       {activeTab === 'unidad' && renderUnidadTab()}
       {activeTab === 'clase' && renderClaseTab()}
       {activeTab === 'calendario' && <ActividadesCalendarioSubmodule userId={userId} />}
+      {activeTab === 'materiales' && <MaterialesDidacticosSubmodule userId={userId} planificaciones={planificaciones} />}
 
       {editingLesson && (
         <EditLessonModal

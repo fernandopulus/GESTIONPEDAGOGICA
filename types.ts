@@ -1066,6 +1066,28 @@ export interface AnalisisTaxonomico {
     summary: Record<BloomLevel, number>;
 }
 
+// --- Materiales Didácticos ---
+export type EstiloPresentacion = 'sobrio' | 'visual';
+
+export interface PresentacionDidactica {
+    id: string;
+    userId: string;
+    planificacionId: string;
+    tema: string;
+    curso: string;
+    asignatura: string;
+    objetivosAprendizaje: string[];
+    numDiapositivas: number;
+    estilo: EstiloPresentacion;
+    incluirImagenes: boolean;
+    contenidoFuente?: string;
+    enlaces?: string[];
+    fechaCreacion: string; // ISO String
+    urlPresentacion: string;
+    estado: 'generando' | 'completada' | 'error';
+    mensajeError?: string;
+}
+
 // --- Gestión de Empresas y Prácticas TP (Refactorizado) ---
 
 export interface CalificacionItem {

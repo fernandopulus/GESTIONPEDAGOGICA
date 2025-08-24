@@ -23,6 +23,7 @@
     "node_modules",
     "../node_modules",
     "../node_modules/@types/d3*",
-    "**/@types/d3*"
+    "**/@types/d3*",
+    "backup"
   ]
 }
