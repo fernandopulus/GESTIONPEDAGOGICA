@@ -351,6 +351,12 @@ export interface PlanificacionUnidad extends PlanificacionBase {
   reflexionUnidad?: ReflexionUnidad;
 }
 
+export interface ConceptoRelevante {
+  texto: string;
+  peso: number; // 1-10, donde 10 es el más relevante
+  color?: string; // Color opcional para la representación visual
+}
+
 export interface PlanificacionClase extends PlanificacionBase {
   tipo: 'Clase';
   nombreClase: string;
@@ -358,6 +364,7 @@ export interface PlanificacionClase extends PlanificacionBase {
   momentosClase: MomentosClase;
   detalleLeccionOrigen?: DetalleLeccion;
   progreso?: number; // Porcentaje de avance de la clase (0-100)
+  conceptosRelevantes?: ConceptoRelevante[]; // Conceptos más importantes de la clase
 }
 
 export type PlanificacionDocente = PlanificacionUnidad | PlanificacionClase;

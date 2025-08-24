@@ -48,7 +48,7 @@ const usePlanificaciones = (userId: string) => {
 };
 
 import React, { useState, useEffect, useCallback, ChangeEvent, FormEvent, lazy, Suspense } from 'react';
-import type { PlanificacionUnidad, PlanificacionClase, DetalleLeccion, ActividadPlanificada, TareaActividad, User, NivelPlanificacion, ActividadFocalizadaEvent, MomentosClase, PlanificacionDocente } from '../../types';
+import type { PlanificacionUnidad, PlanificacionClase, DetalleLeccion, ActividadPlanificada, TareaActividad, User, NivelPlanificacion, ActividadFocalizadaEvent, MomentosClase, PlanificacionDocente, ConceptoRelevante } from '../../types';
 import { useMemo } from 'react';
 import { EventType } from '../../types';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -483,6 +483,100 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
             className="w-full mt-2 p-2 border rounded-md bg-slate-50 dark:bg-slate-700"
             disabled={isLoading || saving}
           />
+        </div>
+
+        {/* Sección de Conceptos Relevantes */}
+        <div className="mt-8">
+          <h3 className="font-bold text-xl text-slate-800 dark:text-slate-200 mb-4">Conceptos Relevantes</h3>
+          
+          <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-700 rounded-lg shadow-inner">
+            <div className="flex flex-wrap gap-3 justify-center">
+              {editablePlan.conceptosRelevantes?.map((concepto, index) => (
+                <div 
+                  key={index}
+                  className="relative group cursor-pointer"
+                  style={{
+                    fontSize: `${Math.max(0.9, Math.min(2.0, 0.9 + concepto.peso / 10))}rem`,
+                  }}
+                >
+                  <span 
+                    className="p-2 rounded-md transition-all duration-300 group-hover:scale-110 inline-block"
+                    style={{
+                      backgroundColor: concepto.color || `hsl(${(index * 30) % 360}, ${Math.min(100, 50 + concepto.peso * 5)}%, ${Math.max(30, 80 - concepto.peso * 5)}%)`,
+                      color: concepto.peso > 5 ? 'white' : 'currentColor',
+                      fontWeight: concepto.peso > 7 ? 'bold' : concepto.peso > 4 ? 'semibold' : 'normal',
+                      boxShadow: concepto.peso > 8 ? '0 4px 6px rgba(0,0,0,0.1)' : 'none'
+                    }}
+                  >
+                    {concepto.texto}
+                  </span>
+                  <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                    Relevancia: {concepto.peso}/10
+                  </div>
+                </div>
+              ))}
+              
+              {(!editablePlan.conceptosRelevantes || editablePlan.conceptosRelevantes.length === 0) && (
+                <button
+                  onClick={() => {
+                    // Extraer conceptos del contenido de la clase
+                    const contenidoClase = `${editablePlan.momentosClase.inicio} ${editablePlan.momentosClase.desarrollo} ${editablePlan.momentosClase.cierre} ${editablePlan.contenidos || ''}`;
+                    
+                    // Ejemplo simple: identificar palabras que se repiten más de una vez 
+                    // (en una implementación real se usaría un algoritmo NLP más sofisticado)
+                    const palabras = contenidoClase.toLowerCase()
+                      .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '')
+                      .split(/\s+/);
+                    
+                    const stopWords = ['y', 'o', 'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 
+                      'que', 'en', 'de', 'a', 'para', 'por', 'con', 'se', 'su', 'sus', 'este', 'esta', 'estos', 
+                      'estas', 'aquel', 'aquella', 'es', 'son', 'al', 'del'];
+                    
+                    const frecuencias: Record<string, number> = {};
+                    palabras.forEach(palabra => {
+                      if (palabra.length > 3 && !stopWords.includes(palabra)) {
+                        frecuencias[palabra] = (frecuencias[palabra] || 0) + 1;
+                      }
+                    });
+                    
+                    // Seleccionar los conceptos más relevantes
+                    const conceptos = Object.entries(frecuencias)
+                      .filter(([_, freq]) => freq > 1)
+                      .sort((a, b) => b[1] - a[1])
+                      .slice(0, 15)
+                      .map(([texto, frecuencia]) => ({
+                        texto,
+                        peso: Math.min(10, Math.max(1, Math.round(frecuencia / 2) + 3))
+                      }));
+                    
+                    setEditablePlan(prev => ({
+                      ...prev,
+                      conceptosRelevantes: conceptos
+                    }));
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Generar Conceptos Relevantes
+                </button>
+              )}
+            </div>
+            
+            {editablePlan.conceptosRelevantes && editablePlan.conceptosRelevantes.length > 0 && (
+              <div className="mt-4 text-right">
+                <button
+                  onClick={() => {
+                    setEditablePlan(prev => ({
+                      ...prev,
+                      conceptosRelevantes: []
+                    }));
+                  }}
+                  className="text-sm text-red-500 hover:text-red-700"
+                >
+                  Reiniciar Conceptos
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         {/* Avance de la Clase eliminado, solo se permite en planificación de unidad */}
       </div>
@@ -1210,14 +1304,28 @@ Para las actividades de cada clase, ten en cuenta que:
     - Incluir estrategias de aprendizaje activo y centrado en el estudiante.
     - Incorporar metodologías que desarrollen habilidades del siglo XXI según el currículum chileno.
     - Considerar momentos para activación de conocimientos previos, desarrollo de aprendizajes y metacognición/evaluación.
+    - Identificar 10-15 conceptos clave de la clase con su nivel de relevancia.
     
-    Responde SÓLO con un objeto JSON válido, sin formateo markdown, sin backticks, sin comentarios ni texto adicional. El objeto debe contener exactamente las siguientes tres claves con valores de tipo string (texto):
+    Responde SÓLO con un objeto JSON válido, sin formateo markdown, sin backticks, sin comentarios ni texto adicional. El objeto debe tener la siguiente estructura:
     
     {
       "inicio": "Texto detallado describiendo las actividades de inicio...",
       "desarrollo": "Texto detallado describiendo las actividades de desarrollo...",
-      "cierre": "Texto detallado describiendo las actividades de cierre..."
+      "cierre": "Texto detallado describiendo las actividades de cierre...",
+      "conceptosRelevantes": [
+        {
+          "texto": "Concepto clave 1",
+          "peso": 8
+        },
+        {
+          "texto": "Concepto clave 2",
+          "peso": 6
+        },
+        // ... más conceptos
+      ]
     }
+    
+    En "conceptosRelevantes", incluye de 10 a 15 conceptos clave de la clase, donde cada concepto debe tener un "peso" de relevancia del 1 al 10 (donde 10 es lo más relevante). No incluyas conceptos triviales o generales, sino los específicos y fundamentales para esta clase.
     
     No incluyas ningún texto adicional antes o después del JSON. Asegúrate de que los valores de inicio, desarrollo y cierre sean cadenas de texto simples, no objetos ni arrays.`;
 
@@ -1247,6 +1355,17 @@ Para las actividades de cada clase, ten en cuenta que:
           inicio: { type: "string" },
           desarrollo: { type: "string" },
           cierre: { type: "string" },
+          conceptosRelevantes: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                texto: { type: "string" },
+                peso: { type: "number" }
+              },
+              required: ["texto", "peso"]
+            }
+          }
         },
         required: ["inicio", "desarrollo", "cierre"],
       };
@@ -1289,6 +1408,21 @@ Para las actividades de cada clase, ten en cuenta que:
       // Log para verificar la estructura
       console.log('Estructura de momentosClase normalizada:', momentosClase);
 
+      // Asignar colores a los conceptos relevantes basados en su peso
+      const conceptosRelevantes = parsedData.conceptosRelevantes ? 
+        parsedData.conceptosRelevantes.map((concepto: ConceptoRelevante, index: number) => {
+          // Generar colores que dependen del peso para los conceptos
+          // Más peso = colores más intensos y cálidos
+          const hue = 200 + Math.floor((10 - concepto.peso) * 15); // 200 (azul) a 50 (naranja)
+          const saturation = 70 + concepto.peso * 3; // 70% a 100%
+          const lightness = Math.max(30, 80 - (concepto.peso * 5)); // 80% a 30%
+          
+          return {
+            ...concepto,
+            color: `hsl(${hue}, ${saturation}%, ${lightness}%)`
+          };
+        }) : [];
+
       const newClassPlan: Omit<PlanificacionClase, 'id'> = {
         fechaCreacion: new Date().toISOString(),
         autor: currentUser.nombreCompleto,
@@ -1301,6 +1435,7 @@ Para las actividades de cada clase, ten en cuenta que:
         duracionClase: 80,
         momentosClase,
         detalleLeccionOrigen: lessonDetail,
+        conceptosRelevantes,
       };
 
       await savePlan(newClassPlan);

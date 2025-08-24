@@ -28,6 +28,19 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     color: '#2563EB',
   },
+  conceptosContainer: {
+    backgroundColor: '#F5F8FF',
+    borderRadius: 5,
+    padding: 10,
+    marginTop: 5,
+    marginBottom: 15,
+    border: '1pt solid #E5E7EB',
+  },
+  conceptosWrapper: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
   subtitle: {
     fontSize: 14,
     color: '#64748B',
@@ -199,6 +212,36 @@ const ClasePDF = ({ plan }: { plan: PlanificacionClase }) => (
           <Text style={styles.momentoContent}>{plan.momentosClase.cierre}</Text>
         </View>
       </View>
+      
+      {plan.conceptosRelevantes && plan.conceptosRelevantes.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Conceptos Clave</Text>
+          <View style={styles.conceptosContainer}>
+            <View style={styles.conceptosWrapper}>
+              {plan.conceptosRelevantes.map((concepto, index) => (
+                <View 
+                  key={index} 
+                  style={{
+                    backgroundColor: concepto.color || `rgb(${100 + (index * 10) % 155}, ${70 + (index * 15) % 155}, ${200 - (index * 5) % 155})`,
+                    borderRadius: 4,
+                    padding: 5,
+                    margin: 4,
+                    opacity: Math.min(1, 0.5 + (concepto.peso / 20)),
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 8 + (concepto.peso * 0.7),
+                    color: concepto.peso > 5 ? 'white' : 'black',
+                    fontWeight: concepto.peso > 7 ? 'bold' : 'normal',
+                  }}>
+                    {concepto.texto}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </View>
+      )}
       
       {plan.detalleLeccionOrigen && (
         <View style={styles.detalleOrigenContainer}>
