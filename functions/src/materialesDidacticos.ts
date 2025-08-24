@@ -81,18 +81,18 @@ export const generateSlides = onCall<GenerateSlidesPayload>(
       // Establecer el valor de las credenciales para la API de Google
       process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON = googleCredentials.value();
       
-      // Preparar los datos para Google Slides API
-      const presentationDataRaw = {
-        tema,
-        asignatura,
-        objetivosAprendizaje: objetivosAprendizaje.join('\n'),
-        curso,
-        numDiapositivas,
-        estilo,
-        incluirImagenes,
-        contenidoFuente,
-        enlaces
-      };
+      // Ya no necesitamos esta variable
+      // const presentationDataRaw = {
+      //   tema,
+      //   asignatura,
+      //   objetivosAprendizaje: objetivosAprendizaje.join('\n'),
+      //   curso,
+      //   numDiapositivas,
+      //   estilo,
+      //   incluirImagenes,
+      //   contenidoFuente,
+      //   enlaces
+      // };
       
       // Intentar crear la presentación con la nueva integración de Google Slides
       let slideResponse;
