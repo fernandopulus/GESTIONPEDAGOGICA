@@ -105,6 +105,15 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
     };
 
     checkAuth();
+    
+    // También verificar si hay parámetros de OAuth en la URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const authStatus = urlParams.get('auth');
+    
+    if (authStatus === 'success') {
+      // Esperar un poco y volver a verificar el estado de autorización
+      setTimeout(checkAuth, 1000);
+    }
   }, [userId]);
 
   // Actualizar datos del formulario cuando se selecciona una planificación

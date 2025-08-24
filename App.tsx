@@ -20,6 +20,26 @@ const App: React.FC = () => {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isAdminSelectingProfile, setIsAdminSelectingProfile] = useState(false);
   const [adminProfile, setAdminProfile] = useState<Profile | null>(null);
+  const [oauthSuccess, setOauthSuccess] = useState<string | null>(null);
+
+  // Verificar parámetros de OAuth al cargar
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const authStatus = urlParams.get('auth');
+    const userId = urlParams.get('userId');
+    const module = urlParams.get('module');
+    
+    if (authStatus === 'success' && userId) {
+      setOauthSuccess('¡Autorización de Google Slides completada exitosamente!');
+      
+      // Limpiar los parámetros de la URL después de 3 segundos
+      setTimeout(() => {
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+        setOauthSuccess(null);
+      }, 3000);
+    }
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -133,12 +153,22 @@ const App: React.FC = () => {
   
   const effectiveProfile = adminProfile || firestoreUser.profile;
   return (
-    <Dashboard
-      currentUser={{ ...firestoreUser, profile: effectiveProfile }}
-      onLogout={handleLogout}
-      onChangeProfile={firestoreUser.profile === Profile.SUBDIRECCION ? handleChangeProfile : undefined}
-      canChangeProfile={firestoreUser.profile === Profile.SUBDIRECCION}
-    />
+    <>
+      {/* Notificación de éxito de OAuth */}
+      {oauthSuccess && (
+        <div className="fixed top-4 right-4 z-50 bg-green-500 text-white p-4 rounded-lg shadow-lg flex items-center gap-2">
+          <span className="text-lg">✅</span>
+          <span>{oauthSuccess}</span>
+        </div>
+      )}
+      
+      <Dashboard
+        currentUser={{ ...firestoreUser, profile: effectiveProfile }}
+        onLogout={handleLogout}
+        onChangeProfile={firestoreUser.profile === Profile.SUBDIRECCION ? handleChangeProfile : undefined}
+        canChangeProfile={firestoreUser.profile === Profile.SUBDIRECCION}
+      />
+    </>
   );
 };
 
