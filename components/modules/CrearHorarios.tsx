@@ -26,7 +26,6 @@ import {
   Loader2,
   HelpCircle,
   Users,
-  FileText,
 } from 'lucide-react';
 
 // Estilos para animaciones y scrollbar personalizado
@@ -90,8 +89,6 @@ const styles = `
   }
 `;
 import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 import { CURSOS, ASIGNATURAS } from '../../constants';
 import {
@@ -105,7 +102,6 @@ import {
   validarDocente,
   normalizarHeaderCurso,
   crearNuevoDocente,
-  actualizarHorasContrato,
 } from '../../src/firebaseHelpers/cargaHorariaHelper';
 
 import {
@@ -130,7 +126,7 @@ const CrearHorarios: React.FC = () => {
 
   const [docentes, setDocentes] = useState<DocenteCargaHoraria[]>([]);
   const [asignaciones, setAsignaciones] = useState<AsignacionCargaHoraria[]>([]);
-  const [filtros, setFiltros] = useState({ busqueda: '', curso: '', asignatura: '', departamento: '', funcionBusqueda: '' });
+  const [filtros, setFiltros] = useState({ busqueda: '', curso: '', asignatura: '', departamento: '' });
   const [mostrarResumen, setMostrarResumen] = useState(false);
   const [vistaResumen, setVistaResumen] = useState<'docentes' | 'cursos' | 'funciones' | 'totales'>('docentes');
   const [validaciones, setValidaciones] = useState<ValidationResultCarga[]>([]);
@@ -221,38 +217,6 @@ const CrearHorarios: React.FC = () => {
     } catch (e) {
       console.error(e);
       alert('Error al crear docente');
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Función para actualizar horas de contrato de un docente
-  const handleUpdateHorasContrato = async (docenteId: string, nuevasHoras: number) => {
-    try {
-      setLoading(true);
-      await actualizarHorasContrato(docenteId, nuevasHoras);
-      
-      // Actualizar localmente el estado de docentes para reflejar el cambio inmediatamente
-      setDocentes(prevDocentes => 
-        prevDocentes.map(d => 
-          d.id === docenteId ? { ...d, horasContrato: nuevasHoras } : d
-        )
-      );
-
-      // Recalcular los totales para reflejar las nuevas horas de contrato
-      const docenteActualizado = docentes.find(d => d.id === docenteId);
-      if (docenteActualizado) {
-        const asignacionesDocente = asignaciones.filter(a => a.docenteId === docenteId);
-        const nuevosTotal = calcularTotalesDocente(
-          { ...docenteActualizado, horasContrato: nuevasHoras },
-          asignacionesDocente
-        );
-        
-        console.log(`Horas de contrato actualizadas para ${docenteActualizado?.nombre}: ${nuevasHoras}h (HA: ${nuevosTotal.HA}, HB: ${nuevosTotal.HB})`);
-      }
-    } catch (error) {
-      console.error('Error al actualizar horas de contrato:', error);
-      alert('Error al actualizar horas de contrato');
     } finally {
       setLoading(false);
     }
@@ -440,11 +404,11 @@ const CrearHorarios: React.FC = () => {
   const exportarExcel = useCallback(() => {
     const datos = asignaciones.map((asig) => {
       const docente = docentes.find((d) => d.id === asig.docenteId);
-      const totales = totalesByDocente[asig.docenteId];
+  const totales = totalesByDocente[asig.docenteId];
       let funcionesTexto = '';
       if (asig.funcionesLectivas && asig.funcionesLectivas.length > 0) {
         funcionesTexto = asig.funcionesLectivas.map((f) => `${f.nombre}: ${f.horas}h`).join(', ');
-      } else if ((asig as any).funcionesNoLectivas && (asig as any).funcionesNoLectivas.length > 0) {
+  } else if ((asig as any).funcionesNoLectivas && (asig as any).funcionesNoLectivas.length > 0) {
         funcionesTexto = (asig as any).funcionesNoLectivas.map((f: any) => `${f.nombre}: ${f.horas}h`).join(', ');
       } else if ((asig as any).otraFuncion) {
         funcionesTexto = (asig as any).otraFuncion;
@@ -459,7 +423,6 @@ const CrearHorarios: React.FC = () => {
       if (totales) {
         fila['HORAS LECTIVAS (HA)'] = totales.HA;
         fila['HORAS NO LECTIVAS (HB)'] = totales.HB;
-        // Asegurarnos de usar el valor real y actualizado de las horas de contrato del docente
         fila['HORAS CONTRATO'] = docente?.horasContrato || 0;
       }
       return fila;
@@ -468,375 +431,6 @@ const CrearHorarios: React.FC = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Horarios');
     XLSX.writeFile(wb, `horarios_${new Date().toISOString().split('T')[0]}.xlsx`);
-  }, [asignaciones, docentes, totalesByDocente]);
-
-  const exportarPDF = useCallback(() => {
-    // Creamos un nuevo documento PDF
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4'
-    });
-    
-    // Definimos los colores y dimensiones para un diseño moderno y minimalista
-    const colorPrimario: [number, number, number] = [41, 128, 185]; // Azul corporativo
-    const colorSecundario: [number, number, number] = [52, 73, 94]; // Gris oscuro para textos
-    const colorAcento: [number, number, number] = [26, 188, 156]; // Verde turquesa para acentos
-    
-    const margenIzquierdo = 20;
-    const margenDerecho = 20;
-    const margenSuperior = 20;
-    const anchoUtil = doc.internal.pageSize.getWidth() - margenIzquierdo - margenDerecho;
-    
-    // Logo y URLs
-    const logoUrl = "https://res.cloudinary.com/dwncmu1wu/image/upload/v1753209432/LIR_fpq2lc.png";
-    
-    // Función para añadir página con encabezado moderno
-    const addPageWithHeader = async (docente: string) => {
-      doc.addPage();
-      
-      // Añadir logo (2cm de ancho aprox. 56px)
-      try {
-        const logoWidth = 20; // 2cm en mm
-        const logoHeight = 20; // Mantener proporción
-        const logoX = margenIzquierdo;
-        const logoY = margenSuperior;
-        
-        // Cargar y colocar la imagen
-        const img = new Image();
-        img.crossOrigin = "Anonymous";  // Importante para CORS
-        
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-          img.src = logoUrl;
-        });
-        
-        doc.addImage(img, 'PNG', logoX, logoY, logoWidth, logoHeight);
-      } catch (err) {
-        console.error("Error al cargar el logo:", err);
-      }
-      
-      // Línea separadora elegante
-      doc.setDrawColor(colorPrimario[0], colorPrimario[1], colorPrimario[2]);
-      doc.setLineWidth(0.5);
-      doc.line(margenIzquierdo, margenSuperior + 25, doc.internal.pageSize.getWidth() - margenDerecho, margenSuperior + 25);
-      
-      // Título del documento con tipografía moderna
-      doc.setFontSize(20);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(colorPrimario[0], colorPrimario[1], colorPrimario[2]);
-      doc.text('CARGA HORARIA DOCENTE', doc.internal.pageSize.getWidth() / 2, margenSuperior + 15, { align: 'center' });
-      
-      // Nombre del docente con tipografía moderna
-      doc.setFontSize(16);
-      doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
-      doc.text(`Docente: ${docente}`, doc.internal.pageSize.getWidth() / 2, margenSuperior + 35, { align: 'center' });
-      
-      // Eliminamos la fecha de generación para un diseño más limpio
-    };
-    
-    // Eliminamos la primera página (en blanco)
-    doc.deletePage(1);
-    
-    // Agrupamos las asignaciones por docente
-    const asignacionesPorDocente: Record<string, AsignacionCargaHoraria[]> = {};
-    asignaciones.forEach(asig => {
-      if (!asignacionesPorDocente[asig.docenteId]) {
-        asignacionesPorDocente[asig.docenteId] = [];
-      }
-      asignacionesPorDocente[asig.docenteId].push(asig);
-    });
-    
-    // Procesamos a cada docente de manera asíncrona
-    const procesarDocentes = async () => {
-      // Para cada docente creamos una página
-      for (const [docenteId, asignacionesDocente] of Object.entries(asignacionesPorDocente)) {
-        const docente = docentes.find(d => d.id === docenteId);
-        if (!docente) continue;
-        
-        // Añadir página con encabezado
-        await addPageWithHeader(docente.nombre);
-        
-        // Datos básicos del docente con mejor formato
-        const totales = totalesByDocente[docenteId];
-        const datosDocente = [
-          ['Horas de Contrato:', docente.horasContrato.toString()],
-          ['Horas Lectivas (HA):', totales ? totales.HA.toString() : '0'],
-          ['Horas No Lectivas (HB):', totales ? totales.HB.toString() : '0'],
-          ['Email:', docente.email || 'No especificado']
-        ];
-        
-        autoTable(doc, {
-          startY: margenSuperior + 45,
-          margin: { left: margenIzquierdo, right: margenDerecho },
-          head: [],
-          body: datosDocente,
-          theme: 'plain',
-          styles: {
-            fontSize: 10,
-            cellPadding: 2,
-            lineColor: [240, 240, 240],
-            lineWidth: 0.1
-          },
-          columnStyles: {
-            0: { cellWidth: 50, fontStyle: 'bold', textColor: colorPrimario },
-            1: { cellWidth: 'auto', textColor: [70, 70, 70] }
-          }
-        });
-        
-        // Título para la sección de asignaturas
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(12);
-        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
-        const tituloAsignaturasY = (doc as any).lastAutoTable.finalY + 10;
-        doc.text('Distribución de asignaturas por curso', margenIzquierdo, tituloAsignaturasY);
-        
-        // Tabla de asignaturas y cursos
-        const asignaturasData = [];
-        asignacionesDocente.forEach(asig => {
-          // Si tiene asignatura la agregamos
-          if (asig.asignaturaOModulo) {
-            const fila = [
-              asig.asignaturaOModulo,
-              asig.horasXAsig || '',
-            ];
-            
-            // Añadimos los cursos como columnas
-            CURSOS.forEach(curso => {
-              fila.push(asig.horasPorCurso[curso as CursoId] || '');
-            });
-            
-            asignaturasData.push(fila);
-          }
-        });
-        
-        // Encabezado para la tabla de asignaturas
-        const headerAsignaturas = [
-          'Asignatura/Módulo', 
-          'Hrs', 
-          ...CURSOS
-        ];
-        
-        if (asignaturasData.length > 0) {
-          autoTable(doc, {
-            startY: tituloAsignaturasY + 3,
-            margin: { left: margenIzquierdo, right: margenDerecho },
-            head: [headerAsignaturas],
-            body: asignaturasData,
-            theme: 'grid',
-            headStyles: { 
-              fillColor: colorPrimario, 
-              textColor: [255, 255, 255],
-              fontStyle: 'bold',
-              lineWidth: 0.1,
-              lineColor: [255, 255, 255]
-            },
-            styles: {
-              fontSize: 8,
-              overflow: 'linebreak',
-              cellPadding: 3,
-              valign: 'middle',
-              halign: 'center',
-              lineWidth: 0.1,
-              lineColor: [220, 220, 220]
-            },
-            columnStyles: {
-              0: { cellWidth: 60, halign: 'left' },
-              1: { cellWidth: 15, halign: 'center' }
-            },
-            alternateRowStyles: {
-              fillColor: [249, 249, 249]
-            },
-            didParseCell: (data) => {
-              // Destacar celdas con valores
-              if (data.section === 'body' && data.column.index > 1 && data.cell.raw) {
-                data.cell.styles.fontStyle = 'bold';
-                data.cell.styles.textColor = colorAcento;
-              }
-            }
-          });
-        }
-        
-        // Título para la sección de funciones
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(12);
-        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
-        const tituloFuncionesY = asignaturasData.length > 0 ? 
-          (doc as any).lastAutoTable.finalY + 10 : 
-          tituloAsignaturasY + 15;
-        doc.text('Funciones asignadas', margenIzquierdo, tituloFuncionesY);
-        
-        // Tabla de funciones
-        const funcionesData = [];
-        asignacionesDocente.forEach(asig => {
-          // Si tiene funciones lectivas las agregamos
-          if (asig.funcionesLectivas && asig.funcionesLectivas.length > 0) {
-            asig.funcionesLectivas.forEach(funcion => {
-              funcionesData.push([
-                funcion.nombre,
-                funcion.horas.toString()
-              ]);
-            });
-          } else if ((asig as any).funcionesNoLectivas && (asig as any).funcionesNoLectivas.length > 0) {
-            (asig as any).funcionesNoLectivas.forEach((funcion: any) => {
-              funcionesData.push([
-                funcion.nombre,
-                funcion.horas.toString()
-              ]);
-            });
-          } else if ((asig as any).otraFuncion) {
-            funcionesData.push([
-              (asig as any).otraFuncion,
-              ''
-            ]);
-          }
-        });
-        
-        if (funcionesData.length > 0) {
-          autoTable(doc, {
-            startY: tituloFuncionesY + 3,
-            margin: { left: margenIzquierdo, right: margenDerecho },
-            head: [['Función', 'Horas']],
-            body: funcionesData,
-            theme: 'grid',
-            headStyles: { 
-              fillColor: colorPrimario, 
-              textColor: [255, 255, 255],
-              fontStyle: 'bold',
-              lineWidth: 0.1,
-              lineColor: [255, 255, 255]
-            },
-            styles: {
-              fontSize: 8,
-              overflow: 'linebreak',
-              cellPadding: 3,
-              lineWidth: 0.1,
-              lineColor: [220, 220, 220]
-            },
-            columnStyles: {
-              0: { cellWidth: 'auto', halign: 'left' },
-              1: { cellWidth: 30, halign: 'center' }
-            },
-            alternateRowStyles: {
-              fillColor: [249, 249, 249]
-            },
-            didParseCell: (data) => {
-              // Destacar las horas
-              if (data.section === 'body' && data.column.index === 1 && data.cell.raw) {
-                data.cell.styles.fontStyle = 'bold';
-                data.cell.styles.textColor = colorAcento;
-              }
-            }
-          });
-        }
-        
-        // Añadir sección de firmas con mejor diseño - siempre a la misma altura desde abajo
-        const yPos = doc.internal.pageSize.getHeight() - 50;
-        
-        doc.setDrawColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
-        doc.setLineWidth(0.5);
-        
-        // Firma del docente
-        const firmaDocenteX = margenIzquierdo + anchoUtil * 0.25;
-        doc.line(firmaDocenteX - 30, yPos, firmaDocenteX + 30, yPos);
-        
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
-        doc.text('Firma Docente', firmaDocenteX, yPos + 7, { align: 'center' });
-        
-        // Firma de la directora
-        const firmaDirectoraX = margenIzquierdo + anchoUtil * 0.75;
-        doc.line(firmaDirectoraX - 30, yPos, firmaDirectoraX + 30, yPos);
-        
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
-        doc.text('Firma Directora', firmaDirectoraX, yPos + 7, { align: 'center' });
-        
-        // Pie de página con información institucional
-        const piePaginaY = doc.internal.pageSize.getHeight() - 10;
-        doc.setFontSize(7);
-        doc.setTextColor(150, 150, 150);
-        doc.text('Liceo Industrial de Recoleta', doc.internal.pageSize.getWidth() / 2, piePaginaY, { align: 'center' });
-      }
-      
-      // Si no hay páginas (porque no hay docentes), añadimos una página con mensaje
-      if (doc.getNumberOfPages() === 0) {
-        doc.addPage();
-        
-        // Intentamos añadir logo como en las otras páginas
-        try {
-          const logoWidth = 20; // 2cm en mm
-          const logoHeight = 20; // Mantener proporción
-          const logoX = margenIzquierdo;
-          const logoY = margenSuperior;
-          
-          const img = new Image();
-          img.crossOrigin = "Anonymous";
-          await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-            img.src = logoUrl;
-          });
-          
-          doc.addImage(img, 'PNG', logoX, logoY, logoWidth, logoHeight);
-        } catch (err) {
-          console.error("Error al cargar el logo:", err);
-        }
-        
-        // Línea separadora
-        doc.setDrawColor(colorPrimario[0], colorPrimario[1], colorPrimario[2]);
-        doc.setLineWidth(0.5);
-        doc.line(margenIzquierdo, margenSuperior + 25, doc.internal.pageSize.getWidth() - margenDerecho, margenSuperior + 25);
-        
-        // Mensaje de no datos
-        doc.setFontSize(14);
-        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
-        doc.text('No hay datos de carga horaria disponibles', doc.internal.pageSize.getWidth() / 2, 100, { align: 'center' });
-        
-        // Añadimos firmas
-        const yPos = doc.internal.pageSize.getHeight() - 50;
-        
-        doc.setDrawColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
-        doc.setLineWidth(0.5);
-        
-        // Firma del docente
-        const anchoUtil = doc.internal.pageSize.getWidth() - margenIzquierdo - margenDerecho;
-        const firmaDocenteX = margenIzquierdo + anchoUtil * 0.25;
-        doc.line(firmaDocenteX - 30, yPos, firmaDocenteX + 30, yPos);
-        
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
-        doc.text('Firma Docente', firmaDocenteX, yPos + 7, { align: 'center' });
-        
-        // Firma de la directora
-        const firmaDirectoraX = margenIzquierdo + anchoUtil * 0.75;
-        doc.line(firmaDirectoraX - 30, yPos, firmaDirectoraX + 30, yPos);
-        
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.setTextColor(colorSecundario[0], colorSecundario[1], colorSecundario[2]);
-        doc.text('Firma Directora', firmaDirectoraX, yPos + 7, { align: 'center' });
-        
-        // Pie de página 
-        const piePaginaY = doc.internal.pageSize.getHeight() - 10;
-        doc.setFontSize(7);
-        doc.setTextColor(150, 150, 150);
-        doc.text('Liceo Industrial de Recoleta', doc.internal.pageSize.getWidth() / 2, piePaginaY, { align: 'center' });
-      }
-      
-      // Guardar el PDF
-      doc.save(`carga_horaria_docentes_${new Date().toISOString().split('T')[0]}.pdf`);
-    };
-    
-    // Ejecutar el proceso
-    procesarDocentes().catch(error => {
-      console.error('Error al generar el PDF:', error);
-      alert('Error al generar el PDF. Consulte la consola para más detalles.');
-    });
   }, [asignaciones, docentes, totalesByDocente]);
 
   const guardar = useCallback(async () => {
@@ -1178,14 +772,6 @@ const CrearHorarios: React.FC = () => {
             </button>
             
             <button 
-              onClick={exportarPDF} 
-              className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white rounded-lg transition-all duration-200 shadow-sm group"
-            >
-              <FileText className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
-              <span className="text-xs font-medium mt-1">PDF por Docente</span>
-            </button>
-            
-            <button 
               onClick={() => setMostrarResumen(true)} 
               className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white rounded-lg transition-all duration-200 shadow-sm group"
             >
@@ -1471,44 +1057,13 @@ const CrearHorarios: React.FC = () => {
                     {/* HA/HB */}
                     <td className="px-1 py-2 text-center whitespace-nowrap">
                       {totales && (
-                        <div className="space-y-1">
+                        <div className="space-y-0">
                           <div className="text-blue-600 dark:text-blue-400 text-xs">
                             HA: {totales.HA} ({totales.restantesHA >= 0 ? '+' : ''}{totales.restantesHA})
                           </div>
                           <div className="text-green-600 dark:text-green-400 text-xs">
                             HB: {totales.HB} ({totales.restantesHB >= 0 ? '+' : ''}{totales.restantesHB})
                           </div>
-                          {/* Sólo mostrar en la primera fila del docente */}
-                          {esPrimeraAsignacionDocente && (
-                            <div className="mt-1 relative group">
-                              <div className="flex items-center justify-center border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 bg-yellow-50 dark:bg-yellow-900/20 cursor-pointer group-hover:bg-yellow-100 dark:group-hover:bg-yellow-900/30">
-                                <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
-                                  Contrato: {totales.horasContrato}h
-                                </span>
-                              </div>
-                              <div className="absolute left-0 right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center py-0.5">
-                                <input 
-                                  type="number" 
-                                  defaultValue={totales.horasContrato}
-                                  min="1"
-                                  max="44"
-                                  className="w-10 px-1 py-0 text-center rounded border border-blue-400 dark:border-blue-600 focus:ring-2 focus:ring-blue-500/30 focus:outline-none text-xs"
-                                  onBlur={(e) => {
-                                    const nuevoValor = parseInt(e.target.value) || totales.horasContrato;
-                                    if (nuevoValor !== totales.horasContrato) {
-                                      handleUpdateHorasContrato(asignacion.docenteId, nuevoValor);
-                                    }
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.currentTarget.blur();
-                                    }
-                                  }}
-                                />
-                                <span className="ml-1 text-xs text-gray-600 dark:text-gray-400">h</span>
-                              </div>
-                            </div>
-                          )}
                         </div>
                       )}
                     </td>
@@ -1584,34 +1139,9 @@ const CrearHorarios: React.FC = () => {
                           {totales && (
                             <div>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-2">
-                                <div className="flex items-center gap-1">
+                                <div>
                                   <span className="text-gray-600 dark:text-gray-400">Contrato:</span>
-                                  <div className="relative group">
-                                    <span className="ml-1 font-medium group-hover:opacity-0 transition-opacity duration-200 cursor-pointer bg-yellow-100 dark:bg-yellow-900/30 px-2 py-0.5 rounded">
-                                      {docente.horasContrato}h
-                                    </span>
-                                    <div className="absolute left-1 top-0 opacity-0 group-hover:opacity-100 flex items-center transition-opacity duration-200">
-                                      <input
-                                        type="number"
-                                        defaultValue={docente.horasContrato}
-                                        min="1"
-                                        max="44"
-                                        className="w-12 px-1 py-0 text-center rounded border border-blue-400 dark:border-blue-600 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none"
-                                        onBlur={(e) => {
-                                          const nuevoValor = parseInt(e.target.value) || docente.horasContrato;
-                                          if (nuevoValor !== docente.horasContrato) {
-                                            handleUpdateHorasContrato(docente.id, nuevoValor);
-                                          }
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') {
-                                            e.currentTarget.blur();
-                                          }
-                                        }}
-                                      />
-                                      <span className="ml-1 text-gray-600 dark:text-gray-400">h</span>
-                                    </div>
-                                  </div>
+                                  <span className="ml-1 font-medium">{docente.horasContrato}h</span>
                                 </div>
                                 <div>
                                   <span className="text-gray-600 dark:text-gray-400">HA:</span>
@@ -1730,135 +1260,49 @@ const CrearHorarios: React.FC = () => {
 
               {vistaResumen === 'funciones' && (
                 <div>
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-                    <h3 className="text-xl font-semibold">Resumen por Funciones Lectivas</h3>
-                    <div className="relative w-full md:w-64">
-                      <input 
-                        type="text" 
-                        placeholder="Buscar función..." 
-                        className="w-full px-3 py-2 pr-8 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                        onChange={(e) => setFiltros(prev => ({...prev, funcionBusqueda: e.target.value}))}
-                        value={filtros.funcionBusqueda || ''}
-                      />
-                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
+                  <h3 className="text-xl font-semibold mb-4">Resumen por Funciones Lectivas</h3>
                   {(() => {
-                    // Variables y lógica de procesamiento
-                    const todas = [];
-                    
-                    // Función para normalizar el nombre de las funciones
-                    const normalizarNombreFuncion = (nombre) => {
-                      if (!nombre) return '';
-                      let normalizado = nombre.trim().toLowerCase();
-                      normalizado = normalizado.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                      return normalizado;
-                    };
-                    
-                    const nombresOriginales = {};
-                    
-                    // Procesar asignaciones
+                    const todas: { nombre: string; docentes: { id: string; nombre: string; horas: number }[]; totalHoras: number }[] = [];
                     asignaciones.forEach((asig) => {
                       (asig.funcionesLectivas || []).forEach((funcion) => {
                         if (!funcion.nombre) return;
-                        const nombreNormalizado = normalizarNombreFuncion(funcion.nombre);
-                        if (!nombresOriginales[nombreNormalizado] || funcion.nombre.length > nombresOriginales[nombreNormalizado].length) {
-                          nombresOriginales[nombreNormalizado] = funcion.nombre;
-                        }
-                        const existente = todas.find((f) => normalizarNombreFuncion(f.nombre) === nombreNormalizado);
+                        const existente = todas.find((f) => f.nombre === funcion.nombre);
                         if (!existente) {
-                          todas.push({ 
-                            nombre: funcion.nombre, 
-                            docentes: [{ id: asig.docenteId, nombre: asig.docenteNombre, horas: funcion.horas }], 
-                            totalHoras: funcion.horas 
-                          });
+                          todas.push({ nombre: funcion.nombre, docentes: [{ id: asig.docenteId, nombre: asig.docenteNombre, horas: funcion.horas }], totalHoras: funcion.horas });
                         } else {
-                          existente.nombre = nombresOriginales[nombreNormalizado];
                           const doc = existente.docentes.find((d) => d.id === asig.docenteId);
-                          if (!doc) {
-                            existente.docentes.push({ id: asig.docenteId, nombre: asig.docenteNombre, horas: funcion.horas });
-                          } else {
-                            doc.horas += funcion.horas;
-                          }
+                          if (!doc) existente.docentes.push({ id: asig.docenteId, nombre: asig.docenteNombre, horas: funcion.horas });
+                          else doc.horas += funcion.horas;
                           existente.totalHoras += funcion.horas;
                         }
                       });
                     });
-                    
-                    // Ordenar por total de horas
                     todas.sort((a, b) => b.totalHoras - a.totalHoras);
-                    
-                    if (todas.length === 0) {
+                    if (todas.length === 0)
                       return (
                         <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-750">
                           <p className="text-gray-500 dark:text-gray-400 text-center">No hay funciones lectivas asignadas.</p>
                         </div>
                       );
-                    }
-                    
-                    // Aplicar filtros
-                    const funcionesFiltradas = todas.filter(funcion => {
-                      if (!filtros.funcionBusqueda) return true;
-                      const busquedaNormalizada = normalizarNombreFuncion(filtros.funcionBusqueda);
-                      const nombreNormalizado = normalizarNombreFuncion(funcion.nombre);
-                      return nombreNormalizado.includes(busquedaNormalizada) || 
-                             funcion.docentes.some(doc => 
-                               doc.nombre.toLowerCase().includes(filtros.funcionBusqueda.toLowerCase()));
-                    });
-                    
-                    // Renderizar resultados
                     return (
-                      <div>
-                        <div className="mb-3 flex items-center gap-2">
-                          {filtros.funcionBusqueda ? (
-                            <p className="text-sm text-gray-600 dark:text-gray-300">
-                              Se encontraron <span className="font-medium">{funcionesFiltradas.length}</span> de {todas.length} funciones
-                              para "<span className="font-medium">{filtros.funcionBusqueda}</span>"
-                            </p>
-                          ) : (
-                            <p className="text-sm text-gray-600 dark:text-gray-300">
-                              Mostrando <span className="font-medium">{todas.length}</span> funciones
-                            </p>
-                          )}
-                        </div>
-                        <div className="grid gap-4">
-                          {funcionesFiltradas.length === 0 ? (
-                            <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-750">
-                              <p className="text-gray-500 dark:text-gray-400 text-center">
-                                No se encontraron funciones que coincidan con "{filtros.funcionBusqueda}".
-                              </p>
+                      <div className="grid gap-4">
+                        {todas.map((funcion, i) => (
+                          <div key={i} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="font-medium text-gray-900 dark:text-white">{funcion.nombre}</h4>
+                              <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs rounded-md">Total: {funcion.totalHoras}h</span>
                             </div>
-                          ) : (
-                            funcionesFiltradas.map((funcion, i) => (
-                              <div key={i} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                                <div className="flex items-center justify-between mb-2">
-                                  <h4 className="font-medium text-gray-900 dark:text-white">{funcion.nombre}</h4>
-                                  <div className="flex items-center gap-2">
-                                    <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs rounded-md">
-                                      Total: {funcion.totalHoras}h
-                                    </span>
-                                    <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-md">
-                                      {funcion.docentes.length} docente{funcion.docentes.length !== 1 ? 's' : ''}
-                                    </span>
-                                  </div>
-                                </div>
-                                <h5 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Docentes asignados:</h5>
-                                <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
-                                  {funcion.docentes.sort((a, b) => b.horas - a.horas).map((doc) => (
-                                    <li key={doc.id} className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
-                                      <span>{doc.nombre}</span>
-                                      <span className="text-green-600 dark:text-green-400 font-medium">{doc.horas}h</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            ))
-                          )}
-                        </div>
+                            <h5 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Docentes asignados:</h5>
+                            <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
+                              {funcion.docentes.sort((a, b) => b.horas - a.horas).map((doc) => (
+                                <li key={doc.id} className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                                  <span>{doc.nombre}</span>
+                                  <span className="text-green-600 dark:text-green-400 font-medium">{doc.horas}h</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
                       </div>
                     );
                   })()}
@@ -1919,14 +1363,6 @@ const CrearHorarios: React.FC = () => {
                         <span className="text-sm text-amber-500 dark:text-amber-300">horas</span>
                       </div>
                       <p className="mt-3 text-sm text-amber-600 dark:text-amber-400">Total de horas contratadas (Lectivas + No lectivas)</p>
-                      <div className="mt-2 p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg text-xs">
-                        <p className="text-amber-700 dark:text-amber-300 flex items-center">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          Este total refleja las horas de contrato reales de cada docente
-                        </p>
-                      </div>
                     </div>
                   </div>
 

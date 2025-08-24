@@ -129,7 +129,21 @@ const EditLessonModal: React.FC<EditLessonModalProps> = ({ lesson, onClose, onSa
   const [editedLesson, setEditedLesson] = useState<DetalleLeccion>(lesson);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setEditedLesson({ ...editedLesson, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    
+    // Manejar cambios en actividadDetallada de manera especial
+    if (name.startsWith('actividadDetallada.')) {
+      const field = name.split('.')[1];
+      setEditedLesson(prev => ({
+        ...prev,
+        actividadDetallada: {
+          ...prev.actividadDetallada,
+          [field]: value
+        }
+      }));
+    } else {
+      setEditedLesson({ ...editedLesson, [name]: value });
+    }
   };
 
   const handleSubmit = async () => {
@@ -146,21 +160,107 @@ const EditLessonModal: React.FC<EditLessonModalProps> = ({ lesson, onClose, onSa
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-fade-in-up" onClick={e => e.stopPropagation()}>
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 p-6 border-b dark:border-slate-700">Editar Detalle de Lección</h2>
         <div className="p-6 space-y-4 overflow-y-auto">
-          {Object.entries(editedLesson).map(([key, value]) => (
-            <div key={key}>
-              <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 capitalize mb-1">
-                {key.replace(/([A-Z])/g, ' $1')}
-              </label>
-              <textarea
-                name={key}
-                value={value as string}
-                onChange={handleChange}
-                rows={3}
-                className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
-                disabled={isLoading}
-              />
-            </div>
-          ))}
+          {/* Campos básicos de la lección */}
+          <div className="mb-4">
+            <h3 className="font-semibold text-lg mb-2">Información básica</h3>
+            {Object.entries(editedLesson).filter(([key]) => 
+              key !== 'actividadDetallada'
+            ).map(([key, value]) => (
+              <div key={key} className="mb-3">
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 capitalize mb-1">
+                  {key.replace(/([A-Z])/g, ' $1')}
+                </label>
+                <textarea
+                  name={key}
+                  value={value as string}
+                  onChange={handleChange}
+                  rows={3}
+                  className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                  disabled={isLoading}
+                />
+              </div>
+            ))}
+          </div>
+          
+          {/* Sección de actividad detallada */}
+          <div className="border-t pt-4 mt-4">
+            <h3 className="font-semibold text-lg mb-2">Actividad detallada</h3>
+            {editedLesson.actividadDetallada ? (
+              <>
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                    Estrategia didáctica
+                  </label>
+                  <textarea
+                    name="actividadDetallada.estrategiaDidactica"
+                    value={editedLesson.actividadDetallada.estrategiaDidactica}
+                    onChange={handleChange}
+                    rows={2}
+                    className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                    disabled={isLoading}
+                  />
+                </div>
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                    Materiales
+                  </label>
+                  <textarea
+                    name="actividadDetallada.materiales"
+                    value={editedLesson.actividadDetallada.materiales}
+                    onChange={handleChange}
+                    rows={2}
+                    className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                    disabled={isLoading}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                      Organización de estudiantes
+                    </label>
+                    <textarea
+                      name="actividadDetallada.organizacionEstudiantes"
+                      value={editedLesson.actividadDetallada.organizacionEstudiantes}
+                      onChange={handleChange}
+                      rows={2}
+                      className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                      disabled={isLoading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                      Tiempo estimado
+                    </label>
+                    <textarea
+                      name="actividadDetallada.tiempoEstimado"
+                      value={editedLesson.actividadDetallada.tiempoEstimado}
+                      onChange={handleChange}
+                      rows={2}
+                      className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                    Descripción detallada
+                  </label>
+                  <textarea
+                    name="actividadDetallada.descripcion"
+                    value={editedLesson.actividadDetallada.descripcion}
+                    onChange={handleChange}
+                    rows={4}
+                    className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                    disabled={isLoading}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-slate-500 dark:text-slate-400 italic">
+                Esta lección no tiene actividad detallada definida.
+              </div>
+            )}
+          </div>
         </div>
         <div className="bg-slate-50 dark:bg-slate-700/50 px-6 py-4 rounded-b-xl flex justify-end gap-3 mt-auto">
           <button 
@@ -243,6 +343,21 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
               <p><strong>Perfil de Egreso:</strong> {lesson.perfilEgreso}</p>
               <p><strong>Interdisciplinariedad:</strong> {lesson.asignaturasInterdisciplinariedad}</p>
             </div>
+            
+            {lesson.actividadDetallada && (
+              <div className="mt-4 bg-slate-50 dark:bg-slate-700/40 p-3 rounded-md">
+                <h5 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Actividad detallada</h5>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <p><strong>Estrategia:</strong> {lesson.actividadDetallada.estrategiaDidactica}</p>
+                  <p><strong>Materiales:</strong> {lesson.actividadDetallada.materiales}</p>
+                  <p><strong>Organización:</strong> {lesson.actividadDetallada.organizacionEstudiantes}</p>
+                  <p><strong>Tiempo:</strong> {lesson.actividadDetallada.tiempoEstimado}</p>
+                </div>
+                <div className="text-sm mt-2">
+                  <p><strong>Descripción:</strong> {lesson.actividadDetallada.descripcion}</p>
+                </div>
+              </div>
+            )}
             <div className="flex gap-2 mt-4">
               <button 
                 onClick={() => onEditLesson(index, lesson)} 
@@ -448,11 +563,17 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
     e.preventDefault();
     setIsLoading(true);
 
-    const prompt = `Basado en la siguiente información de una actividad, genera un objetivo claro y conciso para esta.
+    const prompt = `Eres un especialista en objetivos educacionales según el currículum nacional chileno. Basado en la siguiente información de una actividad pedagógica, genera un objetivo claro y conciso para esta.
     - Nombre: ${formData.nombre}
     - Descripción: ${formData.descripcion}
     - Tareas: ${formData.tareas.map(t => t.descripcion).join(', ')}
-    El objetivo debe ser breve, empezar con un verbo en infinitivo y enfocarse en el propósito principal de la actividad.`;
+    
+    El objetivo debe:
+    - Ser breve y conciso (máximo 120 caracteres)
+    - Empezar con un verbo en infinitivo (como establece el MINEDUC)
+    - Enfocarse en el propósito principal de la actividad
+    - Estar alineado con los aprendizajes esperados del currículum nacional
+    - Ser medible y observable`;
     
     try {
       logApiCall('Planificación - Actividad Calendario');
@@ -465,7 +586,14 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
       }
 
       const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+      const model = ai.getGenerativeModel({ 
+        model: "gemini-1.5-pro",
+        generationConfig: {
+          temperature: 0.4,  // Más bajo para mayor precisión y alineación curricular
+          topP: 0.95,
+          maxOutputTokens: 1024  // Respuestas más cortas para objetivos
+        }
+      });
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const text = response.text();
@@ -882,7 +1010,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   const buildUnidadPrompt = () => {
     const { asignatura, nivel, nombreUnidad, contenidos, cantidadClases, observaciones, ideasParaUnidad } = unidadFormData;
 
-    return `Eres un experto diseñador curricular para la educación media técnico profesional en Chile. Tu tarea es generar una planificación de unidad didáctica completa en formato JSON estructurado, basándote en la información proporcionada.
+    return `Eres un experto diseñador curricular para la educación media técnico profesional en Chile. Tu tarea es generar una planificación de unidad didáctica siguiendo fielmente las bases curriculares y los objetivos de aprendizaje del Currículum Nacional Chileno (MINEDUC) para ${asignatura} en ${nivel}. La planificación debe presentarse en formato JSON estructurado.
 
     **Información Base:**
     - Asignatura: ${asignatura}
@@ -892,19 +1020,37 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     - Cantidad de clases para la unidad: ${cantidadClases}
     - Ideas y perspectiva del docente para la unidad: "${ideasParaUnidad || "Ninguna. Sé creativo."}"
     - Observaciones y énfasis del docente: "${observaciones || "Ninguna"}"
+    
+    **Orientaciones Curriculares Nacionales:**
+    - Asegúrate que los objetivos estén alineados con las Bases Curriculares del MINEDUC para ${asignatura} en ${nivel}.
+    - Contempla los Objetivos de Aprendizaje (OA) oficiales del currículum en línea chileno.
+    - Incorpora los Objetivos de Aprendizaje Transversales (OAT) cuando sea apropiado.
+    - Para niveles técnico-profesionales, considera los perfiles de egreso de cada especialidad.
 
-    Debes generar un objeto JSON que se ajuste al esquema proporcionado. El JSON debe contener:
+    Debes generar un objeto JSON que se ajuste al esquema proporcionado, sin incluir comillas backticks ni símbolos de markdown. Responde SOLAMENTE con JSON válido sin ningún texto adicional. El JSON debe contener:
     1.  **objetivosAprendizaje**: Un objetivo de aprendizaje general y conciso para la unidad.
     2.  **indicadoresEvaluacion**: Un indicador de evaluación general y observable para la unidad.
     3.  **detallesLeccion**: Un array con EXACTAMENTE ${cantidadClases} objetos, donde cada objeto representa una clase o sub-tema de la unidad. Cada objeto en el array debe tener:
         - **objetivosAprendizaje**: Un objetivo de aprendizaje específico para la lección, redactado en infinitivo.
         - **contenidosConceptuales**: Los conceptos clave que se abordarán en la lección.
-        - **habilidadesBloom**: La habilidad principal de la Taxonomía de Bloom que se trabajará (ej: Analizar, Crear, Evaluar).
-        - **perfilEgreso**: Conecta la lección con una habilidad del perfil de egreso (ej: "Pensamiento crítico", "Colaboración").
-        - **actividades**: Sugiere 1 o 2 actividades concretas, indicando el número de clase entre paréntesis (ej: "Debate grupal (Clase 1)").
-        - **asignaturasInterdisciplinariedad**: Sugiere una asignatura con la que se podría realizar un trabajo interdisciplinario.
+    - **habilidadesBloom**: La habilidad principal de la Taxonomía de Bloom que se trabajará (ej: Analizar, Crear, Evaluar).
+    - **perfilEgreso**: Conecta la lección con una habilidad del perfil de egreso (ej: "Pensamiento crítico", "Colaboración").
+    - **actividades**: Un título descriptivo de la actividad principal.
+    - **actividadDetallada**: Un objeto con la siguiente estructura:
+        - **estrategiaDidactica**: La estrategia didáctica a utilizar (ej: "Aprendizaje basado en problemas", "Clase invertida").
+        - **materiales**: Los recursos necesarios para la actividad.
+        - **organizacionEstudiantes**: Cómo se organizarán los estudiantes (individual, parejas, grupos).
+        - **tiempoEstimado**: Tiempo estimado en minutos para realizar la actividad.
+        - **descripcion**: Descripción detallada del paso a paso de la actividad.
+    - **asignaturasInterdisciplinariedad**: Sugiere una asignatura con la que se podría realizar un trabajo interdisciplinario.    Asegúrate de que el contenido generado sea coherente, pedagógicamente sólido y esté directamente relacionado con los contenidos clave proporcionados por el docente. El nombre de la unidad debe ser exactamente el proporcionado.
 
-    Asegúrate de que el contenido generado sea coherente, pedagógicamente sólido y esté directamente relacionado con los contenidos clave proporcionados por el docente. El nombre de la unidad debe ser exactamente el proporcionado.`;
+Para las actividades de cada clase, ten en cuenta que:
+1. Deben ser específicas para cada clase y no repetirse entre clases
+2. Deben incluir el tiempo estimado para su realización
+3. Deben detallar qué materiales o recursos son necesarios 
+4. Deben especificar la organización de los estudiantes (individual, parejas, grupos)
+5. Deben describir el paso a paso de la actividad de manera clara
+6. Deben alinearse con el objetivo de aprendizaje y la habilidad de Bloom trabajada`;
   };
 
   const handleGenerateUnidad = async (e: FormEvent) => {
@@ -929,7 +1075,14 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       }
 
       const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
+      const model = ai.getGenerativeModel({ 
+        model: "gemini-1.5-pro",
+        generationConfig: {
+          temperature: 0.4,  // Más bajo para mayor precisión y alineación curricular
+          topP: 0.95,
+          maxOutputTokens: 8192  // Suficiente para planificaciones detalladas
+        }
+      });
       const prompt = buildUnidadPrompt();
       
       const responseSchema = {
@@ -947,6 +1100,16 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
                 habilidadesBloom: { type: "string" },
                 perfilEgreso: { type: "string" },
                 actividades: { type: "string" },
+                actividadDetallada: {
+                  type: "object",
+                  properties: {
+                    estrategiaDidactica: { type: "string" },
+                    materiales: { type: "string" },
+                    organizacionEstudiantes: { type: "string" },
+                    tiempoEstimado: { type: "string" },
+                    descripcion: { type: "string" }
+                  }
+                },
                 asignaturasInterdisciplinariedad: { type: "string" }
               },
               required: ["objetivosAprendizaje", "contenidosConceptuales", "habilidadesBloom", "perfilEgreso", "actividades", "asignaturasInterdisciplinariedad"]
@@ -956,17 +1119,28 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         required: ["objetivosAprendizaje", "indicadoresEvaluacion", "detallesLeccion"]
       };
       
-      const result = await model.generateContent({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { 
-          responseMimeType: "application/json", 
-          responseSchema 
-        }
-      });
+      const result = await model.generateContent(prompt);
       
       const response = await result.response;
-      const text = response.text();
-      const generatedData = JSON.parse(text);
+      let text = response.text();
+      
+      // Extraer el JSON de la respuesta si viene con formato Markdown
+      if (text.includes("```json")) {
+        const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+        if (jsonMatch && jsonMatch[1]) {
+          text = jsonMatch[1].trim();
+        }
+      }
+      
+      // Intentar parsear el JSON con manejo de errores
+      let generatedData;
+      try {
+        generatedData = JSON.parse(text);
+      } catch (jsonError) {
+        console.error("Error al parsear JSON:", jsonError);
+        console.log("Texto recibido:", text);
+        throw new Error("La respuesta de la IA no tiene un formato JSON válido. Por favor, intente nuevamente.");
+      }
 
       const newPlan: Omit<PlanificacionUnidad, 'id'> = {
         fechaCreacion: new Date().toISOString(),
@@ -1006,7 +1180,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     setLoading(true);
     setError(null);
     
-    const prompt = `A partir de la siguiente información de una clase dentro de una unidad, genera un plan de clase detallado con momentos de inicio, desarrollo y cierre. La clase debe durar 80 minutos.
+    const prompt = `Eres un experto pedagogo chileno especialista en diseño de planes de clase alineados con el currículum nacional. A partir de la siguiente información de una clase dentro de una unidad, genera un plan de clase detallado con momentos de inicio, desarrollo y cierre. La clase debe durar 80 minutos.
     
     - Asignatura: ${unitPlan.asignatura}
     - Nivel: ${unitPlan.nivel}
@@ -1014,7 +1188,21 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     - Contenidos: ${lessonDetail.contenidosConceptuales}
     - Actividades sugeridas: ${lessonDetail.actividades}
     
-    Responde SÓLO con un objeto JSON que contenga las claves "inicio", "desarrollo" y "cierre", con las actividades detalladas para cada momento.`;
+    **Orientaciones didácticas**:
+    - El plan debe seguir el modelo de diseño instruccional del Ministerio de Educación de Chile.
+    - Incluir estrategias de aprendizaje activo y centrado en el estudiante.
+    - Incorporar metodologías que desarrollen habilidades del siglo XXI según el currículum chileno.
+    - Considerar momentos para activación de conocimientos previos, desarrollo de aprendizajes y metacognición/evaluación.
+    
+    Responde SÓLO con un objeto JSON válido, sin formateo markdown, sin backticks, sin comentarios ni texto adicional. El objeto debe contener exactamente las siguientes tres claves con valores de tipo string (texto):
+    
+    {
+      "inicio": "Texto detallado describiendo las actividades de inicio...",
+      "desarrollo": "Texto detallado describiendo las actividades de desarrollo...",
+      "cierre": "Texto detallado describiendo las actividades de cierre..."
+    }
+    
+    No incluyas ningún texto adicional antes o después del JSON. Asegúrate de que los valores de inicio, desarrollo y cierre sean cadenas de texto simples, no objetos ni arrays.`;
 
     try {
       logApiCall('Planificación - Utilizar Clase');
@@ -1027,7 +1215,14 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       }
 
       const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
+      const model = ai.getGenerativeModel({ 
+        model: "gemini-1.5-pro",
+        generationConfig: {
+          temperature: 0.4,  // Más bajo para mayor precisión y alineación curricular
+          topP: 0.95,
+          maxOutputTokens: 4096  // Suficiente para planes de clase detallados
+        }
+      });
       
       const schema = {
         type: "object",
@@ -1039,14 +1234,43 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         required: ["inicio", "desarrollo", "cierre"],
       };
 
-      const result = await model.generateContent({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json", responseSchema: schema },
-      });
+      const result = await model.generateContent(prompt);
 
       const response = await result.response;
-      const text = response.text();
-      const generatedData: MomentosClase = JSON.parse(text);
+      let text = response.text();
+      
+      // Extraer el JSON de la respuesta si viene con formato Markdown
+      if (text.includes("```json")) {
+        const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+        if (jsonMatch && jsonMatch[1]) {
+          text = jsonMatch[1].trim();
+        }
+      }
+      
+      // Intentar parsear el JSON con manejo de errores
+      let parsedData;
+      try {
+        parsedData = JSON.parse(text);
+      } catch (jsonError) {
+        console.error("Error al parsear JSON:", jsonError);
+        console.log("Texto recibido:", text);
+        throw new Error("La respuesta de la IA no tiene un formato JSON válido. Por favor, intente nuevamente.");
+      }
+      
+      // Verificar y normalizar la estructura de los momentos de clase
+      const momentosClase: MomentosClase = {
+        inicio: typeof parsedData.inicio === 'string' ? parsedData.inicio : 
+                (parsedData.inicio ? JSON.stringify(parsedData.inicio) : "No hay contenido para el inicio de la clase"),
+                
+        desarrollo: typeof parsedData.desarrollo === 'string' ? parsedData.desarrollo : 
+                   (parsedData.desarrollo ? JSON.stringify(parsedData.desarrollo) : "No hay contenido para el desarrollo de la clase"),
+                   
+        cierre: typeof parsedData.cierre === 'string' ? parsedData.cierre : 
+               (parsedData.cierre ? JSON.stringify(parsedData.cierre) : "No hay contenido para el cierre de la clase")
+      };
+      
+      // Log para verificar la estructura
+      console.log('Estructura de momentosClase normalizada:', momentosClase);
 
       const newClassPlan: Omit<PlanificacionClase, 'id'> = {
         fechaCreacion: new Date().toISOString(),
@@ -1058,7 +1282,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         observaciones: '',
         nombreClase: lessonDetail.actividades,
         duracionClase: 80,
-        momentosClase: generatedData,
+        momentosClase,
         detalleLeccionOrigen: lessonDetail,
       };
 
@@ -1364,6 +1588,58 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       .sort((a,b) => new Date(b.fechaCreacion).getTime() - new Date(a.fechaCreacion).getTime());
 
     if (viewingClassPlan) {
+      // Debugging para verificar la estructura de momentosClase
+      console.log('Momentos de clase:', viewingClassPlan.momentosClase);
+      
+      // Verificar si momentosClase es un objeto con las propiedades esperadas
+      if (typeof viewingClassPlan.momentosClase === 'object' && viewingClassPlan.momentosClase !== null) {
+        if (!viewingClassPlan.momentosClase.inicio || typeof viewingClassPlan.momentosClase.inicio !== 'string') {
+          console.log('Corrigiendo estructura de momentosClase');
+          
+          // Extraer datos si es posible o usar un valor predeterminado
+          const momentosTexto = JSON.stringify(viewingClassPlan.momentosClase);
+          
+          // Crear un objeto con estructura correcta
+          const momentosCorregidos = {
+            inicio: typeof viewingClassPlan.momentosClase.inicio === 'string' 
+              ? viewingClassPlan.momentosClase.inicio 
+              : 'No hay contenido para el inicio de la clase',
+            desarrollo: typeof viewingClassPlan.momentosClase.desarrollo === 'string' 
+              ? viewingClassPlan.momentosClase.desarrollo 
+              : 'No hay contenido para el desarrollo de la clase',
+            cierre: typeof viewingClassPlan.momentosClase.cierre === 'string' 
+              ? viewingClassPlan.momentosClase.cierre 
+              : 'No hay contenido para el cierre de la clase'
+          };
+          
+          // Actualizar el plan con la estructura corregida
+          const planCorregido = {
+            ...viewingClassPlan,
+            momentosClase: momentosCorregidos
+          };
+          
+          // Guardar la corrección en la vista y en la base de datos
+          setViewingClassPlan(planCorregido);
+          updatePlan(planCorregido.id, { momentosClase: momentosCorregidos }).catch(err => {
+            console.error("Error al actualizar estructura de momentosClase:", err);
+          });
+          
+          return (
+            <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
+              <h2 className="text-xl font-bold mb-4">Corrigiendo formato del plan...</h2>
+              <p className="text-slate-500 mb-3">Hemos detectado un problema con el formato de este plan de clase y lo estamos corrigiendo.</p>
+              <p>Por favor, espere un momento y luego vuelva a intentarlo.</p>
+              <button 
+                onClick={() => setViewingClassPlan(null)} 
+                className="mt-4 bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300"
+              >
+                Volver
+              </button>
+            </div>
+          );
+        }
+      }
+      
       return (
         <ClassPlanViewer 
           plan={viewingClassPlan}

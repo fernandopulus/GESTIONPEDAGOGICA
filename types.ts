@@ -308,12 +308,21 @@ interface PlanificacionBase {
   autor?: string;
 }
 
+export interface ActividadDetallada {
+    estrategiaDidactica: string;
+    materiales: string;
+    organizacionEstudiantes: string;
+    tiempoEstimado: string;
+    descripcion: string;
+}
+
 export interface DetalleLeccion {
     objetivosAprendizaje: string;
     contenidosConceptuales: string;
     habilidadesBloom: string;
     perfilEgreso: string;
     actividades: string;
+    actividadDetallada?: ActividadDetallada;
     asignaturasInterdisciplinariedad: string;
 }
 
@@ -679,7 +688,6 @@ export interface ActividadRemota {
   tipos: TipoActividadRemota[];
   cantidadPreguntas: Partial<Record<TipoActividadRemota, number>>;
   introduccion: string;
-  panelDidactico?: string; // Panel informativo con contenido didáctico para el estudiante
   generatedContent: Partial<{
     'Quiz': QuizQuestion[];
     'Comprensión de Lectura': ComprensionLecturaContent;
