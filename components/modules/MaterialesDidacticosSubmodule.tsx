@@ -17,7 +17,8 @@ import {
   savePresentacion, 
   subscribeToPresentaciones, 
   deletePresentacion, 
-  generateSlides 
+  generateSlides,
+  checkGoogleSlidesAuth
 } from '../../src/firebaseHelpers/materialesDidacticos';
 import type { 
   PlanificacionUnidad, 
@@ -60,6 +61,15 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
   const [loading, setLoading] = useState(false);
   const [generando, setGenerando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authStatus, setAuthStatus] = useState<{
+    isAuthorized: boolean;
+    message: string;
+    checking: boolean;
+  }>({
+    isAuthorized: false,
+    message: 'Verificando autorización...',
+    checking: true
+  });
 
   // Obtener presentaciones del usuario
   useEffect(() => {
@@ -70,6 +80,31 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
     });
     
     return unsubscribe;
+  }, [userId]);
+
+  // Verificar estado de autorización de Google Slides
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (!userId) return;
+      
+      try {
+        setAuthStatus(prev => ({ ...prev, checking: true }));
+        const result = await checkGoogleSlidesAuth();
+        setAuthStatus({
+          isAuthorized: result.isAuthorized,
+          message: result.message,
+          checking: false
+        });
+      } catch (error: any) {
+        setAuthStatus({
+          isAuthorized: false,
+          message: `Error: ${error.message || 'No se pudo verificar la autorización'}`,
+          checking: false
+        });
+      }
+    };
+
+    checkAuth();
   }, [userId]);
 
   // Actualizar datos del formulario cuando se selecciona una planificación
@@ -417,9 +452,79 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
                 <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
               </div>
             ) : presentaciones.length === 0 ? (
-              <p className="text-gray-500 dark:text-gray-400 text-center py-8">
-                No has generado presentaciones todavía
-              </p>
+              <div className="text-center py-8 space-y-4">
+                <p className="text-gray-500 dark:text-gray-400">
+                  No has generado presentaciones todavía
+                </p>
+                
+                {/* Estado de autorización */}
+                <div className="text-sm">
+                  {authStatus.checking ? (
+                    <div className="flex items-center justify-center gap-2 text-gray-500">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Verificando autorización...</span>
+                    </div>
+                  ) : (
+                    <div className={`flex items-center justify-center gap-2 ${
+                      authStatus.isAuthorized 
+                        ? 'text-green-600 dark:text-green-400' 
+                        : 'text-amber-600 dark:text-amber-400'
+                    }`}>
+                      <span>{authStatus.isAuthorized ? '✅' : '⚠️'}</span>
+                      <span>{authStatus.message}</span>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Botón de autorización */}
+                {!authStatus.checking && !authStatus.isAuthorized && (
+                  <div className="flex justify-center">
+                    <button
+                      onClick={() => {
+                        // Llamar directamente al endpoint para autorizar con Google
+                        const authUrl = `https://us-central1-planificador-145df.cloudfunctions.net/slidesAuthorize?userId=${userId}`;
+                        window.open(authUrl, '_blank', 'width=600,height=700');
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Autorizar Google Slides</span>
+                    </button>
+                  </div>
+                )}
+                
+                {/* Botón para refrescar estado de autorización */}
+                <div className="flex justify-center">
+                  <button
+                    onClick={async () => {
+                      try {
+                        setAuthStatus(prev => ({ ...prev, checking: true }));
+                        const result = await checkGoogleSlidesAuth();
+                        setAuthStatus({
+                          isAuthorized: result.isAuthorized,
+                          message: result.message,
+                          checking: false
+                        });
+                      } catch (error: any) {
+                        setAuthStatus({
+                          isAuthorized: false,
+                          message: `Error: ${error.message || 'No se pudo verificar la autorización'}`,
+                          checking: false
+                        });
+                      }
+                    }}
+                    disabled={authStatus.checking}
+                    className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    {authStatus.checking ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <span>🔄</span>
+                    )}
+                    <span>Actualizar estado</span>
+                  </button>
+                </div>
+              </div>
             ) : (
               presentaciones.map(presentacion => (
                 <div 
@@ -486,27 +591,42 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
                   
                   <div className="mt-3 flex justify-between">
                     {presentacion.estado === 'completada' ? (
-                      <a
-                        href={presentacion.esDemoMode || presentacion.urlPresentacion.includes("example.com") 
-                          ? "#" // Evitar navegar a URLs de ejemplo
-                          : presentacion.urlPresentacion}
-                        onClick={(e) => {
-                          if (presentacion.esDemoMode || presentacion.urlPresentacion.includes("example.com")) {
-                            e.preventDefault();
-                            alert("Esta es una versión de demostración. En la versión final, aquí verás una presentación real de Google Slides.");
-                          }
-                        }}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`inline-flex items-center gap-1 text-sm ${
-                          presentacion.esDemoMode || presentacion.urlPresentacion.includes("example.com") 
-                            ? "text-amber-600 hover:text-amber-800"
-                            : "text-blue-600 hover:text-blue-800"
-                        }`}
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        {presentacion.esDemoMode || presentacion.urlPresentacion.includes("example.com") ? "Ver Demo" : "Abrir en Google Slides"}
-                      </a>
+                      <>
+                        <a
+                          href={presentacion.esDemoMode || presentacion.urlPresentacion.includes("example.com") 
+                            ? "#" // Evitar navegar a URLs de ejemplo
+                            : presentacion.urlPresentacion}
+                          onClick={(e) => {
+                            if (presentacion.esDemoMode || presentacion.urlPresentacion.includes("example.com")) {
+                              e.preventDefault();
+                              alert("Esta es una versión de demostración. En la versión final, aquí verás una presentación real de Google Slides.");
+                            }
+                          }}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`inline-flex items-center gap-1 text-sm ${
+                            presentacion.esDemoMode || presentacion.urlPresentacion.includes("example.com") 
+                              ? "text-amber-600 hover:text-amber-800"
+                              : "text-blue-600 hover:text-blue-800"
+                          }`}
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          {presentacion.esDemoMode || presentacion.urlPresentacion.includes("example.com") ? "Ver Demo" : "Abrir en Google Slides"}
+                        </a>
+                        
+                        {/* Botón de autorización de Google si es necesario */}
+                        {presentacion.esDemoMode && presentacion.urlAutorizacion && (
+                          <a
+                            href={presentacion.urlAutorizacion}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ml-4 inline-flex items-center gap-1 text-sm text-green-600 hover:text-green-800"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            Autorizar Google Slides
+                          </a>
+                        )}
+                      </>
                     ) : (
                       <span className="text-gray-400 text-sm italic">
                         En progreso...

@@ -67,7 +67,7 @@ export class SlidesIntegration {
     // Inicializar cliente OAuth2 (intentar primero parámetros, luego variables de entorno)
     const clientId = googleClientId.value() || envClientId || '1022861144167-0i63eajtaqr3e9rmhll1aebn72gkhq87.apps.googleusercontent.com';
     const clientSecret = googleClientSecret.value() || envClientSecret || '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';
-    const redirectUri = envRedirectUri || 'https://us-central1-gestionpedagogica.cloudfunctions.net/oauthCallback';
+    const redirectUri = envRedirectUri || 'https://us-central1-planificador-145df.cloudfunctions.net/oauthCallback';
     
     this.oauth2Client = new google.auth.OAuth2(
       clientId,

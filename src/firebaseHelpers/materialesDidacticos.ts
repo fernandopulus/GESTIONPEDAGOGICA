@@ -191,3 +191,74 @@ export const generateSlides = async (presentacionData: Omit<PresentacionDidactic
     throw error;
   }
 };
+
+// Verificar si el usuario ha autorizado Google Slides
+export const checkGoogleSlidesAuth = async (): Promise<{
+  isAuthorized: boolean;
+  message: string;
+}> => {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error("Usuario no autenticado. Debe iniciar sesión para verificar la autorización.");
+  }
+
+  try {
+    const token = await currentUser.getIdToken();
+    const response = await fetch('https://us-central1-planificador-145df.cloudfunctions.net/checkGoogleSlidesAuth', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({})
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return {
+      isAuthorized: result.isAuthorized || false,
+      message: result.message || 'Estado de autorización desconocido'
+    };
+  } catch (error: any) {
+    console.error("Error al verificar autorización de Google Slides:", error);
+    
+    // Fallback: verificar directamente en Firestore si hay problemas de red
+    if (error.message?.includes('cors') || 
+        error.message?.includes('blocked') || 
+        error.message?.includes('CORS') || 
+        error.message?.includes('fetch')) {
+      
+      console.warn("Error de red detectado, usando método alternativo para verificar autorización");
+      
+      try {
+        // Verificación alternativa directa en Firestore
+        const tokenQuery = query(
+          collection(db, 'userTokens'),
+          where('userId', '==', currentUser.uid)
+        );
+        const snapshot = await getDocs(tokenQuery);
+        
+        return {
+          isAuthorized: !snapshot.empty,
+          message: snapshot.empty 
+            ? 'Usuario no ha autorizado Google Slides (verificación directa)' 
+            : 'Usuario autorizado para Google Slides (verificación directa)'
+        };
+      } catch (fallbackError) {
+        console.error("Error en verificación alternativa:", fallbackError);
+        return {
+          isAuthorized: false,
+          message: 'Error al verificar autorización'
+        };
+      }
+    }
+    
+    return {
+      isAuthorized: false,
+      message: `Error al verificar autorización: ${error.message || 'Error desconocido'}`
+    };
+  }
+};

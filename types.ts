@@ -1087,6 +1087,8 @@ export interface PresentacionDidactica {
     estado: 'generando' | 'completada' | 'error';
     mensajeError?: string;
     esDemoMode?: boolean; // Indica si la presentación es una demo (no real)
+    urlAutorizacion?: string; // URL para el flujo de OAuth con Google
+    requiereAutorizacion?: boolean; // Indica si requiere autorización OAuth
 }
 
 // --- Gestión de Empresas y Prácticas TP (Refactorizado) ---

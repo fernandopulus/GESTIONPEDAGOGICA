@@ -116,6 +116,7 @@ const slidesIntegration = new SlidesIntegration();
 // Función para manejar el callback de OAuth de Google
 export const oauthCallback = onRequest({
   timeoutSeconds: 60,
+  cors: true,
 }, async (req, res) => {
   try {
     const {code, state} = req.query;
@@ -131,10 +132,85 @@ export const oauthCallback = onRequest({
     );
     
     // Redirigir al usuario de vuelta a la aplicación
-    res.redirect(`/materialesDidacticos?auth=success&userId=${userId}`);
+    res.redirect(`/auth/callback?auth=success&userId=${userId}`);
   } catch (error: any) {
     console.error("Error en el callback de OAuth:", error);
     res.status(500).send(`Error en la autorización: ${error.message}`);
+  }
+});
+
+// Función para obtener la URL de autorización de Google
+export const slidesAuthorize = onRequest({
+  timeoutSeconds: 30,
+  cors: true,
+}, async (req, res) => {
+  try {
+    const { userId } = req.query;
+    
+    if (!userId) {
+      throw new Error("Se requiere el ID de usuario para autorizar");
+    }
+    
+    const authUrl = slidesIntegration.getAuthorizationUrl(userId.toString());
+    
+    // Si es una solicitud GET, redirigir directamente
+    if (req.method === 'GET') {
+      res.redirect(authUrl);
+      return;
+    }
+    
+    // Si es otra solicitud, devolver la URL como JSON
+    res.json({ success: true, url: authUrl });
+  } catch (error: any) {
+    console.error("Error al generar URL de autorización:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Error al generar URL de autorización"
+    });
+  }
+});
+
+// Función para verificar el estado de autorización de Google Slides
+export const checkGoogleSlidesAuth = onRequest({
+  timeoutSeconds: 30,
+  cors: true,
+}, async (req, res) => {
+  try {
+    // Verificar autenticación
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({
+        success: false,
+        error: 'Token de autorización requerido'
+      });
+      return;
+    }
+    
+    const token = authHeader.substring(7);
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    const userId = decodedToken.uid;
+    
+    // Verificar si el usuario tiene tokens de OAuth almacenados
+    const tokenDoc = await admin.firestore()
+      .collection('userTokens')
+      .doc(userId)
+      .get();
+    
+    const isAuthorized = tokenDoc.exists && tokenDoc.data()?.access_token;
+    
+    res.json({
+      success: true,
+      isAuthorized,
+      message: isAuthorized 
+        ? 'Usuario autorizado para Google Slides'
+        : 'Usuario no ha autorizado Google Slides'
+    });
+  } catch (error: any) {
+    console.error("Error al verificar autorización:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Error al verificar autorización"
+    });
   }
 });
 
