@@ -52,6 +52,9 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
     numDiapositivas: 8,
     estilo: 'sobrio' as EstiloPresentacion,
     incluirImagenes: true,
+    incluirActividades: true,
+    incluirEvaluacion: true,
+    formatoPedagogico: true,
     contenidoFuente: '',
     enlaces: ''
   });
@@ -82,7 +85,7 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
     return unsubscribe;
   }, [userId]);
 
-  // Verificar estado de autorización de Google Slides
+  // Verificar estado de autorización de Google Slides (solo una vez al montar)
   useEffect(() => {
     const checkAuth = async () => {
       if (!userId) return;
@@ -104,17 +107,73 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
       }
     };
 
+    // Solo verificar al montar el componente o cuando cambie el userId
     checkAuth();
     
-    // También verificar si hay parámetros de OAuth en la URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const authStatus = urlParams.get('auth');
+    // Timeout de seguridad para evitar checking infinito
+    const safetyTimeout = setTimeout(() => {
+      setAuthStatus(prev => {
+        if (prev.checking) {
+          return {
+            isAuthorized: false,
+            message: 'Timeout al verificar autorización',
+            checking: false
+          };
+        }
+        return prev;
+      });
+    }, 10000); // 10 segundos máximo
     
-    if (authStatus === 'success') {
-      // Esperar un poco y volver a verificar el estado de autorización
-      setTimeout(checkAuth, 1000);
+    // Verificar si hay parámetros de OAuth en la URL una sola vez
+    const urlParams = new URLSearchParams(window.location.search);
+    const authStatusParam = urlParams.get('auth');
+    
+    if (authStatusParam === 'success') {
+      // Esperar un poco y volver a verificar el estado de autorización una sola vez
+      const timeoutId = setTimeout(() => {
+        checkAuth();
+      }, 2000);
+      
+      // Limpiar los timeouts si el componente se desmonta
+      return () => {
+        clearTimeout(timeoutId);
+        clearTimeout(safetyTimeout);
+      };
     }
-  }, [userId]);
+    
+    // Limpiar timeout de seguridad
+    return () => clearTimeout(safetyTimeout);
+  }, [userId]); // Solo depende de userId
+
+  // Escuchar cambios en la URL para detectar cuando se complete la autorización (una sola vez)
+  useEffect(() => {
+    const handlePopState = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const authStatusParam = urlParams.get('auth');
+      
+      if (authStatusParam === 'success' && !authStatus.isAuthorized) {
+        // Solo re-verificar si aún no está autorizado
+        try {
+          setAuthStatus(prev => ({ ...prev, checking: true }));
+          const result = await checkGoogleSlidesAuth();
+          setAuthStatus({
+            isAuthorized: result.isAuthorized,
+            message: result.message,
+            checking: false
+          });
+        } catch (error: any) {
+          setAuthStatus({
+            isAuthorized: false,
+            message: `Error: ${error.message || 'No se pudo verificar la autorización'}`,
+            checking: false
+          });
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [authStatus.isAuthorized]); // Depende del estado de autorización
 
   // Actualizar datos del formulario cuando se selecciona una planificación
   useEffect(() => {
@@ -358,7 +417,7 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
               {/* Estilo de presentación */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Estilo
+                  Estilo de Presentación
                 </label>
                 <select
                   name="estilo"
@@ -366,23 +425,88 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
                   onChange={handleChange}
                   className="w-full p-2 border border-gray-300 rounded-md bg-white dark:bg-slate-700 dark:border-slate-600"
                 >
-                  <option value="sobrio">Sobrio</option>
-                  <option value="visual">Visual</option>
+                  <option value="sobrio">🎓 Académico y Sobrio</option>
+                  <option value="visual">🎨 Visual y Dinámico</option>
+                  <option value="interactivo">🤝 Interactivo con Actividades</option>
+                  <option value="profesional">💼 Profesional y Corporativo</option>
                 </select>
               </div>
             </div>
             
+            {/* Opciones avanzadas */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Incluir imágenes */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="incluirImagenes"
+                  name="incluirImagenes"
+                  checked={formData.incluirImagenes}
+                  onChange={(e) => setFormData(prev => ({ ...prev, incluirImagenes: e.target.checked }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="incluirImagenes" className="text-sm text-gray-700 dark:text-gray-300">
+                  🖼️ Incluir sugerencias para imágenes educativas
+                </label>
+              </div>
+
+              {/* Incluir actividades */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="incluirActividades"
+                  name="incluirActividades"
+                  checked={formData.incluirActividades || false}
+                  onChange={(e) => setFormData(prev => ({ ...prev, incluirActividades: e.target.checked }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="incluirActividades" className="text-sm text-gray-700 dark:text-gray-300">
+                  ✏️ Incluir actividades y ejercicios prácticos
+                </label>
+              </div>
+
+              {/* Incluir evaluación */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="incluirEvaluacion"
+                  name="incluirEvaluacion"
+                  checked={formData.incluirEvaluacion || false}
+                  onChange={(e) => setFormData(prev => ({ ...prev, incluirEvaluacion: e.target.checked }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="incluirEvaluacion" className="text-sm text-gray-700 dark:text-gray-300">
+                  📝 Incluir diapositiva de evaluación/reflexión
+                </label>
+              </div>
+
+              {/* Formato pedagógico */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="formatoPedagogico"
+                  name="formatoPedagogico"
+                  checked={formData.formatoPedagogico || true}
+                  onChange={(e) => setFormData(prev => ({ ...prev, formatoPedagogico: e.target.checked }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="formatoPedagogico" className="text-sm text-gray-700 dark:text-gray-300">
+                  📚 Aplicar estructura pedagógica avanzada
+                </label>
+              </div>
+            </div>
+            
             {/* Incluir imágenes libres */}
-            <div className="flex items-center">
+            <div className="hidden">
               <input
                 type="checkbox"
-                id="incluirImagenes"
-                name="incluirImagenes"
+                id="incluirImagenesOld"
+                name="incluirImagenesOld"
                 checked={formData.incluirImagenes}
                 onChange={(e) => setFormData(prev => ({ ...prev, incluirImagenes: e.target.checked }))}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
-              <label htmlFor="incluirImagenes" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+              <label htmlFor="incluirImagenesOld" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                 Incluir imágenes libres de derechos
               </label>
             </div>
@@ -492,7 +616,8 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
                       onClick={() => {
                         // Llamar directamente al endpoint para autorizar con Google
                         const authUrl = `https://us-central1-planificador-145df.cloudfunctions.net/slidesAuthorize?userId=${userId}`;
-                        window.open(authUrl, '_blank', 'width=600,height=700');
+                        // Usar window.location.href en lugar de window.open para mejor manejo
+                        window.location.href = authUrl;
                       }}
                       className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white"
                     >
@@ -523,14 +648,18 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
                       }
                     }}
                     disabled={authStatus.checking}
-                    className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    className={`flex items-center gap-2 px-3 py-1 text-sm rounded-lg transition-colors ${
+                      authStatus.isAuthorized 
+                        ? 'text-green-600 hover:text-green-800 border border-green-300 hover:bg-green-50'
+                        : 'text-gray-600 hover:text-gray-800 border border-gray-300 hover:bg-gray-50'
+                    }`}
                   >
                     {authStatus.checking ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
                       <span>🔄</span>
                     )}
-                    <span>Actualizar estado</span>
+                    <span>Verificar estado</span>
                   </button>
                 </div>
               </div>

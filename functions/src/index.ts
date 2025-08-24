@@ -191,12 +191,33 @@ export const checkGoogleSlidesAuth = onRequest({
     const userId = decodedToken.uid;
     
     // Verificar si el usuario tiene tokens de OAuth almacenados
-    const tokenDoc = await admin.firestore()
+    let tokenDoc = await admin.firestore()
       .collection('userTokens')
       .doc(userId)
       .get();
     
-    const isAuthorized = tokenDoc.exists && tokenDoc.data()?.access_token;
+    let isAuthorized = tokenDoc.exists && tokenDoc.data()?.access_token;
+    
+    // Si no encuentra tokens con el userId, buscar por email como fallback
+    // (para usuarios que fueron autorizados cuando se usaba email como ID)
+    if (!isAuthorized) {
+      const tokenQuery = await admin.firestore()
+        .collection('userTokens')
+        .get();
+      
+      for (const doc of tokenQuery.docs) {
+        const data = doc.data();
+        if (data?.access_token && doc.id.includes('@')) {
+          // Migrar tokens al documento correcto
+          await admin.firestore()
+            .collection('userTokens')
+            .doc(userId)
+            .set(data);
+          isAuthorized = true;
+          break;
+        }
+      }
+    }
     
     res.json({
       success: true,

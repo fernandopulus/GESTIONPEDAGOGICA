@@ -5,13 +5,24 @@ const usePlanificaciones = (userId: string) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!userId) return;
-    setLoading(true);
-    const unsubscribe = subscribeToPlanificaciones(userId, (data) => {
-      setPlanificaciones(data);
+    if (!userId) {
       setLoading(false);
-    });
-    return unsubscribe;
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const unsubscribe = subscribeToPlanificaciones(userId, (data) => {
+        setPlanificaciones(data);
+        setLoading(false);
+      });
+      return unsubscribe;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cargar planificaciones');
+      setLoading(false);
+    }
   }, [userId]);
 
   const save = async (plan: Omit<PlanificacionUnidad | PlanificacionClase, 'id'>) => {
@@ -97,14 +108,24 @@ const useActividades = (userId: string) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!userId) return;
-
-    const unsubscribe = subscribeToActividades(userId, (data) => {
-      setActividades(data);
+    if (!userId) {
       setLoading(false);
-    });
+      return;
+    }
 
-    return unsubscribe;
+    setLoading(true);
+    
+    try {
+      const unsubscribe = subscribeToActividades(userId, (data) => {
+        setActividades(data);
+        setLoading(false);
+      });
+
+      return unsubscribe;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cargar actividades');
+      setLoading(false);
+    }
   }, [userId]);
 
   const save = useCallback(async (actividad: Omit<ActividadPlanificada, 'id'>) => {
@@ -1051,7 +1072,7 @@ interface PlanificacionDocenteProps {
 
 const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser }) => {
   // Usa uid como identificador principal, luego email como fallback
-  const userId = currentUser.uid || currentUser.email || currentUser.id || '';
+  const userId = currentUser.uid || '';
   const { planificaciones, save: savePlan, update: updatePlan, remove: deletePlan, loading: planificacionesLoading } = usePlanificaciones(userId);
   
   const initialUnidadFormState = {
@@ -1086,31 +1107,13 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   }, [currentUser.cursos]);
 
   useEffect(() => {
-    // Set initial form state based on assigned values
+    // Set initial form state based on assigned values (solo cuando cambian los valores asignados)
     setUnidadFormData(prev => ({
       ...prev,
       asignatura: assignedAsignaturas[0] || '',
       nivel: assignedNiveles[0] || '' as NivelPlanificacion,
     }));
-    
-    // Debug para entender el problema de permisos
-    console.log('🔍 Debug datos usuario y planificaciones:', {
-      currentUser: {
-        uid: currentUser.uid,
-        email: currentUser.email,
-        id: currentUser.id,
-        nombreCompleto: currentUser.nombreCompleto
-      },
-      userId,
-      planificacionesCount: planificaciones.length,
-      planificacionesAutores: planificaciones.map(p => ({
-        id: p.id,
-        autor: p.autor,
-        tipo: p.tipo,
-        coincideConUserId: p.autor === userId
-      }))
-    });
-  }, [assignedAsignaturas, assignedNiveles, currentUser, userId, planificaciones]);
+  }, [assignedAsignaturas, assignedNiveles]); // Removed currentUser, userId, planificaciones to prevent infinite re-renders
 
   const handleUnidadFieldChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;

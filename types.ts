@@ -1067,7 +1067,7 @@ export interface AnalisisTaxonomico {
 }
 
 // --- Materiales Didácticos ---
-export type EstiloPresentacion = 'sobrio' | 'visual';
+export type EstiloPresentacion = 'sobrio' | 'visual' | 'interactivo' | 'profesional';
 
 export interface PresentacionDidactica {
     id: string;
@@ -1080,6 +1080,9 @@ export interface PresentacionDidactica {
     numDiapositivas: number;
     estilo: EstiloPresentacion;
     incluirImagenes: boolean;
+    incluirActividades?: boolean;
+    incluirEvaluacion?: boolean;
+    formatoPedagogico?: boolean;
     contenidoFuente?: string;
     enlaces?: string[];
     fechaCreacion: string; // ISO String

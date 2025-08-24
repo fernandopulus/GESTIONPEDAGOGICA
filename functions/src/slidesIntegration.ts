@@ -33,6 +33,9 @@ export interface PresentationData {
   numDiapositivas: number;
   estilo: string;
   incluirImagenes: boolean;
+  incluirActividades?: boolean;
+  incluirEvaluacion?: boolean;
+  formatoPedagogico?: boolean;
   contenidoFuente?: string;
   enlaces?: string[];
 }
@@ -49,7 +52,9 @@ export interface PresentationResult {
 interface GeneratedSlide {
   title: string;
   content: string;
+  layout?: string; // Tipo de layout de la diapositiva
   imagePrompt?: string; // Para generar una imagen relacionada si es necesario
+  designNotes?: string; // Notas sobre el diseño visual
 }
 
 /**
@@ -139,17 +144,30 @@ export class SlidesIntegration {
    * Obtiene un cliente OAuth autorizado para un usuario
    */
   private async getAuthorizedClient(userId: string): Promise<OAuth2Client> {
-    // Obtener tokens desde Firestore
-    const tokenDoc = await this.db.collection('userTokens').doc(userId).get();
+    // Obtener tokens desde Firestore - primero intentar con userId
+    let tokenDoc = await this.db.collection('userTokens').doc(userId).get();
+    let tokens = tokenDoc.exists ? tokenDoc.data() : null;
     
-    if (!tokenDoc.exists) {
+    // Si no existe con userId, buscar por userInfo en todos los documentos
+    if (!tokens) {
+      const tokenQuery = await this.db.collection('userTokens').get();
+      tokenQuery.forEach(doc => {
+        const data = doc.data();
+        // Si encontramos tokens asociados con un email que coincida con userId
+        if (!tokens && (doc.id === userId || doc.id.includes('@'))) {
+          tokens = data;
+          // Migrar los tokens al documento correcto con userId
+          this.db.collection('userTokens').doc(userId).set(data).catch(console.error);
+        }
+      });
+    }
+    
+    if (!tokens) {
       throw new Error('El usuario no ha autorizado el acceso a Google Slides');
     }
     
-    const tokens = tokenDoc.data();
-    
-    if (!tokens) {
-      throw new Error('Tokens de autorización no encontrados');
+    if (!tokens.access_token) {
+      throw new Error('Tokens de autorización no encontrados o inválidos');
     }
     
     // Configurar el cliente con los tokens
@@ -166,83 +184,216 @@ export class SlidesIntegration {
   }
   
   /**
+   * Obtiene la descripción detallada de un estilo de presentación
+   */
+  private getEstiloDescription(estilo: string): string {
+    const estilos = {
+      'sobrio': 'Académico y sobrio - Enfoque formal y riguroso, ideal para contenido teórico',
+      'visual': 'Visual y dinámico - Rico en elementos gráficos, diagramas y contenido visual atractivo',
+      'interactivo': 'Interactivo con actividades - Incluye ejercicios prácticos, discusiones y participación activa',
+      'profesional': 'Profesional y corporativo - Formato business con datos, casos reales y aplicación práctica'
+    };
+    return estilos[estilo as keyof typeof estilos] || estilos['sobrio'];
+  }
+
+  /**
    * Genera contenido para una presentación usando IA
    */
   private async generatePresentationContent(data: PresentationData): Promise<GeneratedSlide[]> {
     const model = this.genAI.getGenerativeModel({ model: "gemini-pro" });
     
-    // Construir el prompt para la IA
+    // Construir el prompt mejorado para la IA
     const prompt = `
-    Genera el contenido para una presentación de ${data.numDiapositivas} diapositivas sobre "${data.tema}" 
-    para la asignatura "${data.asignatura}" de nivel "${data.curso}".
-    
-    Los objetivos de aprendizaje son:
+    Eres un experto diseñador instruccional y profesor de ${data.asignatura}. Genera el contenido pedagógico COMPLETO y DETALLADO para una presentación de ${data.numDiapositivas} diapositivas sobre "${data.tema}" para estudiantes de ${data.curso}.
+
+    OBJETIVOS DE APRENDIZAJE:
     ${data.objetivosAprendizaje.map(oa => `- ${oa}`).join('\n')}
+
+    ${data.contenidoFuente ? `CONTENIDO DE REFERENCIA:\n${data.contenidoFuente}\n` : ''}
+    ${data.enlaces && data.enlaces.length > 0 ? `FUENTES ADICIONALES:\n${data.enlaces.join(', ')}\n` : ''}
+
+    CONFIGURACIÓN PEDAGÓGICA:
+    - Estilo: ${this.getEstiloDescription(data.estilo)}
+    - Incluir imágenes: ${data.incluirImagenes ? 'SÍ - Proporciona descripciones detalladas para imágenes educativas' : 'NO'}
+    - Incluir actividades: ${data.incluirActividades ? 'SÍ - Incorpora ejercicios prácticos y actividades de aprendizaje' : 'NO'}
+    - Incluir evaluación: ${data.incluirEvaluacion ? 'SÍ - Añade elementos de evaluación formativa y reflexión' : 'NO'}
+    - Formato pedagógico avanzado: ${data.formatoPedagogico ? 'SÍ - Aplica principios de diseño instruccional avanzados' : 'NO'}
+
+    INSTRUCCIONES ESPECÍFICAS:
+    1. CADA diapositiva debe tener contenido SUSTANCIAL y educativo (mínimo 200 palabras por diapositiva)
+    2. Incluye ejemplos concretos, casos prácticos y analogías comprensibles
+    3. Usa un lenguaje apropiado para el nivel ${data.curso}
+    4. Estructura pedagógica clara: motivación → conceptos → ejemplos → práctica → evaluación
+    5. Incorpora elementos de aprendizaje activo y participativo
+    6. Incluye preguntas reflexivas y elementos de metacognición
     
-    ${data.contenidoFuente ? `Contenido de referencia: ${data.contenidoFuente}` : ''}
-    ${data.enlaces && data.enlaces.length > 0 ? `Enlaces de referencia: ${data.enlaces.join(', ')}` : ''}
-    
-    El estilo debe ser: ${data.estilo === 'visual' ? 'Visual con muchos elementos gráficos' : 'Sobrio y académico'}
-    
-    Devuelve el contenido formateado como un array JSON donde cada elemento tiene:
-    - title: Título de la diapositiva
-    - content: Contenido detallado de la diapositiva
-    ${data.incluirImagenes ? '- imagePrompt: Descripción breve para generar una imagen relacionada' : ''}
-    
-    Asegúrate de que la primera diapositiva sea una introducción y la última una conclusión.
+    ${data.incluirActividades ? `
+    ACTIVIDADES A INCLUIR:
+    - Ejercicios de aplicación práctica
+    - Preguntas de discusión grupal  
+    - Casos de estudio relevantes
+    - Actividades de pensamiento crítico
+    ` : ''}
+
+    ${data.incluirEvaluacion ? `
+    ELEMENTOS DE EVALUACIÓN:
+    - Preguntas de autoevaluación
+    - Rúbricas simples de comprensión
+    - Reflexiones metacognitivas
+    - Aplicación práctica de conceptos
+    ` : ''}
+
+    ESTRUCTURA REQUERIDA:
+    - Diapositiva 1: Introducción motivadora con gancho inicial y relevancia del tema
+    - Diapositivas 2-3: Presentación de conceptos fundamentales con ejemplos
+    - Diapositivas 4-${Math.max(4, data.numDiapositivas-3)}: Desarrollo progresivo con aplicaciones prácticas
+    ${data.incluirActividades ? `- Incluir al menos 2 diapositivas con actividades prácticas\n` : ''}
+    ${data.incluirEvaluacion ? `- Incluir 1 diapositiva de evaluación formativa\n` : ''}
+    - Diapositiva ${data.numDiapositivas}: Síntesis, aplicación real y próximos pasos
+
+    FORMATO DE RESPUESTA (JSON válido):
+    [
+      {
+        "title": "Título específico y atractivo (máximo 8 palabras)",
+        "content": "Contenido detallado con:\\n• Conceptos clave explicados claramente\\n• Ejemplos específicos del contexto de ${data.curso}\\n• Preguntas reflexivas para el estudiante\\n• Conexiones con conocimientos previos${data.incluirActividades ? '\\n• Actividad práctica específica' : ''}",
+        "layout": "TITLE_AND_BODY" | "TITLE_ONLY" | "BLANK",
+        ${data.incluirImagenes ? '"imagePrompt": "Descripción específica para imagen educativa que apoye el aprendizaje (ej: diagrama, infografía, fotografía relevante)",' : ''}
+        "designNotes": "Sugerencias específicas de formato visual: colores, tipografía, elementos gráficos"
+      }
+    ]
+
+    IMPORTANTE: 
+    - Responde ÚNICAMENTE con el array JSON válido, sin texto adicional
+    - Asegúrate de que cada diapositiva construya sobre la anterior
+    - El contenido debe ser específico para ${data.asignatura} y ${data.curso}
+    - Incluye conexiones entre diapositivas para mantener la coherencia narrativa
     `;
     
     try {
+      console.log('Generando contenido con IA mejorada para:', data.tema);
+      console.log('Configuración:', { 
+        estilo: data.estilo, 
+        actividades: data.incluirActividades, 
+        evaluacion: data.incluirEvaluacion,
+        pedagogico: data.formatoPedagogico 
+      });
+      
       // Llamar a Gemini AI
       const result = await model.generateContent(prompt);
-      const responseText = result.response.text();
+      const responseText = result.response.text().trim();
+      
+      // Limpiar la respuesta para extraer solo el JSON
+      let cleanedResponse = responseText;
+      
+      // Remover markdown code blocks si existen
+      if (cleanedResponse.includes('```json')) {
+        cleanedResponse = cleanedResponse.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+      }
+      if (cleanedResponse.includes('```')) {
+        cleanedResponse = cleanedResponse.replace(/```\s*/g, '');
+      }
       
       // Extraer el JSON del texto de respuesta
-      const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+      const jsonMatch = cleanedResponse.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]) as GeneratedSlide[];
+        const slides = JSON.parse(jsonMatch[0]) as GeneratedSlide[];
+        console.log(`Contenido generado exitosamente: ${slides.length} diapositivas`);
+        return slides;
       } else {
-        // Si no podemos extraer JSON, crear un formato básico
-        return this.createDefaultSlides(data);
+        console.log('No se pudo extraer JSON, usando contenido por defecto');
+        return this.createEnhancedDefaultSlides(data);
       }
     } catch (error) {
       console.error('Error al generar contenido con IA:', error);
-      return this.createDefaultSlides(data);
+      return this.createEnhancedDefaultSlides(data);
     }
   }
   
   /**
-   * Crea slides predeterminados en caso de fallo de la IA
+   * Crea slides predeterminados mejorados en caso de fallo de la IA
    */
-  private createDefaultSlides(data: PresentationData): GeneratedSlide[] {
-    const slides: GeneratedSlide[] = [
-      {
-        title: `${data.tema}`,
-        content: `Asignatura: ${data.asignatura}\nCurso: ${data.curso}`,
-      }
-    ];
+  private createEnhancedDefaultSlides(data: PresentationData): GeneratedSlide[] {
+    const slides: GeneratedSlide[] = [];
+    
+    // Diapositiva de portada
+    slides.push({
+      title: `${data.tema}`,
+      content: `${data.asignatura} - ${data.curso}\n\n¡Bienvenidos a esta sesión de aprendizaje!\n\nEn esta presentación exploraremos:\n• Los conceptos fundamentales de ${data.tema}\n• Aplicaciones prácticas en ${data.asignatura}\n• Actividades de aprendizaje interactivas\n\n"El conocimiento es poder, pero el conocimiento compartido es superación"`,
+      layout: 'TITLE_AND_BODY',
+      imagePrompt: data.incluirImagenes ? `Imagen educativa sobre ${data.tema} para estudiantes de ${data.curso}` : undefined,
+      designNotes: 'Usar colores institucionales, tipografía clara y legible'
+    });
     
     // Diapositiva de objetivos
     slides.push({
-      title: 'Objetivos de Aprendizaje',
-      content: data.objetivosAprendizaje.join('\n\n')
+      title: '🎯 Objetivos de Aprendizaje',
+      content: `Al finalizar esta sesión, serás capaz de:\n\n${data.objetivosAprendizaje.map((oa, index) => `${index + 1}. ${oa}`).join('\n\n')}\n\n💡 Recuerda: Cada objetivo está diseñado para construir sobre el anterior, creando un aprendizaje progresivo y significativo.`,
+      layout: 'TITLE_AND_BODY',
+      designNotes: 'Usar iconos para cada objetivo, colores diferenciados'
     });
     
-    // Diapositivas intermedias
-    for (let i = 0; i < data.numDiapositivas - 3; i++) {
+    // Diapositivas de desarrollo del contenido
+    const numContenido = data.numDiapositivas - 3; // Portada, objetivos y conclusión
+    for (let i = 0; i < numContenido; i++) {
+      const topics = this.getTopicsForSubject(data.asignatura, data.tema);
+      const currentTopic = topics[i % topics.length];
+      
       slides.push({
-        title: `Contenido ${i + 1}`,
-        content: `Esta diapositiva contiene información sobre ${data.tema}`
+        title: `📚 ${currentTopic.title}`,
+        content: `${currentTopic.content}\n\n🔍 **Ejemplo práctico:**\n${currentTopic.example}\n\n💭 **Para reflexionar:**\n${currentTopic.reflection}\n\n📝 **Actividad sugerida:**\n${currentTopic.activity}`,
+        layout: 'TITLE_AND_BODY',
+        imagePrompt: data.incluirImagenes ? `${currentTopic.imagePrompt}` : undefined,
+        designNotes: currentTopic.designNotes
       });
     }
     
     // Diapositiva de conclusión
     slides.push({
-      title: 'Conclusiones',
-      content: `Resumen de los puntos principales sobre ${data.tema}`
+      title: '✅ Síntesis y Evaluación',
+      content: `🎉 **¡Excelente trabajo!**\n\nHemos explorado ${data.tema} y ahora puedes:\n\n${data.objetivosAprendizaje.map((oa, index) => `✓ ${oa}`).join('\n')}\n\n🚀 **Próximos pasos:**\n• Practica los conceptos aprendidos\n• Realiza las actividades propuestas\n• Conecta este conocimiento con experiencias previas\n\n💬 **Pregunta final:**\n¿Cómo aplicarías estos conceptos en tu vida cotidiana o futura profesión?`,
+      layout: 'TITLE_AND_BODY',
+      imagePrompt: data.incluirImagenes ? `Imagen motivacional de estudiantes aplicando conocimientos de ${data.asignatura}` : undefined,
+      designNotes: 'Usar colores alegres y motivacionales, iconos de logro'
     });
     
     return slides;
+  }
+  
+  /**
+   * Obtiene temas específicos según la asignatura
+   */
+  private getTopicsForSubject(asignatura: string, tema: string): any[] {
+    const baseTopics = [
+      {
+        title: `Fundamentos de ${tema}`,
+        content: `Los conceptos fundamentales de ${tema} en ${asignatura} nos permiten comprender las bases teóricas y prácticas de este importante campo de estudio.`,
+        example: `En la vida cotidiana, podemos observar ${tema} cuando...`,
+        reflection: `¿Cómo se relaciona ${tema} con lo que ya conoces sobre ${asignatura}?`,
+        activity: `Identifica 3 ejemplos de ${tema} en tu entorno cercano`,
+        imagePrompt: `Diagrama educativo mostrando los fundamentos de ${tema}`,
+        designNotes: 'Usar esquemas y diagramas claros'
+      },
+      {
+        title: `Aplicaciones Prácticas`,
+        content: `Las aplicaciones de ${tema} en el mundo real demuestran la relevancia y utilidad de estos conceptos en diversos contextos profesionales y personales.`,
+        example: `Un caso real donde esto se aplica es...`,
+        reflection: `¿Qué beneficios aporta entender ${tema} en tu área de interés?`,
+        activity: `Diseña un mini-proyecto que incorpore estos conceptos`,
+        imagePrompt: `Profesionales aplicando conceptos de ${tema} en ${asignatura}`,
+        designNotes: 'Mostrar conexiones del mundo real, usar fotografías'
+      },
+      {
+        title: `Análisis y Evaluación`,
+        content: `El análisis crítico de ${tema} nos permite evaluar diferentes perspectivas y desarrollar un pensamiento más profundo sobre estos conceptos.`,
+        example: `Comparemos diferentes enfoques para...`,
+        reflection: `¿Cuáles son las fortalezas y debilidades de cada enfoque?`,
+        activity: `Crea un cuadro comparativo de las diferentes perspectivas`,
+        imagePrompt: `Estudiantes analizando y debatiendo sobre ${tema}`,
+        designNotes: 'Usar tablas comparativas y elementos de análisis'
+      }
+    ];
+    
+    return baseTopics;
   }
   
   /**
@@ -316,14 +467,24 @@ export class SlidesIntegration {
   }
   
   /**
-   * Añade diapositivas a una presentación existente
+   * Añade diapositivas a una presentación existente con formato mejorado
    */
   private async addSlidesToPresentation(
     slidesClient: any, 
     presentationId: string, 
     slidesContent: GeneratedSlide[]
   ): Promise<void> {
-    // Crear las solicitudes para la API
+    console.log(`Añadiendo ${slidesContent.length} diapositivas con contenido mejorado`);
+    
+    // Definir colores del tema
+    const themeColors = {
+      primary: { red: 0.2, green: 0.4, blue: 0.8 },      // Azul institucional
+      secondary: { red: 0.1, green: 0.3, blue: 0.6 },    // Azul oscuro
+      accent: { red: 0.9, green: 0.5, blue: 0.1 },       // Naranja
+      background: { red: 0.98, green: 0.98, blue: 1.0 },  // Azul muy claro
+      text: { red: 0.2, green: 0.2, blue: 0.2 }           // Gris oscuro
+    };
+    
     const requests = [];
     
     // Para cada diapositiva en el contenido generado
@@ -333,31 +494,47 @@ export class SlidesIntegration {
       const titleId = `title_${i}`;
       const contentId = `content_${i}`;
       
+      // Determinar el layout
+      const layout = slide.layout || 'TITLE_AND_BODY';
+      
       // Crear diapositiva
       requests.push({
         createSlide: {
           objectId: slideId,
           slideLayoutReference: {
-            predefinedLayout: 'TITLE_AND_BODY'
+            predefinedLayout: layout
           },
           placeholderIdMappings: [
             {
-              layoutPlaceholder: {
-                type: 'TITLE'
-              },
+              layoutPlaceholder: { type: 'TITLE' },
               objectId: titleId
             },
-            {
-              layoutPlaceholder: {
-                type: 'BODY'
-              },
+            ...(layout !== 'TITLE_ONLY' ? [{
+              layoutPlaceholder: { type: 'BODY' },
               objectId: contentId
-            }
+            }] : [])
           ]
         }
       });
       
-      // Insertar título
+      // Configurar fondo de la diapositiva
+      if (i === 0) { // Portada con fondo especial
+        requests.push({
+          updatePageProperties: {
+            objectId: slideId,
+            pageProperties: {
+              pageBackgroundFill: {
+                solidFill: {
+                  color: themeColors.background
+                }
+              }
+            },
+            fields: 'pageBackgroundFill'
+          }
+        });
+      }
+      
+      // Insertar y formatear título
       requests.push({
         insertText: {
           objectId: titleId,
@@ -365,27 +542,160 @@ export class SlidesIntegration {
         }
       });
       
-      // Insertar contenido
+      // Formatear título
       requests.push({
-        insertText: {
-          objectId: contentId,
-          text: slide.content
+        updateTextStyle: {
+          objectId: titleId,
+          style: {
+            fontSize: { magnitude: i === 0 ? 36 : 28, unit: 'PT' },
+            foregroundColor: { opaqueColor: { rgbColor: i === 0 ? themeColors.primary : themeColors.secondary } },
+            bold: true,
+            fontFamily: 'Arial'
+          },
+          fields: 'fontSize,foregroundColor,bold,fontFamily'
         }
       });
       
-      // Si hay un prompt para imagen, podríamos añadir una imagen en el futuro
-      // TODO: Implementar generación de imágenes
+      // Insertar contenido si no es TITLE_ONLY
+      if (layout !== 'TITLE_ONLY' && slide.content) {
+        requests.push({
+          insertText: {
+            objectId: contentId,
+            text: slide.content
+          }
+        });
+        
+        // Formatear contenido
+        requests.push({
+          updateTextStyle: {
+            objectId: contentId,
+            style: {
+              fontSize: { magnitude: 14, unit: 'PT' },
+              foregroundColor: { opaqueColor: { rgbColor: themeColors.text } },
+              fontFamily: 'Arial'
+            },
+            fields: 'fontSize,foregroundColor,fontFamily'
+          }
+        });
+        
+        // Agregar formato especial para elementos con bullets
+        if (slide.content.includes('•') || slide.content.includes('✓') || slide.content.includes('🎯')) {
+          const bulletRanges = this.findBulletRanges(slide.content);
+          bulletRanges.forEach(range => {
+            requests.push({
+              createParagraphBullets: {
+                objectId: contentId,
+                textRange: range,
+                bulletPreset: 'BULLET_DISC_CIRCLE_SQUARE'
+              }
+            });
+          });
+        }
+      }
+      
+      // Agregar formas decorativas para mejorar el diseño visual
+      if (i === 0) { // Portada - agregar elementos decorativos
+        const decorativeShapeId = `decoration_${i}`;
+        requests.push({
+          createShape: {
+            objectId: decorativeShapeId,
+            shapeType: 'RECTANGLE',
+            elementProperties: {
+              pageObjectId: slideId,
+              size: {
+                height: { magnitude: 20, unit: 'PT' },
+                width: { magnitude: 500, unit: 'PT' }
+              },
+              transform: {
+                scaleX: 1,
+                scaleY: 1,
+                translateX: { magnitude: 50, unit: 'PT' },
+                translateY: { magnitude: 450, unit: 'PT' },
+                unit: 'PT'
+              }
+            }
+          }
+        });
+        
+        // Colorear la forma decorativa
+        requests.push({
+          updateShapeProperties: {
+            objectId: decorativeShapeId,
+            shapeProperties: {
+              shapeBackgroundFill: {
+                solidFill: {
+                  color: themeColors.accent
+                }
+              }
+            },
+            fields: 'shapeBackgroundFill'
+          }
+        });
+      }
+      
+      // Si hay prompt para imagen, agregar placeholder para imagen
+      if (slide.imagePrompt) {
+        const imageId = `image_${i}`;
+        requests.push({
+          createImage: {
+            objectId: imageId,
+            elementProperties: {
+              pageObjectId: slideId,
+              size: {
+                height: { magnitude: 200, unit: 'PT' },
+                width: { magnitude: 300, unit: 'PT' }
+              },
+              transform: {
+                scaleX: 1,
+                scaleY: 1,
+                translateX: { magnitude: 400, unit: 'PT' },
+                translateY: { magnitude: 150, unit: 'PT' },
+                unit: 'PT'
+              }
+            },
+            url: 'https://via.placeholder.com/300x200/4472C4/FFFFFF?text=Imagen+Educativa' // Placeholder hasta implementar generación real
+          }
+        });
+      }
     }
     
-    // Ejecutar todas las solicitudes
-    if (requests.length > 0) {
-      await slidesClient.presentations.batchUpdate({
-        presentationId,
-        requestBody: {
-          requests
-        }
-      });
+    // Ejecutar todas las solicitudes en lotes para evitar límites de API
+    const batchSize = 50;
+    for (let i = 0; i < requests.length; i += batchSize) {
+      const batch = requests.slice(i, i + batchSize);
+      try {
+        await slidesClient.presentations.batchUpdate({
+          presentationId,
+          requestBody: { requests: batch }
+        });
+        console.log(`Lote ${Math.floor(i/batchSize) + 1} de ${Math.ceil(requests.length/batchSize)} procesado`);
+      } catch (error) {
+        console.error(`Error en lote ${Math.floor(i/batchSize) + 1}:`, error);
+      }
     }
+    
+    console.log('Presentación creada con formato mejorado');
+  }
+  
+  /**
+   * Encuentra rangos de texto que deben ser formateados como bullets
+   */
+  private findBulletRanges(text: string): Array<{startIndex: number, endIndex: number}> {
+    const lines = text.split('\n');
+    const ranges: Array<{startIndex: number, endIndex: number}> = [];
+    let currentIndex = 0;
+    
+    lines.forEach(line => {
+      if (line.trim().startsWith('•') || line.trim().startsWith('✓') || line.trim().startsWith('-')) {
+        ranges.push({
+          startIndex: currentIndex,
+          endIndex: currentIndex + line.length
+        });
+      }
+      currentIndex += line.length + 1; // +1 for the newline
+    });
+    
+    return ranges;
   }
   
   /**
