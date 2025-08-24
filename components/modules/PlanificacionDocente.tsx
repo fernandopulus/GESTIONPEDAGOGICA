@@ -47,11 +47,14 @@ const usePlanificaciones = (userId: string) => {
   return { planificaciones, loading, error, save, update, remove };
 };
 
-import React, { useState, useEffect, useCallback, ChangeEvent, FormEvent } from 'react';
+import React, { useState, useEffect, useCallback, ChangeEvent, FormEvent, lazy, Suspense } from 'react';
 import type { PlanificacionUnidad, PlanificacionClase, DetalleLeccion, ActividadPlanificada, TareaActividad, User, NivelPlanificacion, ActividadFocalizadaEvent, MomentosClase, PlanificacionDocente } from '../../types';
 import { useMemo } from 'react';
 import { EventType } from '../../types';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+
+// Importación diferida del componente de PDF
+const PdfDownloadButton = lazy(() => import('../pdf/PdfDownloadButton'));
 import { 
   BookOpen, 
   Calendar, 
@@ -319,8 +322,17 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
   return (
     <div className="space-y-6">
       <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-        <p><strong>Objetivo de Aprendizaje:</strong> {plan.objetivosAprendizaje}</p>
-        <p><strong>Indicadores de Evaluación:</strong> {plan.indicadoresEvaluacion}</p>
+        <div className="flex justify-between items-start">
+          <div className="flex-grow">
+            <p><strong>Objetivo de Aprendizaje:</strong> {plan.objetivosAprendizaje}</p>
+            <p><strong>Indicadores de Evaluación:</strong> {plan.indicadoresEvaluacion}</p>
+          </div>
+          <div className="ml-4">
+            <Suspense fallback={<button className="bg-gray-300 text-gray-600 font-semibold px-4 py-2 rounded-md flex items-center justify-center gap-2 cursor-not-allowed opacity-50">Cargando...</button>}>
+              <PdfDownloadButton plan={plan} />
+            </Suspense>
+          </div>
+        </div>
         <div className="mt-4">
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Avance de la Unidad</label>
           <div className="flex items-center gap-3">
@@ -424,14 +436,19 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
   return (
     <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">{plan.nombreClase}</h2>
-        <button 
-          onClick={onBack} 
-          className="text-slate-600 hover:text-slate-900 font-semibold disabled:opacity-50"
-          disabled={isLoading || saving}
-        >
-          &larr; Volver
-        </button>
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">{editablePlan.nombreClase}</h2>
+        <div className="flex items-center gap-4">
+          <Suspense fallback={<button className="bg-gray-300 text-gray-600 font-semibold px-4 py-2 rounded-md flex items-center justify-center gap-2 cursor-not-allowed opacity-50">Cargando...</button>}>
+            <PdfDownloadButton plan={editablePlan} />
+          </Suspense>
+          <button 
+            onClick={onBack} 
+            className="text-slate-600 hover:text-slate-900 font-semibold disabled:opacity-50"
+            disabled={isLoading || saving}
+          >
+            &larr; Volver
+          </button>
+        </div>
       </div>
       <div className="space-y-6">
         <div>
