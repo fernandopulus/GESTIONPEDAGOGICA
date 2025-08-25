@@ -33,13 +33,11 @@ export interface PresentationData {
   numDiapositivas: number;
   estilo: string;
   incluirImagenes: boolean;
-  contenidoFuente?: string;
-  enlaces?: string[];
   incluirActividades?: boolean;
   incluirEvaluacion?: boolean;
   formatoPedagogico?: boolean;
-  userId?: string;
-  planificacionId?: string;
+  contenidoFuente?: string;
+  enlaces?: string[];
 }
 
 // Interfaz para resultado de creación de presentación
@@ -54,9 +52,9 @@ export interface PresentationResult {
 interface GeneratedSlide {
   title: string;
   content: string;
-  activity?: string; // Actividad de aprendizaje para el slide
-  bloomLevel?: string; // Nivel de taxonomía de Bloom
+  layout?: string; // Tipo de layout de la diapositiva
   imagePrompt?: string; // Para generar una imagen relacionada si es necesario
+  designNotes?: string; // Notas sobre el diseño visual
 }
 
 /**
@@ -84,8 +82,9 @@ export class SlidesIntegration {
     
     console.log(`OAuth configurado con clientId: ${clientId ? 'CONFIGURADO' : 'NO CONFIGURADO'}`);
     
-    // Inicializar Gemini AI
-    this.genAI = new GoogleGenerativeAI(geminiApiKey.value() || process.env.GEMINI_API_KEY || '');
+    // Inicializar Gemini AI con configuración de headers
+    const apiKey = geminiApiKey.value() || process.env.GEMINI_API_KEY || '';
+    this.genAI = new GoogleGenerativeAI(apiKey);
   }
   
   /**
@@ -101,327 +100,344 @@ export class SlidesIntegration {
         'https://www.googleapis.com/auth/presentations',
         'https://www.googleapis.com/auth/drive'
       ],
-      state: state,
-      prompt: 'consent' // Siempre pedir consentimiento para obtener refresh_token
+      state: state
     });
   }
-  
+
   /**
-   * Procesa el callback de OAuth2 y guarda los tokens
+   * Maneja el callback de OAuth2 y guarda los tokens
    */
   public async handleOAuthCallback(code: string, state: string): Promise<string> {
     try {
-      // Decodificar el estado para obtener el ID del usuario
-      const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
-      const userId = stateData.userId;
-      
-      if (!userId) {
-        throw new Error('ID de usuario inválido en el estado');
-      }
-      
-      // Intercambiar el código por tokens
+      // Intercambiar el código por tokens de acceso
       const { tokens } = await this.oauth2Client.getToken(code);
       
-      // Verificar que tenemos los tokens necesarios
-      if (!tokens.access_token) {
-        throw new Error('No se recibió token de acceso');
-      }
+      // Decodificar el estado para recuperar el ID del usuario
+      const decodedState = JSON.parse(Buffer.from(state, 'base64').toString());
+      const userId = decodedState.userId;
       
       // Guardar los tokens en Firestore
-      await this.db.collection('userTokens').doc(userId).set({
-        ...tokens,
+      await this.db.collection('oauth_tokens').doc(userId).set({
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiryDate: tokens.expiry_date,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
       
-      console.log(`Tokens de OAuth guardados para el usuario: ${userId}`);
-      
+      console.log(`Tokens OAuth guardados para usuario: ${userId}`);
       return userId;
     } catch (error) {
-      console.error('Error en el procesamiento del callback de OAuth:', error);
-      throw error;
+      console.error('Error en callback OAuth:', error);
+      throw new Error('Error al procesar autorización');
     }
   }
-  
+
   /**
-   * Obtiene un cliente OAuth autorizado para un usuario
+   * Obtiene un cliente OAuth2 autorizado para un usuario
    */
   private async getAuthorizedClient(userId: string): Promise<OAuth2Client> {
-    // Obtener tokens desde Firestore
-    const tokenDoc = await this.db.collection('userTokens').doc(userId).get();
-    
-    if (!tokenDoc.exists) {
-      throw new Error('El usuario no ha autorizado el acceso a Google Slides');
+    try {
+      // Obtener tokens de Firestore
+      const tokenDoc = await this.db.collection('oauth_tokens').doc(userId).get();
+      
+      if (!tokenDoc.exists) {
+        throw new Error('Usuario no autorizado');
+      }
+      
+      const tokenData = tokenDoc.data();
+      if (!tokenData) {
+        throw new Error('Datos de token no válidos');
+      }
+      
+      // Configurar el cliente OAuth2 con los tokens
+      this.oauth2Client.setCredentials({
+        access_token: tokenData.accessToken,
+        refresh_token: tokenData.refreshToken,
+        expiry_date: tokenData.expiryDate
+      });
+      
+      // Verificar si el token ha expirado y renovarlo si es necesario
+      if (tokenData.expiryDate && Date.now() >= tokenData.expiryDate) {
+        console.log('Token expirado, renovando...');
+        const { credentials } = await this.oauth2Client.refreshAccessToken();
+        
+        // Actualizar tokens en Firestore
+        await this.db.collection('oauth_tokens').doc(userId).update({
+          accessToken: credentials.access_token,
+          expiryDate: credentials.expiry_date,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        this.oauth2Client.setCredentials(credentials);
+      }
+      
+      return this.oauth2Client;
+    } catch (error) {
+      console.error('Error al obtener cliente autorizado:', error);
+      throw new Error('Error de autorización');
     }
-    
-    const tokens = tokenDoc.data();
-    
-    if (!tokens) {
-      throw new Error('Tokens de autorización no encontrados');
-    }
-    
-    // Configurar el cliente con los tokens
-    this.oauth2Client.setCredentials({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      expiry_date: tokens.expiry_date,
-      token_type: tokens.token_type || 'Bearer',
-      id_token: tokens.id_token,
-      scope: tokens.scope
-    });
-    
-    return this.oauth2Client;
   }
-  
+
   /**
-   * Obtiene la descripción pedagógica del estilo seleccionado
+   * Obtiene descripción del estilo de presentación
    */
-  private getStyleDescription(estilo: string): string {
+  private getEstiloDescription(estilo: string): string {
     const estilos: Record<string, string> = {
-      'academico': 'Formal y riguroso, con énfasis en conceptos teóricos y fundamentación científica',
-      'visual': 'Dinámico y colorido, con énfasis en elementos gráficos, infografías y representaciones visuales',
-      'interactivo': 'Participativo y colaborativo, con múltiples actividades, preguntas y dinámicas grupales',
-      'profesional': 'Corporativo y práctico, enfocado en aplicaciones del mundo real y casos de estudio',
-      'sobrio': 'Elegante y minimalista, balanceando profesionalismo con claridad pedagógica',
-      'creativo': 'Innovador y atractivo, con un enfoque original que estimula la imaginación y el pensamiento lateral',
-      'minimalista': 'Depurado y esencial, centrado en lo más importante sin elementos distractores'
+      'academico': 'Estilo formal y académico con estructura clara, terminología técnica apropiada y enfoque en la profundidad conceptual',
+      'visual': 'Estilo visual dinámico con énfasis en elementos gráficos, diagramas, infografías y representaciones visuales para facilitar la comprensión',
+      'interactivo': 'Estilo participativo que incluye preguntas, actividades prácticas, discusiones y elementos que fomenten la participación activa del estudiante',
+      'profesional': 'Estilo empresarial con enfoque en aplicaciones prácticas, casos de estudio reales y conexiones con el mundo laboral',
+      'sobrio': 'Estilo minimalista y directo, enfocado en contenido esencial sin elementos decorativos excesivos',
+      'creativo': 'Estilo innovador y atractivo, con un enfoque original que estimula la imaginación y el pensamiento lateral',
+      'minimalista': 'Estilo depurado y esencial, centrado en lo más importante sin elementos distractores'
     };
     
     return estilos[estilo] || estilos['academico'];
   }
   
   /**
+   * Obtiene los colores específicos para cada estilo de presentación
+   */
+  private getStyleColors(estilo: string): any {
+    const styles: Record<string, any> = {
+      'sobrio': {
+        background: { red: 0.98, green: 0.98, blue: 0.98 },
+        primary: { red: 0.2, green: 0.2, blue: 0.25 },
+        secondary: { red: 0.5, green: 0.5, blue: 0.55 },
+        accent: { red: 0.3, green: 0.3, blue: 0.4 },
+        text: { red: 0.1, green: 0.1, blue: 0.1 }
+      },
+      'visual': {
+        background: { red: 0.95, green: 0.97, blue: 1.0 },
+        primary: { red: 0.0, green: 0.44, blue: 0.8 },
+        secondary: { red: 0.2, green: 0.6, blue: 0.9 },
+        accent: { red: 1.0, green: 0.6, blue: 0.2 },
+        text: { red: 0.1, green: 0.1, blue: 0.1 }
+      },
+      'academico': {
+        background: { red: 0.98, green: 0.96, blue: 0.9 },
+        primary: { red: 0.5, green: 0.3, blue: 0.1 },
+        secondary: { red: 0.7, green: 0.5, blue: 0.2 },
+        accent: { red: 0.3, green: 0.5, blue: 0.7 },
+        text: { red: 0.2, green: 0.2, blue: 0.2 }
+      },
+      'interactivo': {
+        background: { red: 0.95, green: 1.0, blue: 0.95 },
+        primary: { red: 0.1, green: 0.7, blue: 0.3 },
+        secondary: { red: 0.3, green: 0.8, blue: 0.4 },
+        accent: { red: 0.9, green: 0.3, blue: 0.5 },
+        text: { red: 0.1, green: 0.1, blue: 0.1 }
+      },
+      'profesional': {
+        background: { red: 0.95, green: 0.95, blue: 0.97 },
+        primary: { red: 0.2, green: 0.2, blue: 0.5 },
+        secondary: { red: 0.1, green: 0.1, blue: 0.3 },
+        accent: { red: 0.7, green: 0.0, blue: 0.0 },
+        text: { red: 0.1, green: 0.1, blue: 0.1 }
+      },
+      'creativo': {
+        background: { red: 0.98, green: 0.95, blue: 1.0 },
+        primary: { red: 0.6, green: 0.2, blue: 0.8 },
+        secondary: { red: 0.8, green: 0.3, blue: 0.7 },
+        accent: { red: 1.0, green: 0.8, blue: 0.0 },
+        text: { red: 0.2, green: 0.2, blue: 0.2 }
+      },
+      'minimalista': {
+        background: { red: 1.0, green: 1.0, blue: 1.0 },
+        primary: { red: 0.0, green: 0.0, blue: 0.0 },
+        secondary: { red: 0.3, green: 0.3, blue: 0.3 },
+        accent: { red: 0.7, green: 0.7, blue: 0.7 },
+        text: { red: 0.0, green: 0.0, blue: 0.0 }
+      }
+    };
+    
+    return styles[estilo] || styles['sobrio'];
+  }
+
+  /**
    * Genera contenido para una presentación usando IA
    */
   private async generatePresentationContent(data: PresentationData): Promise<GeneratedSlide[]> {
-    const model = this.genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-    
-    // Construir el prompt para la IA con estructura pedagógica avanzada
-    const prompt = `
-    Eres un experto pedagogo y diseñador instruccional. Crea una presentación educativa de alta calidad con ${data.numDiapositivas} diapositivas sobre "${data.tema}" 
-    para la asignatura "${data.asignatura}" de nivel "${data.curso}".
-    
-    OBJETIVOS DE APRENDIZAJE:
-    ${data.objetivosAprendizaje.map(oa => `- ${oa}`).join('\n')}
-    
-    ${data.contenidoFuente ? `CONTENIDO DE REFERENCIA: ${data.contenidoFuente}` : ''}
-    ${data.enlaces && data.enlaces.length > 0 ? `ENLACES DE REFERENCIA: ${data.enlaces.join(', ')}` : ''}
-    
-    ESTILO PEDAGÓGICO: ${this.getStyleDescription(data.estilo)}
-    
-    REQUISITOS PEDAGÓGICOS:
-    1. Aplica la taxonomía de Bloom progresivamente (recordar → comprender → aplicar → analizar → evaluar → crear)
-    2. Incluye actividades de aprendizaje activo en cada diapositiva
-    3. Proporciona ejemplos concretos y casos prácticos del mundo real
-    4. Incorpora preguntas reflexivas y de pensamiento crítico
-    5. Asegura conexiones interdisciplinarias cuando sea relevante
-    6. Incluye elementos de evaluación formativa
-    
-    ESTRUCTURA REQUERIDA:
-    - Diapositiva 1: Título e introducción motivadora con pregunta detonante
-    - Diapositivas 2-3: Conceptos fundamentales con ejemplos visuales
-    - Diapositivas centrales: Desarrollo del contenido con actividades prácticas
-    - Penúltima diapositiva: Síntesis y conexiones con conocimientos previos
-    - Última diapositiva: Conclusiones, reflexión final y proyección futura
-    
-    Devuelve ÚNICAMENTE un array JSON válido donde cada elemento tenga:
-    {
-      "title": "Título claro y atractivo de la diapositiva",
-      "content": "Contenido educativo detallado con bullet points, ejemplos concretos, y actividades de aprendizaje. Mínimo 3-4 puntos sustanciales por diapositiva.",
-      "activity": "Actividad específica para que los estudiantes realicen (pregunta, ejercicio, discusión, etc.)",
-      "bloomLevel": "Nivel de Bloom que aborda esta diapositiva"${data.incluirImagenes ? ',\n      "imagePrompt": "Descripción específica para generar una imagen educativa relevante"' : ''}
-    }
-    
-    IMPORTANTE: 
-    - Cada diapositiva debe tener contenido sustancial, no solo títulos
-    - Incluye datos, estadísticas, citas o ejemplos específicos cuando sea apropiado
-    - El contenido debe ser apropiado para el nivel educativo especificado
-    - Mantén coherencia narrativa entre las diapositivas
-    `;
-    
     try {
-      console.log('Generando contenido con IA mejorada para:', data.tema);
-      console.log('Configuración:', {
-        estilo: data.estilo,
-        actividades: data.incluirActividades || false,
-        evaluacion: data.incluirEvaluacion || false,
-        pedagogico: data.formatoPedagogico || false
+      const model = this.genAI.getGenerativeModel({ 
+        model: "gemini-pro",
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 8192,
+        }
       });
       
-      // Verificar que tenemos API key
-      const apiKey = geminiApiKey.value() || process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        console.error('❌ API Key de Gemini no configurada');
-        return this.createEnhancedDefaultSlides(data);
-      }
-      console.log('✅ API Key de Gemini configurada');
+      // Construir el prompt mejorado para la IA
+      const prompt = `
+      Eres un experto diseñador instruccional y profesor de ${data.asignatura}. Genera el contenido pedagógico COMPLETO y DETALLADO para una presentación de ${data.numDiapositivas} diapositivas sobre "${data.tema}" para estudiantes de ${data.curso}.
+
+      OBJETIVOS DE APRENDIZAJE:
+      ${data.objetivosAprendizaje.map(oa => `- ${oa}`).join('\n')}
+
+      ${data.contenidoFuente ? `CONTENIDO DE REFERENCIA:\n${data.contenidoFuente}\n` : ''}
+      ${data.enlaces && data.enlaces.length > 0 ? `FUENTES ADICIONALES:\n${data.enlaces.join(', ')}\n` : ''}
+
+      CONFIGURACIÓN PEDAGÓGICA:
+      - Estilo: ${this.getEstiloDescription(data.estilo)}
+      - Incluir imágenes: ${data.incluirImagenes ? 'SÍ - Proporciona descripciones detalladas para imágenes educativas' : 'NO'}
+      - Incluir actividades: ${data.incluirActividades ? 'SÍ - Incorpora ejercicios prácticos y actividades de aprendizaje' : 'NO'}
+      - Incluir evaluación: ${data.incluirEvaluacion ? 'SÍ - Añade elementos de evaluación formativa y reflexión' : 'NO'}
+      - Formato pedagógico avanzado: ${data.formatoPedagogico ? 'SÍ - Aplica principios de diseño instruccional avanzados' : 'NO'}
+
+      INSTRUCCIONES ESPECÍFICAS:
+      1. CADA diapositiva debe tener contenido SUSTANCIAL y educativo (mínimo 200 palabras por diapositiva)
+      2. Incluye ejemplos concretos, casos prácticos y analogías comprensibles
+      3. Usa un lenguaje apropiado para el nivel ${data.curso}
+      4. Estructura pedagógica clara: motivación → conceptos → ejemplos → práctica → evaluación
+      5. Incorpora elementos de aprendizaje activo y participativo
+      6. Incluye preguntas reflexivas y elementos de metacognición
+      
+      ${data.incluirActividades ? `
+      ACTIVIDADES A INCLUIR:
+      - Ejercicios de aplicación práctica
+      - Preguntas de discusión grupal  
+      - Casos de estudio relevantes
+      - Actividades de pensamiento crítico
+      ` : ''}
+
+      ${data.incluirEvaluacion ? `
+      ELEMENTOS DE EVALUACIÓN:
+      - Preguntas de autoevaluación
+      - Rúbricas simples de comprensión
+      - Reflexiones metacognitivas
+      - Aplicación práctica de conceptos
+      ` : ''}
+
+      ESTRUCTURA REQUERIDA:
+      - Diapositiva 1: Introducción motivadora con gancho inicial y relevancia del tema
+      - Diapositivas 2-3: Presentación de conceptos fundamentales con ejemplos
+      - Diapositivas 4-${Math.max(4, data.numDiapositivas-3)}: Desarrollo progresivo con aplicaciones prácticas
+      ${data.incluirActividades ? `- Incluir al menos 2 diapositivas con actividades prácticas\n` : ''}
+      ${data.incluirEvaluacion ? `- Incluir 1 diapositiva de evaluación formativa\n` : ''}
+      - Diapositiva ${data.numDiapositivas}: Síntesis, aplicación real y próximos pasos
+
+      FORMATO DE RESPUESTA (JSON válido):
+      [
+        {
+          "title": "Título específico y atractivo (máximo 8 palabras)",
+          "content": "Contenido detallado con:\\n• Conceptos clave explicados claramente\\n• Ejemplos específicos del contexto de ${data.curso}\\n• Preguntas reflexivas para el estudiante\\n• Conexiones con conocimientos previos${data.incluirActividades ? '\\n• Actividad práctica específica' : ''}",
+          "layout": "TITLE_AND_BODY" | "TITLE_ONLY" | "BLANK",
+          ${data.incluirImagenes ? '"imagePrompt": "Descripción específica para imagen educativa que apoye el aprendizaje (ej: diagrama, infografía, fotografía relevante)",' : ''}
+          "designNotes": "Sugerencias específicas de formato visual: colores, tipografía, elementos gráficos"
+        }
+      ]
+
+      IMPORTANTE: 
+      - Responde ÚNICAMENTE con el array JSON válido, sin texto adicional
+      - Asegúrate de que cada diapositiva construya sobre la anterior
+      - El contenido debe ser específico para ${data.asignatura} y ${data.curso}
+      - Incluye conexiones entre diapositivas para mantener la coherencia narrativa
+      `;
+      
+      console.log('Generando contenido con IA mejorada para:', data.tema);
+      console.log('Configuración:', { 
+        estilo: data.estilo, 
+        actividades: data.incluirActividades, 
+        evaluacion: data.incluirEvaluacion,
+        pedagogico: data.formatoPedagogico 
+      });
       
       // Llamar a Gemini AI
-      console.log('🚀 Enviando prompt a Gemini 1.5 Pro...');
       const result = await model.generateContent(prompt);
-      const responseText = result.response.text();
-      
-      console.log('📥 Respuesta de IA recibida, longitud:', responseText.length);
-      console.log('📝 Primeros 300 caracteres:', responseText.substring(0, 300));
+      const responseText = result.response.text().trim();
       
       // Limpiar la respuesta para extraer solo el JSON
-      let cleanText = responseText.trim();
+      let cleanedResponse = responseText;
       
-      // Remover markdown si existe
-      if (cleanText.startsWith('```json')) {
-        cleanText = cleanText.replace(/```json\n?/, '').replace(/\n?```$/, '');
-      } else if (cleanText.startsWith('```')) {
-        cleanText = cleanText.replace(/```\n?/, '').replace(/\n?```$/, '');
+      // Remover markdown code blocks si existen
+      if (cleanedResponse.includes('```json')) {
+        cleanedResponse = cleanedResponse.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+      }
+      if (cleanedResponse.includes('```')) {
+        cleanedResponse = cleanedResponse.replace(/```\s*/g, '');
       }
       
-      // Buscar el array JSON
-      const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
+      // Extraer el JSON del texto de respuesta
+      const jsonMatch = cleanedResponse.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
-        try {
-          const parsedSlides = JSON.parse(jsonMatch[0]) as GeneratedSlide[];
-          
-          // Validar que tenemos el número correcto de diapositivas
-          if (parsedSlides.length !== data.numDiapositivas) {
-            console.warn(`IA generó ${parsedSlides.length} diapositivas, se esperaban ${data.numDiapositivas}`);
-          }
-          
-          // Validar estructura de las diapositivas
-          const validSlides = parsedSlides.filter(slide => 
-            slide.title && slide.content && slide.title.trim() !== '' && slide.content.trim() !== ''
-          );
-          
-          if (validSlides.length === 0) {
-            console.warn('No se generaron diapositivas válidas, usando contenido de respaldo');
-            return this.createEnhancedDefaultSlides(data);
-          }
-          
-          console.log(`✅ Se generaron ${validSlides.length} diapositivas válidas`);
-          return validSlides;
-        } catch (parseError) {
-          console.error('Error al parsear JSON de IA:', parseError);
-          console.log('Respuesta que causó error:', jsonMatch[0].substring(0, 500));
-          return this.createEnhancedDefaultSlides(data);
-        }
+        const slides = JSON.parse(jsonMatch[0]) as GeneratedSlide[];
+        console.log(`Contenido generado exitosamente: ${slides.length} diapositivas`);
+        return slides;
       } else {
-        console.warn('No se encontró JSON válido en la respuesta de IA');
-        console.log('Respuesta completa:', responseText.substring(0, 500));
-        return this.createEnhancedDefaultSlides(data);
+        console.warn('No se pudo extraer JSON válido de la respuesta de IA');
+        throw new Error('Respuesta de IA no válida');
       }
     } catch (error) {
-      console.error('❌ Error detallado al generar contenido con IA:');
-      
-      // Verificar que el error sea un objeto con las propiedades esperadas
-      if (error instanceof Error) {
-        console.error('Tipo de error:', error.constructor.name);
-        console.error('Mensaje:', error.message);
-        if (error.stack) {
-          console.error('Stack trace:', error.stack);
-        }
-        
-        // Verificar si es un error específico de la API de Gemini
-        if (error.message && error.message.includes('API_KEY')) {
-          console.error('🔑 Error relacionado con API Key de Gemini');
-        } else if (error.message && error.message.includes('quota')) {
-          console.error('📊 Error de cuota de API de Gemini');
-        } else if (error.message && error.message.includes('blocked')) {
-          console.error('🚫 Error de bloqueo/referrer de API de Gemini');
-        }
-      } else {
-        console.error('Error desconocido:', error);
-      }
-      
-      console.log('🔄 Usando contenido de respaldo de alta calidad...');
-      return this.createEnhancedDefaultSlides(data);
+      console.error('Error al generar contenido con IA:', error);
+      // Generar contenido de respaldo si falla la IA
+      return this.generateFallbackContent(data);
     }
   }
   
   /**
-   * Crea slides predeterminados enriquecidos en caso de fallo de la IA
+   * Genera contenido de respaldo cuando la IA falla
    */
-  private createEnhancedDefaultSlides(data: PresentationData): GeneratedSlide[] {
+  private generateFallbackContent(data: PresentationData): GeneratedSlide[] {
     console.log('Generando contenido de respaldo para:', data.tema);
     
     const slides: GeneratedSlide[] = [];
     
-    // 1. Diapositiva de título
+    // Diapositiva de introducción
     slides.push({
       title: data.tema,
-      content: `📚 Asignatura: ${data.asignatura}\n🎓 Nivel: ${data.curso}\n\n🎯 Objetivo principal:\nDesarrollar conocimientos y habilidades fundamentales sobre ${data.tema} mediante metodologías activas de aprendizaje.\n\n🔍 Enfoque pedagógico: ${this.getStyleDescription(data.estilo)}`,
-      activity: "Reflexiona: ¿Qué conocimientos previos tienes sobre este tema?",
-      bloomLevel: "Recordar"
+      content: `${data.asignatura} - ${data.curso}\n\n¡Bienvenidos a esta sesión de aprendizaje!\n\nEn esta presentación exploraremos:\n• Los conceptos fundamentales de ${data.tema}\n• Aplicaciones prácticas en ${data.asignatura}\n• Actividades de aprendizaje interactivas\n\n"El conocimiento es poder, pero el conocimiento compartido es superación"`,
+      layout: 'TITLE_AND_BODY',
+      imagePrompt: data.incluirImagenes ? 'Imagen representativa del tema educativo' : undefined,
+      designNotes: 'Usar colores institucionales y tipografía clara'
     });
     
-    // 2. Diapositiva de objetivos
-    slides.push({
-      title: 'Objetivos de Aprendizaje',
-      content: `Al finalizar esta clase, serás capaz de:\n\n${data.objetivosAprendizaje.map((obj, i) => `${i + 1}. ${obj}`).join('\n\n')}\n\n💡 Estos objetivos se alinean con las competencias del perfil de egreso y contribuyen al desarrollo integral de tu formación.`,
-      activity: "Identifica cuál objetivo te resulta más desafiante y por qué",
-      bloomLevel: "Comprender"
-    });
-    
-    // 3-4. Diapositivas de contenido conceptual
-    if (data.numDiapositivas >= 4) {
+    // Diapositiva de objetivos
+    if (data.objetivosAprendizaje.length > 0) {
       slides.push({
-        title: 'Conceptos Fundamentales',
-        content: `🔑 Ideas clave sobre ${data.tema}:\n\n• Definición y características principales\n• Importancia en el contexto de ${data.asignatura}\n• Relación con conocimientos previos\n• Aplicaciones en la vida cotidiana\n\n📖 Marco teórico:\nEste tema se fundamenta en principios establecidos que han evolucionado a través de la investigación y la práctica profesional.`,
-        activity: "Construye un mapa conceptual con los términos principales",
-        bloomLevel: "Aplicar"
+        title: '🎯 Objetivos de Aprendizaje',
+        content: `Al finalizar esta sesión, serás capaz de:\n\n${data.objetivosAprendizaje.map((obj, idx) => `${idx + 1}. ${obj}`).join('\n\n')}\n\n💡 Recuerda: Cada objetivo está diseñado para construir sobre el anterior, creando un aprendizaje progresivo y significativo.`,
+        layout: 'TITLE_AND_BODY',
+        designNotes: 'Usar íconos y viñetas para mejorar la legibilidad'
       });
+    }
+    
+    // Generar diapositivas de contenido según el número solicitado
+    const remainingSlides = data.numDiapositivas - slides.length;
+    const contentSlides = Math.max(1, remainingSlides);
+    
+    for (let i = 0; i < contentSlides; i++) {
+      let title = '';
+      let content = '';
+      
+      if (i === 0) {
+        title = `📚 Fundamentos de ${data.tema}`;
+        content = `Los conceptos fundamentales de ${data.tema} en ${data.asignatura} nos permiten comprender las bases teóricas y prácticas de este importante campo de estudio.\n\n🔍 **Ejemplo práctico:**\nEn la vida cotidiana, podemos observar ${data.tema} cuando...\n\n💭 **Para reflexionar:**\n¿Cómo se relaciona ${data.tema} con lo que ya conoces sobre ${data.asignatura}?\n\n📝 **Actividad sugerida:**\nIdentifica 3 ejemplos de ${data.tema} en tu entorno cercano`;
+      } else if (i === 1 && contentSlides > 1) {
+        title = `📚 Aplicaciones Prácticas`;
+        content = `Las aplicaciones de ${data.tema} en el mundo real demuestran la relevancia y utilidad de estos conceptos en diversos contextos profesionales y personales.\n\n🔍 **Ejemplo práctico:**\nUn caso real donde esto se aplica es...\n\n💭 **Para reflexionar:**\n¿Qué beneficios aporta entender ${data.tema} en tu área de interés?\n\n📝 **Actividad sugerida:**\nDiseña un mini-proyecto que incorpore estos conceptos`;
+      } else if (i === contentSlides - 1) {
+        title = `🎉 Síntesis y Aplicación`;
+        content = `🎉 **¡Excelente trabajo!**\n\nHemos explorado ${data.tema} y ahora puedes:\n\n${data.objetivosAprendizaje.map(obj => `✓ ${obj}`).join('\n\n')}\n\n🚀 **Próximos pasos:**\n• Practica los conceptos aprendidos\n• Realiza las actividades propuestas\n• Conecta este conocimiento con experiencias previas\n\n💬 **Pregunta final:**\n¿Cómo aplicarías estos conceptos en tu vida cotidiana o futura profesión?`;
+      } else {
+        title = `📚 ${i === 1 ? 'Análisis y Evaluación' : `Desarrollo ${i}`}`;
+        content = `${i === 1 ? 'El análisis crítico' : 'El desarrollo progresivo'} de ${data.tema} nos permite ${i === 1 ? 'evaluar diferentes perspectivas y desarrollar un pensamiento más profundo sobre estos conceptos' : 'profundizar en aspectos específicos y construir una comprensión más sólida'}.\n\n🔍 **Ejemplo práctico:**\n${i === 1 ? 'Comparemos diferentes enfoques para...' : 'Veamos cómo esto se desarrolla en...'}\n\n💭 **Para reflexionar:**\n¿${i === 1 ? 'Cuáles son las fortalezas y debilidades de cada enfoque' : 'Qué nuevas conexiones puedes establecer con este contenido'}?\n\n📝 **Actividad sugerida:**\n${i === 1 ? 'Crea un cuadro comparativo de las diferentes perspectivas' : 'Elabora un mapa conceptual que integre estos elementos'}`;
+      }
       
       slides.push({
-        title: 'Análisis y Ejemplos Prácticos',
-        content: `🧩 Desglosando ${data.tema}:\n\n• Componentes y elementos estructurales\n• Procesos y metodologías involucrados\n• Casos de estudio relevantes\n• Ejemplos del mundo real\n\n🔬 Enfoque analítico:\nExaminaremos este tema desde múltiples perspectivas para desarrollar una comprensión profunda y crítica.`,
-        activity: "Analiza un caso práctico y presenta tus conclusiones",
-        bloomLevel: "Analizar"
+        title,
+        content,
+        layout: 'TITLE_AND_BODY',
+        imagePrompt: data.incluirImagenes ? 'Imagen educativa relacionada con el contenido' : undefined,
+        designNotes: 'Mantener consistencia visual con el tema establecido'
       });
     }
     
-    // Diapositivas adicionales según el número solicitado
-    const remainingSlides = data.numDiapositivas - slides.length - 2; // Reservar espacio para síntesis y conclusión
-    
-    for (let i = 0; i < remainingSlides; i++) {
-      const slideNumber = slides.length + 1;
-      slides.push({
-        title: `Profundización ${slideNumber - 2}: Aspecto Específico`,
-        content: `🎯 Desarrollando competencias específicas:\n\n• Habilidades técnicas requeridas\n• Destrezas de pensamiento crítico\n• Competencias transversales\n• Metodologías de trabajo\n\n📊 Indicadores de logro:\nPodrás demostrar tu comprensión mediante la aplicación práctica de estos conceptos en situaciones reales.`,
-        activity: `Desarrolla una propuesta práctica aplicando los conceptos aprendidos`,
-        bloomLevel: i % 2 === 0 ? "Evaluar" : "Crear"
-      });
-    }
-    
-    // Penúltima diapositiva: Síntesis
-    if (data.numDiapositivas >= 3) {
-      slides.push({
-        title: 'Síntesis e Integración',
-        content: `🔗 Conectando conocimientos:\n\n• Relación con aprendizajes anteriores\n• Vínculos interdisciplinarios\n• Aplicaciones futuras\n• Transferencia de conocimientos\n\n🧠 Metacognición:\nReflexiona sobre tu proceso de aprendizaje y las estrategias que mejor te funcionaron durante esta clase.`,
-        activity: "Elabora una síntesis personal del tema en 3 ideas principales",
-        bloomLevel: "Evaluar"
-      });
-    }
-    
-    // Última diapositiva: Conclusión y proyección
-    slides.push({
-      title: 'Conclusiones y Próximos Pasos',
-      content: `✨ Logros alcanzados:\n\n• Conceptos fundamentales consolidados\n• Habilidades desarrolladas\n• Conexiones establecidas\n• Competencias fortalecidas\n\n🚀 Proyección futura:\nEstos aprendizajes constituyen la base para abordar temas más complejos y desarrollar proyectos innovadores en ${data.asignatura}.\n\n💭 Reflexión final:\n"El aprendizaje es un viaje continuo donde cada nuevo conocimiento se convierte en el punto de partida para nuevos descubrimientos."`,
-        activity: "Define un objetivo personal de aprendizaje para continuar profundizando en este tema",
-        bloomLevel: "Crear"
-    });
-    
-    // Asegurar que tenemos exactamente el número solicitado de diapositivas
-    const finalSlides = slides.slice(0, data.numDiapositivas);
-    
-    console.log(`Presentación generada para ${data.tema} (${data.asignatura}) por usuario ${data.userId || 'anónimo'}`);
-    console.log(`Detalles adicionales: curso=${data.curso}`);
-    console.log(`diapositivas=${finalSlides.length}, estilo=${data.estilo}`);
-    console.log(`Parámetros opcionales: imágenes=${data.incluirImagenes},`);
-    console.log(`fuente=${data.contenidoFuente ? 'sí' : 'no'}, enlaces=${data.enlaces?.length || 0}, planID=${data.planificacionId || 'N/A'}`);
-    
-    return finalSlides;
+    return slides.slice(0, data.numDiapositivas);
   }
 
-  /**
-   * Crea una nueva presentación en Google Slides
-   */
-  
   /**
    * Crea una presentación en Google Slides usando OAuth del usuario
    */
@@ -451,7 +467,7 @@ export class SlidesIntegration {
       }
       
       // Crear las diapositivas con el contenido generado
-      await this.addSlidesToPresentation(slides, presentationId, slidesContent);
+      await this.addSlidesToPresentation(slides, presentationId, slidesContent, data.estilo);
       
       // Configurar permisos
       await drive.permissions.create({
@@ -493,14 +509,19 @@ export class SlidesIntegration {
   }
   
   /**
-   * Añade diapositivas a una presentación existente
+   * Añade diapositivas a una presentación existente con formato mejorado
    */
   private async addSlidesToPresentation(
     slidesClient: any, 
     presentationId: string, 
-    slidesContent: GeneratedSlide[]
+    slidesContent: GeneratedSlide[],
+    estilo: string = 'sobrio'
   ): Promise<void> {
-    // Crear las solicitudes para la API
+    console.log(`Añadiendo ${slidesContent.length} diapositivas con contenido mejorado`);
+    
+    // Obtener los colores específicos para el estilo seleccionado
+    const themeColors = this.getStyleColors(estilo);
+    
     const requests = [];
     
     // Para cada diapositiva en el contenido generado
@@ -510,31 +531,47 @@ export class SlidesIntegration {
       const titleId = `title_${i}`;
       const contentId = `content_${i}`;
       
+      // Determinar el layout
+      const layout = slide.layout || 'TITLE_AND_BODY';
+      
       // Crear diapositiva
       requests.push({
         createSlide: {
           objectId: slideId,
           slideLayoutReference: {
-            predefinedLayout: 'TITLE_AND_BODY'
+            predefinedLayout: layout
           },
           placeholderIdMappings: [
             {
-              layoutPlaceholder: {
-                type: 'TITLE'
-              },
+              layoutPlaceholder: { type: 'TITLE' },
               objectId: titleId
             },
-            {
-              layoutPlaceholder: {
-                type: 'BODY'
-              },
+            ...(layout !== 'TITLE_ONLY' ? [{
+              layoutPlaceholder: { type: 'BODY' },
               objectId: contentId
-            }
+            }] : [])
           ]
         }
       });
       
-      // Insertar título
+      // Configurar fondo de todas las diapositivas con el color de estilo elegido
+      requests.push({
+        updatePageProperties: {
+          objectId: slideId,
+          pageProperties: {
+            pageBackgroundFill: {
+              solidFill: {
+                color: {
+                  rgbColor: themeColors.background
+                }
+              }
+            }
+          },
+          fields: 'pageBackgroundFill'
+        }
+      });
+      
+      // Insertar y formatear título
       requests.push({
         insertText: {
           objectId: titleId,
@@ -542,54 +579,183 @@ export class SlidesIntegration {
         }
       });
       
-      // Insertar contenido enriquecido
-      let fullContent = slide.content;
-      
-      // Agregar actividad si existe
-      if (slide.activity) {
-        fullContent += `\n\n🎯 ACTIVIDAD:\n${slide.activity}`;
-      }
-      
-      // Agregar nivel de Bloom si existe
-      if (slide.bloomLevel) {
-        fullContent += `\n\n📊 Nivel de Bloom: ${slide.bloomLevel}`;
-      }
-      
+      // Formatear título
       requests.push({
-        insertText: {
-          objectId: contentId,
-          text: fullContent
+        updateTextStyle: {
+          objectId: titleId,
+          style: {
+            fontSize: { magnitude: i === 0 ? 36 : 28, unit: 'PT' },
+            foregroundColor: { 
+              opaqueColor: { 
+                rgbColor: i === 0 ? themeColors.primary : themeColors.secondary 
+              } 
+            },
+            bold: true,
+            fontFamily: 'Arial'
+          },
+          fields: 'fontSize,foregroundColor,bold,fontFamily'
         }
       });
       
-      // Si hay un prompt para imagen, podríamos añadir una imagen en el futuro
-      // TODO: Implementar generación de imágenes
+      // Insertar contenido si no es TITLE_ONLY
+      if (layout !== 'TITLE_ONLY' && slide.content) {
+        requests.push({
+          insertText: {
+            objectId: contentId,
+            text: slide.content
+          }
+        });
+        
+        // Formatear contenido
+        requests.push({
+          updateTextStyle: {
+            objectId: contentId,
+            style: {
+              fontSize: { magnitude: 14, unit: 'PT' },
+              foregroundColor: { 
+                opaqueColor: { 
+                  rgbColor: themeColors.text 
+                } 
+              },
+              fontFamily: 'Arial'
+            },
+            fields: 'fontSize,foregroundColor,fontFamily'
+          }
+        });
+        
+        // Agregar formato especial para elementos con bullets
+        if (slide.content.includes('•') || slide.content.includes('✓') || slide.content.includes('🎯')) {
+          const bulletRanges = this.findBulletRanges(slide.content);
+          bulletRanges.forEach(range => {
+            requests.push({
+              createParagraphBullets: {
+                objectId: contentId,
+                textRange: range,
+                bulletPreset: 'BULLET_DISC_CIRCLE_SQUARE'
+              }
+            });
+          });
+        }
+      }
+      
+      // Agregar formas decorativas para mejorar el diseño visual
+      if (i === 0) { // Portada - agregar elementos decorativos
+        const decorativeShapeId = `decoration_${i}`;
+        requests.push({
+          createShape: {
+            objectId: decorativeShapeId,
+            shapeType: 'RECTANGLE',
+            elementProperties: {
+              pageObjectId: slideId,
+              size: {
+                height: { magnitude: 20, unit: 'PT' },
+                width: { magnitude: 500, unit: 'PT' }
+              },
+              transform: {
+                scaleX: 1,
+                scaleY: 1,
+                translateX: 50,
+                translateY: 450,
+                unit: 'PT'
+              }
+            }
+          }
+        });
+        
+        // Colorear la forma decorativa
+        requests.push({
+          updateShapeProperties: {
+            objectId: decorativeShapeId,
+            shapeProperties: {
+              shapeBackgroundFill: {
+                solidFill: {
+                  color: {
+                    rgbColor: themeColors.accent
+                  }
+                }
+              }
+            },
+            fields: 'shapeBackgroundFill'
+          }
+        });
+      }
+      
+      // Si hay prompt para imagen, agregar placeholder para imagen
+      if (slide.imagePrompt) {
+        const imageId = `image_${i}`;
+        requests.push({
+          createImage: {
+            objectId: imageId,
+            elementProperties: {
+              pageObjectId: slideId,
+              size: {
+                height: { magnitude: 200, unit: 'PT' },
+                width: { magnitude: 300, unit: 'PT' }
+              },
+              transform: {
+                scaleX: 1,
+                scaleY: 1,
+                translateX: 400,
+                translateY: 150,
+                unit: 'PT'
+              }
+            },
+            url: 'https://via.placeholder.com/300x200/4472C4/FFFFFF?text=Imagen+Educativa' // Placeholder hasta implementar generación real
+          }
+        });
+      }
     }
     
-    // Ejecutar todas las solicitudes
-    if (requests.length > 0) {
-      await slidesClient.presentations.batchUpdate({
-        presentationId,
-        requestBody: {
-          requests
-        }
-      });
+    // Ejecutar todas las solicitudes en lotes para evitar límites de API
+    const batchSize = 50;
+    for (let i = 0; i < requests.length; i += batchSize) {
+      const batch = requests.slice(i, i + batchSize);
+      try {
+        await slidesClient.presentations.batchUpdate({
+          presentationId,
+          requestBody: { requests: batch }
+        });
+        console.log(`Lote ${Math.floor(i/batchSize) + 1} de ${Math.ceil(requests.length/batchSize)} procesado`);
+      } catch (error) {
+        console.error(`Error en lote ${Math.floor(i/batchSize) + 1}:`, error);
+      }
     }
+    
+    console.log('Presentación creada con formato mejorado');
   }
   
+  /**
+   * Encuentra rangos para aplicar viñetas en el texto
+   */
+  private findBulletRanges(text: string): Array<{startIndex: number, endIndex: number}> {
+    const lines = text.split('\n');
+    const ranges: Array<{startIndex: number, endIndex: number}> = [];
+    let currentIndex = 0;
+    
+    lines.forEach(line => {
+      if (line.trim().startsWith('•') || line.trim().startsWith('✓') || line.trim().startsWith('🎯')) {
+        ranges.push({
+          startIndex: currentIndex,
+          endIndex: currentIndex + line.length
+        });
+      }
+      currentIndex += line.length + 1; // +1 para el salto de línea
+    });
+    
+    return ranges;
+  }
+
   /**
    * Verifica si un error es de autenticación
    */
   private isAuthError(error: any): boolean {
-    if (!error) return false;
-    
-    const errorString = JSON.stringify(error).toLowerCase();
-    return (
-      errorString.includes('auth') || 
-      errorString.includes('unauthorized') || 
-      errorString.includes('unauthenticated') ||
-      errorString.includes('permission') ||
-      errorString.includes('token')
-    );
+    if (typeof error === 'object' && error !== null) {
+      return error.code === 401 || 
+             error.code === 403 || 
+             (error.message && error.message.includes('auth')) ||
+             (error.message && error.message.includes('unauthorized')) ||
+             (error.message && error.message.includes('forbidden'));
+    }
+    return false;
   }
 }

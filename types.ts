@@ -1080,6 +1080,9 @@ export interface PresentacionDidactica {
     numDiapositivas: number;
     estilo: EstiloPresentacion;
     incluirImagenes: boolean;
+    incluirActividades?: boolean;
+    incluirEvaluacion?: boolean;
+    formatoPedagogico?: boolean;
     contenidoFuente?: string;
     enlaces?: string[];
     fechaCreacion: string; // ISO String

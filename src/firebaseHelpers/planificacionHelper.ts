@@ -37,7 +37,9 @@ const convertFirestoreData = (doc: any) => {
   return {
     id: doc.id,
     ...data,
-    fechaCreacion: data.fechaCreacion?.toDate?.()?.toISOString() || data.fechaCreacion
+    fechaCreacion: data.fechaCreacion?.toDate?.()?.toISOString() || data.fechaCreacion,
+    // Garantizar que detallesLeccion es un array si existe
+    ...(data.detallesLeccion ? { detallesLeccion: Array.isArray(data.detallesLeccion) ? data.detallesLeccion : [] } : {})
   };
 };
 
@@ -141,8 +143,26 @@ export const subscribeToPlanificaciones = (
   );
 
   return onSnapshot(q, (snapshot) => {
-    const planificaciones = snapshot.docs.map(convertFirestoreData);
-    callback(planificaciones);
+    try {
+      const planificaciones = snapshot.docs.map(convertFirestoreData);
+      console.log(`Recibiendo ${planificaciones.length} planificaciones del usuario ${userId}`);
+      
+      // Validar estructura de datos
+      const validPlanificaciones = planificaciones.map(plan => {
+        // Asegurar que detallesLeccion es un array para planificaciones de unidad
+        if (plan.tipo === 'Unidad' && !Array.isArray(plan.detallesLeccion)) {
+          console.warn(`Planificación ${plan.id} tiene detallesLeccion inválidos, corrigiendo.`);
+          return { ...plan, detallesLeccion: [] };
+        }
+        return plan;
+      });
+      
+      callback(validPlanificaciones);
+    } catch (error) {
+      console.error('Error procesando datos de planificaciones:', error);
+      // Devolver un array vacío en caso de error para evitar que la aplicación se bloquee
+      callback([]);
+    }
   }, (error) => {
     console.error('Error en suscripción a planificaciones:', error);
   });

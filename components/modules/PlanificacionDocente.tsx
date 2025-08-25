@@ -1,18 +1,100 @@
 // Hook local para planificaciones de unidad y clase
-const usePlanificaciones = (userId: string) => {
+const usePlanificaciones = (userId: string | null, currentUser?: User | null) => {
   const [planificaciones, setPlanificaciones] = useState<(PlanificacionUnidad | PlanificacionClase)[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!userId) return;
-    setLoading(true);
-    const unsubscribe = subscribeToPlanificaciones(userId, (data) => {
-      setPlanificaciones(data);
+  // Función para cargar planificaciones manualmente si la suscripción falla
+  const cargarPlanificacionesDirectamente = useCallback(async () => {
+    if (!userId) {
+      console.warn('🛠️ cargarPlanificacionesDirectamente: userId nulo, no se pueden cargar planificaciones');
       setLoading(false);
-    });
-    return unsubscribe;
+      setError('No se pudo determinar la identidad del usuario');
+      setPlanificaciones([]);
+      return;
+    }
+    
+    try {
+      console.log(`🛠️ Cargando planificaciones directamente para ${userId}`);
+      const { getPlanificacionesByUser } = await import('../../src/firebaseHelpers/planificacionHelper');
+      const data = await getPlanificacionesByUser(userId);
+      
+      console.log(`🛠️ Obtenidas ${data.length} planificaciones directamente de Firestore`);
+      
+      // Corregir planificaciones inválidas
+      const datosCorregidos = data.map(item => {
+        if (item.tipo === 'Unidad' && !Array.isArray((item as any).detallesLeccion)) {
+          console.log(`🛠️ Corrigiendo datos de planificación ${item.id}`);
+          return { ...item, detallesLeccion: [] };
+        }
+        return item;
+      });
+      
+      setPlanificaciones(datosCorregidos);
+      setLoading(false);
+    } catch (err) {
+      console.error('🛠️ Error cargando planificaciones directamente:', err);
+      setError(err instanceof Error ? err.message : 'Error al cargar planificaciones directamente');
+      setLoading(false);
+    }
   }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      console.log('🛠️ usePlanificaciones: userId nulo o vacío, no se cargarán planificaciones');
+      setLoading(false);
+      setError('ID de usuario no disponible');
+      setPlanificaciones([]); // Asegurar que el estado esté vacío
+      return;
+    }
+    
+    console.log(`🛠️ usePlanificaciones: Cargando planificaciones para usuario ${userId}`);
+    setLoading(true);
+    setError(null);
+    
+    let unsubscribe: (() => void) | null = null;
+    
+    try {
+      unsubscribe = subscribeToPlanificaciones(userId, (data) => {
+        console.log(`🛠️ usePlanificaciones: Recibidos ${data.length} documentos por suscripción`);
+        
+        if (data.length === 0) {
+          // Si no hay datos por suscripción, intentar cargar directamente
+          cargarPlanificacionesDirectamente();
+          return;
+        }
+        
+        // Corregir datos antes de actualizar el estado
+        const datosCorregidos = data.map(item => {
+          if (item.tipo === 'Unidad' && !Array.isArray((item as any).detallesLeccion)) {
+            console.log(`🛠️ Corrigiendo datos de planificación ${item.id}`);
+            return { ...item, detallesLeccion: [] };
+          }
+          return item;
+        });
+        
+        setPlanificaciones(datosCorregidos);
+        setLoading(false);
+      });
+    } catch (err) {
+      console.error('🛠️ Error en hook usePlanificaciones:', err);
+      setError(err instanceof Error ? err.message : 'Error al cargar planificaciones');
+      cargarPlanificacionesDirectamente(); // Intentar cargar directamente en caso de error
+    }
+    
+    // Si después de 5 segundos no se han cargado datos, intentar cargar directamente
+    const timeoutId = setTimeout(() => {
+      if (loading && planificaciones.length === 0) {
+        console.log('🛠️ Timeout: cargando planificaciones directamente como respaldo');
+        cargarPlanificacionesDirectamente();
+      }
+    }, 5000);
+    
+    return () => {
+      if (unsubscribe) unsubscribe();
+      clearTimeout(timeoutId);
+    };
+  }, [userId, cargarPlanificacionesDirectamente]);
 
   const save = async (plan: Omit<PlanificacionUnidad | PlanificacionClase, 'id'>) => {
     try {
@@ -44,7 +126,75 @@ const usePlanificaciones = (userId: string) => {
     }
   };
 
-  return { planificaciones, loading, error, save, update, remove };
+  // Función de diagnóstico que puede ser invocada desde fuera
+  const diagnosticarYReparar = useCallback(async () => {
+    try {
+      // Verificar identificador de usuario
+      if (!userId) {
+        return { 
+          status: 'error', 
+          message: 'No hay usuario identificado. Datos del usuario no disponibles.'
+        };
+      }
+      
+      // Mostrar información básica de diagnóstico
+      console.log('📊 Diagnóstico - ID de usuario:', userId);
+      
+      const { getPlanificacionesByUser } = await import('../../src/firebaseHelpers/planificacionHelper');
+      const data = await getPlanificacionesByUser(userId);
+      
+      // Análisis de problemas
+      const unidades = data.filter(p => p.tipo === 'Unidad');
+      const unidadesInvalidas = unidades.filter(p => 
+        !Array.isArray((p as any).detallesLeccion) || (p as any).detallesLeccion === undefined
+      );
+      
+      console.log(`📊 Diagnóstico - Total planificaciones: ${data.length}, Unidades: ${unidades.length}, Inválidas: ${unidadesInvalidas.length}`);
+      
+      // Reparación si es necesario
+      if (unidadesInvalidas.length > 0) {
+        const { updateDoc, doc } = await import('firebase/firestore');
+        const { db } = await import('../../src/firebaseHelpers/config');
+        
+        for (const plan of unidadesInvalidas) {
+          await updateDoc(doc(db, 'planificaciones', plan.id), {
+            detallesLeccion: []
+          });
+        }
+        
+        return { 
+          status: 'repaired', 
+          message: `Se repararon ${unidadesInvalidas.length} planificaciones de ${unidades.length} totales.` 
+        };
+      } else if (unidades.length === 0) {
+        return { 
+          status: 'empty', 
+          message: `No se encontraron planificaciones de unidad para el usuario ${userId}. Cree una nueva planificación.` 
+        };
+      }
+      
+      return { 
+        status: 'ok', 
+        message: `Todo correcto. ${unidades.length} planificaciones de unidad encontradas.` 
+      };
+    } catch (err) {
+      console.error('📊 Error en diagnóstico:', err);
+      return { 
+        status: 'error', 
+        message: `Error: ${err instanceof Error ? err.message : 'Desconocido'}` 
+      };
+    }
+  }, [userId]);
+
+  return { 
+    planificaciones, 
+    loading, 
+    error, 
+    save, 
+    update, 
+    remove,
+    diagnosticarYReparar
+  };
 };
 
 import React, { useState, useEffect, useCallback, ChangeEvent, FormEvent } from 'react';
@@ -94,14 +244,24 @@ const useActividades = (userId: string) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!userId) return;
-
-    const unsubscribe = subscribeToActividades(userId, (data) => {
-      setActividades(data);
+    if (!userId) {
       setLoading(false);
-    });
+      return;
+    }
 
-    return unsubscribe;
+    setLoading(true);
+    
+    try {
+      const unsubscribe = subscribeToActividades(userId, (data) => {
+        setActividades(data);
+        setLoading(false);
+      });
+
+      return unsubscribe;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cargar actividades');
+      setLoading(false);
+    }
   }, [userId]);
 
   const save = useCallback(async (actividad: Omit<ActividadPlanificada, 'id'>) => {
@@ -245,6 +405,11 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
               <p><strong>Perfil de Egreso:</strong> {lesson.perfilEgreso}</p>
               <p><strong>Interdisciplinariedad:</strong> {lesson.asignaturasInterdisciplinariedad}</p>
             </div>
+            <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 rounded-md">
+              <p className="font-medium">
+                <strong>Actividades sugeridas:</strong> {lesson.actividades}
+              </p>
+            </div>
             <div className="flex gap-2 mt-4">
               <button 
                 onClick={() => onEditLesson(index, lesson)} 
@@ -280,6 +445,33 @@ interface ClassPlanViewerProps {
 const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave, onDelete, isLoading = false }) => {
   const [editablePlan, setEditablePlan] = useState<PlanificacionClase>(plan);
   const [saving, setSaving] = useState(false);
+  
+  // Asegurarnos de que los valores de momentosClase son strings
+  useEffect(() => {
+    // Convertir los valores de objeto a string si es necesario
+    const inicio = typeof plan.momentosClase.inicio === 'object' 
+      ? JSON.stringify(plan.momentosClase.inicio) 
+      : String(plan.momentosClase.inicio);
+    
+    const desarrollo = typeof plan.momentosClase.desarrollo === 'object' 
+      ? JSON.stringify(plan.momentosClase.desarrollo) 
+      : String(plan.momentosClase.desarrollo);
+    
+    const cierre = typeof plan.momentosClase.cierre === 'object' 
+      ? JSON.stringify(plan.momentosClase.cierre) 
+      : String(plan.momentosClase.cierre);
+    
+    // Actualizar el estado con los valores convertidos
+    setEditablePlan(prev => ({
+      ...prev,
+      momentosClase: {
+        inicio: inicio,
+        desarrollo: desarrollo,
+        cierre: cierre
+      }
+    }));
+  }, [plan]);
+  
   // Eliminar lógica de progreso para clase
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -307,6 +499,86 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
       setSaving(false);
     }
   };
+  
+  // Función para dar formato al contenido JSON de manera más legible
+  const formatearContenido = (contenido: any): string => {
+    if (typeof contenido === 'object' && contenido !== null) {
+      try {
+        // Si es un objeto con estructura específica de plan de clase
+        let resultado = '';
+        
+        // Formato especial para estructura de actividades
+        if (contenido.actividades && Array.isArray(contenido.actividades)) {
+          resultado = `${contenido.tiempo ? '⏱️ Tiempo: ' + contenido.tiempo + '\n\n' : ''}`;
+          resultado += `${contenido.objetivo ? '🎯 Objetivo: ' + contenido.objetivo + '\n\n' : ''}`;
+          
+          resultado += '📋 ACTIVIDADES:\n\n';
+          contenido.actividades.forEach((act: any, index: number) => {
+            resultado += `${index + 1}. ${act.nombre || 'Actividad sin nombre'}\n`;
+            resultado += `   ${act.descripcion || 'Sin descripción'}\n`;
+            if (act.tipo) resultado += `   Tipo: ${act.tipo}\n`;
+            if (act.recursos) resultado += `   Recursos: ${act.recursos}\n`;
+            if (act.evaluacion) resultado += `   Evaluación: ${act.evaluacion}\n`;
+            resultado += '\n';
+          });
+          
+          // Agregar otras propiedades si existen
+          Object.keys(contenido).forEach(key => {
+            if (key !== 'tiempo' && key !== 'objetivo' && key !== 'actividades') {
+              resultado += `${key}: ${typeof contenido[key] === 'object' ? 
+                JSON.stringify(contenido[key], null, 2) : contenido[key]}\n`;
+            }
+          });
+          
+          return resultado;
+        } 
+        
+        // Formato para elementos que tienen estructura genérica
+        else {
+          // Convertir a JSON y formatear
+          const formattedJSON = JSON.stringify(contenido, null, 2)
+            .replace(/[{}"]/g, '') // Quitar llaves y comillas
+            .replace(/,$/gm, '')   // Quitar comas al final de las líneas
+            .replace(/^\s*\n/gm, ''); // Eliminar líneas vacías
+
+          // Procesar líneas para mejorar formato
+          const lines = formattedJSON.split('\n');
+          let formattedText = '';
+          
+          lines.forEach(line => {
+            // Detectar si es un array
+            if (line.trim().startsWith("[")) {
+              formattedText += '\n' + line.trim() + '\n';
+            } 
+            // Detectar si es un ítem de lista
+            else if (line.trim().startsWith("-")) {
+              formattedText += '  • ' + line.trim().substring(1) + '\n';
+            }
+            // Formato para pares clave-valor normales
+            else if (line.includes(':')) {
+              const parts = line.split(':');
+              if (parts.length >= 2) {
+                const key = parts[0].trim();
+                const value = parts.slice(1).join(':').trim();
+                formattedText += `${key}: ${value}\n`;
+              } else {
+                formattedText += line + '\n';
+              }
+            } 
+            else {
+              formattedText += line + '\n';
+            }
+          });
+          
+          return formattedText;
+        }
+      } catch (e) {
+        console.error("Error al formatear contenido:", e);
+        return String(contenido);
+      }
+    }
+    return String(contenido);
+  };
 
   return (
     <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
@@ -325,7 +597,7 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
           <label className="font-bold text-lg text-slate-700 dark:text-slate-300">Inicio</label>
           <textarea 
             name="momentosClase.inicio" 
-            value={editablePlan.momentosClase.inicio} 
+            value={formatearContenido(editablePlan.momentosClase.inicio)}
             onChange={handleChange} 
             rows={4} 
             className="w-full mt-2 p-2 border rounded-md bg-slate-50 dark:bg-slate-700"
@@ -336,7 +608,7 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
           <label className="font-bold text-lg text-slate-700 dark:text-slate-300">Desarrollo</label>
           <textarea 
             name="momentosClase.desarrollo" 
-            value={editablePlan.momentosClase.desarrollo} 
+            value={formatearContenido(editablePlan.momentosClase.desarrollo)}
             onChange={handleChange} 
             rows={8} 
             className="w-full mt-2 p-2 border rounded-md bg-slate-50 dark:bg-slate-700"
@@ -347,7 +619,7 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
           <label className="font-bold text-lg text-slate-700 dark:text-slate-300">Cierre</label>
           <textarea 
             name="momentosClase.cierre" 
-            value={editablePlan.momentosClase.cierre} 
+            value={formatearContenido(editablePlan.momentosClase.cierre)}
             onChange={handleChange} 
             rows={4} 
             className="w-full mt-2 p-2 border rounded-md bg-slate-50 dark:bg-slate-700"
@@ -824,9 +1096,28 @@ interface PlanificacionDocenteProps {
 }
 
 const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser }) => {
-  // Usa uid como identificador principal, luego email como fallback
-  const userId = currentUser.uid || currentUser.email || currentUser.id || '';
-  const { planificaciones, save: savePlan, update: updatePlan, remove: deletePlan, loading: planificacionesLoading } = usePlanificaciones(userId);
+  // Usa uid como identificador principal, luego id, luego email como fallbacks
+  const userId = currentUser?.uid || currentUser?.id || currentUser?.email || '';
+  console.log('🔑 PlanificacionDocente - Usuario actual:', { 
+    uid: currentUser?.uid, 
+    id: currentUser?.id,
+    email: currentUser?.email,
+    nombreCompleto: currentUser?.nombreCompleto,
+    usuarioSeleccionado: userId
+  });
+  
+  // Verifica si tenemos un usuario válido
+  const userIdValido = userId && userId.length > 0;
+  console.log('🔑 ID de usuario válido:', userIdValido);
+  
+  const { 
+    planificaciones, 
+    save: savePlan, 
+    update: updatePlan, 
+    remove: deletePlan, 
+    loading: planificacionesLoading,
+    diagnosticarYReparar
+  } = usePlanificaciones(userIdValido ? userId : null, currentUser);
   
   const initialUnidadFormState = {
     asignatura: '',
@@ -858,31 +1149,13 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   }, [currentUser.cursos]);
 
   useEffect(() => {
-    // Set initial form state based on assigned values
+    // Set initial form state based on assigned values (solo cuando cambian los valores asignados)
     setUnidadFormData(prev => ({
       ...prev,
       asignatura: assignedAsignaturas[0] || '',
       nivel: assignedNiveles[0] || '' as NivelPlanificacion,
     }));
-    
-    // Debug para entender el problema de permisos
-    console.log('🔍 Debug datos usuario y planificaciones:', {
-      currentUser: {
-        uid: currentUser.uid,
-        email: currentUser.email,
-        id: currentUser.id,
-        nombreCompleto: currentUser.nombreCompleto
-      },
-      userId,
-      planificacionesCount: planificaciones.length,
-      planificacionesAutores: planificaciones.map(p => ({
-        id: p.id,
-        autor: p.autor,
-        tipo: p.tipo,
-        coincideConUserId: p.autor === userId
-      }))
-    });
-  }, [assignedAsignaturas, assignedNiveles, currentUser, userId, planificaciones]);
+  }, [assignedAsignaturas, assignedNiveles]); // Removed currentUser, userId, planificaciones to prevent infinite re-renders
 
   const handleUnidadFieldChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -982,16 +1255,24 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         required: ["objetivosAprendizaje", "indicadoresEvaluacion", "detallesLeccion"]
       };
       
-      const result = await model.generateContent({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { 
-          responseMimeType: "application/json", 
-          responseSchema 
-        }
-      });
+      // Enviar solicitud a la API de Gemini
+      const result = await model.generateContent([
+        { text: prompt }
+      ]);
       
       const response = await result.response;
-      const text = response.text();
+      let text = response.text();
+      
+      // Limpiar el texto de delimitadores de código Markdown antes de parsearlo
+      if (text.includes('```')) {
+        console.log('La respuesta contiene delimitadores de código Markdown, limpiando...');
+        // Eliminar delimitadores de código ```json y ``` 
+        text = text.replace(/```json\s*|\s*```/g, '');
+      }
+      
+      // Imprimir los primeros caracteres para depuración
+      console.log('Primeros 50 caracteres del texto limpio:', text.substring(0, 50));
+      
       const generatedData = JSON.parse(text);
 
       const newPlan: Omit<PlanificacionUnidad, 'id'> = {
@@ -1068,23 +1349,22 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         }
       });
       
-      const schema = {
-        type: SchemaType.OBJECT,
-        properties: {
-          inicio: { type: SchemaType.STRING },
-          desarrollo: { type: SchemaType.STRING },
-          cierre: { type: SchemaType.STRING },
-        },
-        required: ["inicio", "desarrollo", "cierre"],
-      };
-
-      const result = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json", responseSchema: schema },
-      });
+      // Simplificamos la solicitud para evitar problemas con el schema
+      const result = await model.generateContent([
+        { text: prompt }
+      ]);
 
       const response = await result.response;
-      const text = response.text();
+      let text = response.text();
+      
+      // Limpiar el texto de delimitadores de código Markdown antes de parsearlo
+      if (text.includes('```')) {
+        console.log('La respuesta contiene delimitadores de código Markdown, limpiando...');
+        // Eliminar delimitadores de código ```json y ``` 
+        text = text.replace(/```json\s*|\s*```/g, '');
+      }
+      
+      console.log('Primeros 50 caracteres del texto limpio:', text.substring(0, 50));
       const generatedData: MomentosClase = JSON.parse(text);
 
       const newClassPlan: Omit<PlanificacionClase, 'id'> = {
@@ -1194,11 +1474,116 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   
   const inputStyles = "w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400";
   
-  const renderUnidadTab = () => (
+  // Cargar planificaciones desde cero cuando sea necesario
+const recargarPlanificaciones = async () => {
+  try {
+    console.log("🔄 Recargando planificaciones manualmente...");
+    const { getPlanificacionesByUser } = await import('../../src/firebaseHelpers/planificacionHelper');
+    
+    if (!userId) {
+      console.warn("🔄 No hay userId para recargar planificaciones");
+      return;
+    }
+    
+    const planificacionesFrescas = await getPlanificacionesByUser(userId);
+    console.log(`🔄 Obtenidas ${planificacionesFrescas.length} planificaciones frescas`);
+    
+    // En vez de actualizar el estado directamente, informamos al usuario
+    alert(`Se han encontrado ${planificacionesFrescas.length} planificaciones en la base de datos. Recargue la página para ver los cambios.`);
+    
+    // Forzamos una recarga de la página para asegurar que todo se cargue correctamente
+    window.location.reload();
+  } catch (error) {
+    console.error("🔄 Error recargando planificaciones:", error);
+    alert("Hubo un error al recargar las planificaciones. Intente recargar la página manualmente.");
+  }
+};
+
+  // Estado para el diagnóstico
+  const [diagnosticoEstado, setDiagnosticoEstado] = useState<{
+    visible: boolean;
+    ejecutando: boolean;
+    resultado: { status?: string; message?: string } | null;
+  }>({
+    visible: false,
+    ejecutando: false,
+    resultado: null
+  });
+
+  // Ejecutar diagnóstico
+  const ejecutarDiagnostico = async () => {
+    setDiagnosticoEstado(prev => ({ ...prev, ejecutando: true, resultado: null }));
+    const resultado = await diagnosticarYReparar();
+    setDiagnosticoEstado(prev => ({ ...prev, ejecutando: false, resultado }));
+  };
+
+const renderUnidadTab = () => (
     <div className="space-y-8">
       <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-2">Generador de Planificaciones de Unidad</h2>
-        <p className="text-slate-500 dark:text-slate-400 mb-6">Complete los campos y use la IA para crear una planificación de unidad estructurada.</p>
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-2">Generador de Planificaciones de Unidad</h2>
+            <p className="text-slate-500 dark:text-slate-400">Complete los campos y use la IA para crear una planificación de unidad estructurada.</p>
+          </div>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setDiagnosticoEstado(prev => ({ ...prev, visible: !prev.visible }))}
+              className="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1 rounded-md text-sm"
+            >
+              Diagnóstico
+            </button>
+            <button 
+              onClick={recargarPlanificaciones}
+              className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
+            >
+              <RefreshCcw className="w-4 h-4" />
+              <span>Recargar</span>
+            </button>
+          </div>
+        </div>
+        
+        {/* Panel de diagnóstico */}
+        {diagnosticoEstado.visible && (
+          <div className="mb-6 p-4 border border-slate-300 dark:border-slate-600 rounded-lg">
+            <h3 className="font-bold text-lg mb-2">Herramienta de Diagnóstico</h3>
+            <p className="text-sm text-slate-500 mb-3">
+              Esta herramienta intentará resolver problemas con las planificaciones que no aparecen en el historial.
+            </p>
+            
+            {diagnosticoEstado.resultado && (
+              <div className={`p-3 mb-3 rounded-md ${
+                diagnosticoEstado.resultado.status === 'ok' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' :
+                diagnosticoEstado.resultado.status === 'repaired' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' :
+                'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
+              }`}>
+                {diagnosticoEstado.resultado.message}
+              </div>
+            )}
+            
+            <div className="flex gap-2">
+              <button
+                onClick={ejecutarDiagnostico}
+                disabled={diagnosticoEstado.ejecutando}
+                className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-md flex items-center gap-2 disabled:opacity-50"
+              >
+                {diagnosticoEstado.ejecutando ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <span>Ejecutar diagnóstico</span>
+                )}
+              </button>
+              
+              {diagnosticoEstado.resultado?.status === 'repaired' && (
+                <button
+                  onClick={() => window.location.reload()}
+                  className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-md"
+                >
+                  Recargar página
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         {planificacionesLoading ? (
           <div className="flex justify-center items-center py-8">
             <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
@@ -1347,8 +1732,14 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
           </div>
         ) : (
           <div className="space-y-4">
-            {planificaciones.filter(p => p.tipo === 'Unidad').length > 0 ? 
-              planificaciones.filter((p): p is PlanificacionUnidad => p.tipo === 'Unidad').map(plan => (
+            {console.log("💾 RENDERIZANDO HISTORIAL - Cantidad de planificaciones:", planificaciones.length)}
+            {console.log("💾 RENDERIZANDO HISTORIAL - Cantidad de unidades:", planificaciones.filter(p => p.tipo === 'Unidad').length)}
+            
+            {/* Versión alternativa que muestra todas las planificaciones independientemente de su estructura */}
+            {planificaciones.length > 0 ? 
+              planificaciones
+                .filter(p => p.tipo === 'Unidad')
+                .map(plan => (
                 <div 
                   key={plan.id} 
                   className={`p-5 border rounded-xl transition-all ${
@@ -1465,13 +1856,145 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     );
   };
   
-  // Verificar que el usuario está autenticado
-  if (!currentUser || (!currentUser.email && !currentUser.id)) {
+  // Verificar datos de planificaciones
+  useEffect(() => {
+    // Obtención inicial directa de planificaciones para diagnóstico
+    const obtenerPlanificacionesDirectas = async () => {
+      try {
+        console.log("📊 Diagnóstico de planificaciones - Inicio");
+        console.log(`userId: ${userId}`);
+        
+        if (!userId) {
+          console.warn("📊 Sin userId, no se pueden obtener planificaciones");
+          return;
+        }
+
+        // Obtener planificaciones directamente sin usar la suscripción
+        const { collection, query, where, getDocs } = await import('firebase/firestore');
+        const { db } = await import('../../src/firebaseHelpers/config');
+        
+        const q = query(
+          collection(db, 'planificaciones'),
+          where('userId', '==', userId)
+        );
+        
+        const snapshot = await getDocs(q);
+        console.log(`📊 Documentos en Firestore: ${snapshot.docs.length}`);
+        
+        if (snapshot.docs.length > 0) {
+          console.log(`📊 Primer documento:`, snapshot.docs[0].data());
+          
+          // Comprobar cuántas son de tipo Unidad
+          const unidades = snapshot.docs.filter(doc => doc.data().tipo === 'Unidad');
+          console.log(`📊 Documentos de tipo Unidad: ${unidades.length}`);
+          
+          // Comprobar cuántas tienen detallesLeccion válidos
+          const unidadesValidas = unidades.filter(doc => 
+            Array.isArray(doc.data().detallesLeccion) && doc.data().detallesLeccion !== undefined
+          );
+          console.log(`📊 Unidades con detallesLeccion válidos: ${unidadesValidas.length}`);
+          
+          // Corregir las inválidas
+          if (unidades.length > unidadesValidas.length) {
+            console.log(`📊 Intentando corregir ${unidades.length - unidadesValidas.length} unidades inválidas...`);
+            
+            for (const doc of unidades) {
+              const data = doc.data();
+              if (!Array.isArray(data.detallesLeccion) || data.detallesLeccion === undefined) {
+                try {
+                  console.log(`📊 Corrigiendo documento ${doc.id}...`);
+                  const { doc: docRef, updateDoc } = await import('firebase/firestore');
+                  await updateDoc(docRef(db, 'planificaciones', doc.id), {
+                    detallesLeccion: []
+                  });
+                  console.log(`📊 Documento ${doc.id} corregido con éxito`);
+                } catch (e) {
+                  console.error(`📊 Error al corregir documento ${doc.id}:`, e);
+                }
+              }
+            }
+          }
+        }
+        
+        console.log("📊 Diagnóstico de planificaciones - Finalizado");
+      } catch (error) {
+        console.error("📊 Error en diagnóstico de planificaciones:", error);
+      }
+    };
+    
+    // Ejecutar diagnóstico solo una vez al montar el componente
+    obtenerPlanificacionesDirectas();
+    
+    // Corregir planificaciones inválidas que llegan por la suscripción
+    if (!planificacionesLoading) {
+      console.log(`🔍 Verificando ${planificaciones.length} planificaciones recibidas...`);
+      console.log(`🔍 Tipos de planificaciones:`, planificaciones.map(p => p.tipo));
+      
+      // Verificar planificaciones de unidad con detallesLeccion incorrectos
+      const unidadesInvalidas = planificaciones.filter(p => 
+        p.tipo === 'Unidad' && 
+        (!Array.isArray((p as any).detallesLeccion) || (p as any).detallesLeccion === undefined)
+      );
+      
+      if (unidadesInvalidas.length > 0) {
+        console.warn(`🔍 Encontradas ${unidadesInvalidas.length} unidades con formato inválido`);
+        
+        // Intentar corregir las planificaciones inválidas
+        unidadesInvalidas.forEach(async (plan) => {
+          try {
+            await updatePlan(plan.id, { 
+              ...plan,
+              detallesLeccion: [] 
+            });
+            console.log(`🔍 Reparada planificación ${plan.id}`);
+          } catch (err) {
+            console.error(`🔍 Error al reparar planificación ${plan.id}:`, err);
+          }
+        });
+      }
+    }
+  }, [userId, planificaciones, planificacionesLoading, updatePlan]);
+
+  // Verificar que el usuario está autenticado y tiene ID válido
+  if (!currentUser) {
     return (
       <div className="flex justify-center items-center py-8">
         <div className="text-center">
           <p className="text-slate-500 dark:text-slate-400 mb-2">Error: Usuario no autenticado</p>
-          <p className="text-sm text-slate-400">Datos recibidos: {JSON.stringify(currentUser)}</p>
+          <p className="text-sm text-slate-400">No se recibieron datos de usuario</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Si no hay userId válido
+  if (!userIdValido) {
+    return (
+      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-8 max-w-2xl mx-auto my-8">
+        <h2 className="text-2xl font-bold text-amber-800 dark:text-amber-300 mb-4">
+          Error de identificación de usuario
+        </h2>
+        <div className="bg-white dark:bg-slate-800 rounded-md p-4 mb-4 overflow-auto max-h-40">
+          <pre className="text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
+            {JSON.stringify(currentUser, null, 2)}
+          </pre>
+        </div>
+        <p className="text-amber-700 dark:text-amber-400 mb-4">
+          No se pudo determinar su identificador de usuario para cargar las planificaciones. 
+          Este problema puede deberse a:
+        </p>
+        <ul className="list-disc pl-5 text-amber-700 dark:text-amber-400 mb-6 space-y-2">
+          <li>La sesión no se ha inicializado correctamente</li>
+          <li>Su cuenta no tiene asignado un ID válido</li>
+          <li>Hay un problema en la sincronización con la base de datos</li>
+        </ul>
+        <div className="flex justify-center">
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-amber-600 hover:bg-amber-700 text-white py-2 px-6 rounded-md transition-colors"
+          >
+            Recargar aplicación
+          </button>
         </div>
       </div>
     );
