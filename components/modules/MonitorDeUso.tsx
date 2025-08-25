@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ApiCallLog } from '../../types';
-import {
-    subscribeToApiLogs,
-    getFirestoreStats,
-} from '../../src/firebaseHelpers/loggingHelper'; // subscribeToApiLogs
+import { subscribeToApiLogs } from '../../src/firebaseHelpers/loggingHelper';
 import { getFirestoreStats } from '../../src/firebaseHelpers/monitoring';
 
 const DAILY_API_CALL_LIMIT = 500;

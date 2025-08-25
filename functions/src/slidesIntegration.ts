@@ -35,6 +35,11 @@ export interface PresentationData {
   incluirImagenes: boolean;
   contenidoFuente?: string;
   enlaces?: string[];
+  incluirActividades?: boolean;
+  incluirEvaluacion?: boolean;
+  formatoPedagogico?: boolean;
+  userId?: string;
+  planificacionId?: string;
 }
 
 // Interfaz para resultado de creación de presentación
@@ -49,6 +54,8 @@ export interface PresentationResult {
 interface GeneratedSlide {
   title: string;
   content: string;
+  activity?: string; // Actividad de aprendizaje para el slide
+  bloomLevel?: string; // Nivel de taxonomía de Bloom
   imagePrompt?: string; // Para generar una imagen relacionada si es necesario
 }
 
@@ -166,84 +173,252 @@ export class SlidesIntegration {
   }
   
   /**
+   * Obtiene la descripción pedagógica del estilo seleccionado
+   */
+  private getStyleDescription(estilo: string): string {
+    const estilos: Record<string, string> = {
+      'academico': 'Formal y riguroso, con énfasis en conceptos teóricos y fundamentación científica',
+      'visual': 'Dinámico y colorido, con énfasis en elementos gráficos, infografías y representaciones visuales',
+      'interactivo': 'Participativo y colaborativo, con múltiples actividades, preguntas y dinámicas grupales',
+      'profesional': 'Corporativo y práctico, enfocado en aplicaciones del mundo real y casos de estudio',
+      'sobrio': 'Elegante y minimalista, balanceando profesionalismo con claridad pedagógica'
+    };
+    
+    return estilos[estilo] || estilos['academico'];
+  }
+  
+  /**
    * Genera contenido para una presentación usando IA
    */
   private async generatePresentationContent(data: PresentationData): Promise<GeneratedSlide[]> {
-    const model = this.genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = this.genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     
-    // Construir el prompt para la IA
+    // Construir el prompt para la IA con estructura pedagógica avanzada
     const prompt = `
-    Genera el contenido para una presentación de ${data.numDiapositivas} diapositivas sobre "${data.tema}" 
+    Eres un experto pedagogo y diseñador instruccional. Crea una presentación educativa de alta calidad con ${data.numDiapositivas} diapositivas sobre "${data.tema}" 
     para la asignatura "${data.asignatura}" de nivel "${data.curso}".
     
-    Los objetivos de aprendizaje son:
+    OBJETIVOS DE APRENDIZAJE:
     ${data.objetivosAprendizaje.map(oa => `- ${oa}`).join('\n')}
     
-    ${data.contenidoFuente ? `Contenido de referencia: ${data.contenidoFuente}` : ''}
-    ${data.enlaces && data.enlaces.length > 0 ? `Enlaces de referencia: ${data.enlaces.join(', ')}` : ''}
+    ${data.contenidoFuente ? `CONTENIDO DE REFERENCIA: ${data.contenidoFuente}` : ''}
+    ${data.enlaces && data.enlaces.length > 0 ? `ENLACES DE REFERENCIA: ${data.enlaces.join(', ')}` : ''}
     
-    El estilo debe ser: ${data.estilo === 'visual' ? 'Visual con muchos elementos gráficos' : 'Sobrio y académico'}
+    ESTILO PEDAGÓGICO: ${this.getStyleDescription(data.estilo)}
     
-    Devuelve el contenido formateado como un array JSON donde cada elemento tiene:
-    - title: Título de la diapositiva
-    - content: Contenido detallado de la diapositiva
-    ${data.incluirImagenes ? '- imagePrompt: Descripción breve para generar una imagen relacionada' : ''}
+    REQUISITOS PEDAGÓGICOS:
+    1. Aplica la taxonomía de Bloom progresivamente (recordar → comprender → aplicar → analizar → evaluar → crear)
+    2. Incluye actividades de aprendizaje activo en cada diapositiva
+    3. Proporciona ejemplos concretos y casos prácticos del mundo real
+    4. Incorpora preguntas reflexivas y de pensamiento crítico
+    5. Asegura conexiones interdisciplinarias cuando sea relevante
+    6. Incluye elementos de evaluación formativa
     
-    Asegúrate de que la primera diapositiva sea una introducción y la última una conclusión.
+    ESTRUCTURA REQUERIDA:
+    - Diapositiva 1: Título e introducción motivadora con pregunta detonante
+    - Diapositivas 2-3: Conceptos fundamentales con ejemplos visuales
+    - Diapositivas centrales: Desarrollo del contenido con actividades prácticas
+    - Penúltima diapositiva: Síntesis y conexiones con conocimientos previos
+    - Última diapositiva: Conclusiones, reflexión final y proyección futura
+    
+    Devuelve ÚNICAMENTE un array JSON válido donde cada elemento tenga:
+    {
+      "title": "Título claro y atractivo de la diapositiva",
+      "content": "Contenido educativo detallado con bullet points, ejemplos concretos, y actividades de aprendizaje. Mínimo 3-4 puntos sustanciales por diapositiva.",
+      "activity": "Actividad específica para que los estudiantes realicen (pregunta, ejercicio, discusión, etc.)",
+      "bloomLevel": "Nivel de Bloom que aborda esta diapositiva"${data.incluirImagenes ? ',\n      "imagePrompt": "Descripción específica para generar una imagen educativa relevante"' : ''}
+    }
+    
+    IMPORTANTE: 
+    - Cada diapositiva debe tener contenido sustancial, no solo títulos
+    - Incluye datos, estadísticas, citas o ejemplos específicos cuando sea apropiado
+    - El contenido debe ser apropiado para el nivel educativo especificado
+    - Mantén coherencia narrativa entre las diapositivas
     `;
     
     try {
+      console.log('Generando contenido con IA mejorada para:', data.tema);
+      console.log('Configuración:', {
+        estilo: data.estilo,
+        actividades: data.incluirActividades || false,
+        evaluacion: data.incluirEvaluacion || false,
+        pedagogico: data.formatoPedagogico || false
+      });
+      
+      // Verificar que tenemos API key
+      const apiKey = geminiApiKey.value() || process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        console.error('❌ API Key de Gemini no configurada');
+        return this.createEnhancedDefaultSlides(data);
+      }
+      console.log('✅ API Key de Gemini configurada');
+      
       // Llamar a Gemini AI
+      console.log('🚀 Enviando prompt a Gemini 1.5 Pro...');
       const result = await model.generateContent(prompt);
       const responseText = result.response.text();
       
-      // Extraer el JSON del texto de respuesta
-      const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+      console.log('📥 Respuesta de IA recibida, longitud:', responseText.length);
+      console.log('📝 Primeros 300 caracteres:', responseText.substring(0, 300));
+      
+      // Limpiar la respuesta para extraer solo el JSON
+      let cleanText = responseText.trim();
+      
+      // Remover markdown si existe
+      if (cleanText.startsWith('```json')) {
+        cleanText = cleanText.replace(/```json\n?/, '').replace(/\n?```$/, '');
+      } else if (cleanText.startsWith('```')) {
+        cleanText = cleanText.replace(/```\n?/, '').replace(/\n?```$/, '');
+      }
+      
+      // Buscar el array JSON
+      const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]) as GeneratedSlide[];
+        try {
+          const parsedSlides = JSON.parse(jsonMatch[0]) as GeneratedSlide[];
+          
+          // Validar que tenemos el número correcto de diapositivas
+          if (parsedSlides.length !== data.numDiapositivas) {
+            console.warn(`IA generó ${parsedSlides.length} diapositivas, se esperaban ${data.numDiapositivas}`);
+          }
+          
+          // Validar estructura de las diapositivas
+          const validSlides = parsedSlides.filter(slide => 
+            slide.title && slide.content && slide.title.trim() !== '' && slide.content.trim() !== ''
+          );
+          
+          if (validSlides.length === 0) {
+            console.warn('No se generaron diapositivas válidas, usando contenido de respaldo');
+            return this.createEnhancedDefaultSlides(data);
+          }
+          
+          console.log(`✅ Se generaron ${validSlides.length} diapositivas válidas`);
+          return validSlides;
+        } catch (parseError) {
+          console.error('Error al parsear JSON de IA:', parseError);
+          console.log('Respuesta que causó error:', jsonMatch[0].substring(0, 500));
+          return this.createEnhancedDefaultSlides(data);
+        }
       } else {
-        // Si no podemos extraer JSON, crear un formato básico
-        return this.createDefaultSlides(data);
+        console.warn('No se encontró JSON válido en la respuesta de IA');
+        console.log('Respuesta completa:', responseText.substring(0, 500));
+        return this.createEnhancedDefaultSlides(data);
       }
     } catch (error) {
-      console.error('Error al generar contenido con IA:', error);
-      return this.createDefaultSlides(data);
+      console.error('❌ Error detallado al generar contenido con IA:');
+      
+      // Verificar que el error sea un objeto con las propiedades esperadas
+      if (error instanceof Error) {
+        console.error('Tipo de error:', error.constructor.name);
+        console.error('Mensaje:', error.message);
+        if (error.stack) {
+          console.error('Stack trace:', error.stack);
+        }
+        
+        // Verificar si es un error específico de la API de Gemini
+        if (error.message && error.message.includes('API_KEY')) {
+          console.error('🔑 Error relacionado con API Key de Gemini');
+        } else if (error.message && error.message.includes('quota')) {
+          console.error('📊 Error de cuota de API de Gemini');
+        } else if (error.message && error.message.includes('blocked')) {
+          console.error('🚫 Error de bloqueo/referrer de API de Gemini');
+        }
+      } else {
+        console.error('Error desconocido:', error);
+      }
+      
+      console.log('🔄 Usando contenido de respaldo de alta calidad...');
+      return this.createEnhancedDefaultSlides(data);
     }
   }
   
   /**
-   * Crea slides predeterminados en caso de fallo de la IA
+   * Crea slides predeterminados enriquecidos en caso de fallo de la IA
    */
-  private createDefaultSlides(data: PresentationData): GeneratedSlide[] {
-    const slides: GeneratedSlide[] = [
-      {
-        title: `${data.tema}`,
-        content: `Asignatura: ${data.asignatura}\nCurso: ${data.curso}`,
-      }
-    ];
+  private createEnhancedDefaultSlides(data: PresentationData): GeneratedSlide[] {
+    console.log('Generando contenido de respaldo para:', data.tema);
     
-    // Diapositiva de objetivos
+    const slides: GeneratedSlide[] = [];
+    
+    // 1. Diapositiva de título
     slides.push({
-      title: 'Objetivos de Aprendizaje',
-      content: data.objetivosAprendizaje.join('\n\n')
+      title: data.tema,
+      content: `📚 Asignatura: ${data.asignatura}\n🎓 Nivel: ${data.curso}\n\n🎯 Objetivo principal:\nDesarrollar conocimientos y habilidades fundamentales sobre ${data.tema} mediante metodologías activas de aprendizaje.\n\n🔍 Enfoque pedagógico: ${this.getStyleDescription(data.estilo)}`,
+      activity: "Reflexiona: ¿Qué conocimientos previos tienes sobre este tema?",
+      bloomLevel: "Recordar"
     });
     
-    // Diapositivas intermedias
-    for (let i = 0; i < data.numDiapositivas - 3; i++) {
+    // 2. Diapositiva de objetivos
+    slides.push({
+      title: 'Objetivos de Aprendizaje',
+      content: `Al finalizar esta clase, serás capaz de:\n\n${data.objetivosAprendizaje.map((obj, i) => `${i + 1}. ${obj}`).join('\n\n')}\n\n💡 Estos objetivos se alinean con las competencias del perfil de egreso y contribuyen al desarrollo integral de tu formación.`,
+      activity: "Identifica cuál objetivo te resulta más desafiante y por qué",
+      bloomLevel: "Comprender"
+    });
+    
+    // 3-4. Diapositivas de contenido conceptual
+    if (data.numDiapositivas >= 4) {
       slides.push({
-        title: `Contenido ${i + 1}`,
-        content: `Esta diapositiva contiene información sobre ${data.tema}`
+        title: 'Conceptos Fundamentales',
+        content: `🔑 Ideas clave sobre ${data.tema}:\n\n• Definición y características principales\n• Importancia en el contexto de ${data.asignatura}\n• Relación con conocimientos previos\n• Aplicaciones en la vida cotidiana\n\n📖 Marco teórico:\nEste tema se fundamenta en principios establecidos que han evolucionado a través de la investigación y la práctica profesional.`,
+        activity: "Construye un mapa conceptual con los términos principales",
+        bloomLevel: "Aplicar"
+      });
+      
+      slides.push({
+        title: 'Análisis y Ejemplos Prácticos',
+        content: `🧩 Desglosando ${data.tema}:\n\n• Componentes y elementos estructurales\n• Procesos y metodologías involucrados\n• Casos de estudio relevantes\n• Ejemplos del mundo real\n\n🔬 Enfoque analítico:\nExaminaremos este tema desde múltiples perspectivas para desarrollar una comprensión profunda y crítica.`,
+        activity: "Analiza un caso práctico y presenta tus conclusiones",
+        bloomLevel: "Analizar"
       });
     }
     
-    // Diapositiva de conclusión
+    // Diapositivas adicionales según el número solicitado
+    const remainingSlides = data.numDiapositivas - slides.length - 2; // Reservar espacio para síntesis y conclusión
+    
+    for (let i = 0; i < remainingSlides; i++) {
+      const slideNumber = slides.length + 1;
+      slides.push({
+        title: `Profundización ${slideNumber - 2}: Aspecto Específico`,
+        content: `🎯 Desarrollando competencias específicas:\n\n• Habilidades técnicas requeridas\n• Destrezas de pensamiento crítico\n• Competencias transversales\n• Metodologías de trabajo\n\n📊 Indicadores de logro:\nPodrás demostrar tu comprensión mediante la aplicación práctica de estos conceptos en situaciones reales.`,
+        activity: `Desarrolla una propuesta práctica aplicando los conceptos aprendidos`,
+        bloomLevel: i % 2 === 0 ? "Evaluar" : "Crear"
+      });
+    }
+    
+    // Penúltima diapositiva: Síntesis
+    if (data.numDiapositivas >= 3) {
+      slides.push({
+        title: 'Síntesis e Integración',
+        content: `🔗 Conectando conocimientos:\n\n• Relación con aprendizajes anteriores\n• Vínculos interdisciplinarios\n• Aplicaciones futuras\n• Transferencia de conocimientos\n\n🧠 Metacognición:\nReflexiona sobre tu proceso de aprendizaje y las estrategias que mejor te funcionaron durante esta clase.`,
+        activity: "Elabora una síntesis personal del tema en 3 ideas principales",
+        bloomLevel: "Evaluar"
+      });
+    }
+    
+    // Última diapositiva: Conclusión y proyección
     slides.push({
-      title: 'Conclusiones',
-      content: `Resumen de los puntos principales sobre ${data.tema}`
+      title: 'Conclusiones y Próximos Pasos',
+      content: `✨ Logros alcanzados:\n\n• Conceptos fundamentales consolidados\n• Habilidades desarrolladas\n• Conexiones establecidas\n• Competencias fortalecidas\n\n🚀 Proyección futura:\nEstos aprendizajes constituyen la base para abordar temas más complejos y desarrollar proyectos innovadores en ${data.asignatura}.\n\n💭 Reflexión final:\n"El aprendizaje es un viaje continuo donde cada nuevo conocimiento se convierte en el punto de partida para nuevos descubrimientos."`,
+        activity: "Define un objetivo personal de aprendizaje para continuar profundizando en este tema",
+        bloomLevel: "Crear"
     });
     
-    return slides;
+    // Asegurar que tenemos exactamente el número solicitado de diapositivas
+    const finalSlides = slides.slice(0, data.numDiapositivas);
+    
+    console.log(`Presentación generada para ${data.tema} (${data.asignatura}) por usuario ${data.userId || 'anónimo'}`);
+    console.log(`Detalles adicionales: curso=${data.curso}`);
+    console.log(`diapositivas=${finalSlides.length}, estilo=${data.estilo}`);
+    console.log(`Parámetros opcionales: imágenes=${data.incluirImagenes},`);
+    console.log(`fuente=${data.contenidoFuente ? 'sí' : 'no'}, enlaces=${data.enlaces?.length || 0}, planID=${data.planificacionId || 'N/A'}`);
+    
+    return finalSlides;
   }
+
+  /**
+   * Crea una nueva presentación en Google Slides
+   */
   
   /**
    * Crea una presentación en Google Slides usando OAuth del usuario
@@ -365,11 +540,23 @@ export class SlidesIntegration {
         }
       });
       
-      // Insertar contenido
+      // Insertar contenido enriquecido
+      let fullContent = slide.content;
+      
+      // Agregar actividad si existe
+      if (slide.activity) {
+        fullContent += `\n\n🎯 ACTIVIDAD:\n${slide.activity}`;
+      }
+      
+      // Agregar nivel de Bloom si existe
+      if (slide.bloomLevel) {
+        fullContent += `\n\n📊 Nivel de Bloom: ${slide.bloomLevel}`;
+      }
+      
       requests.push({
         insertText: {
           objectId: contentId,
-          text: slide.content
+          text: fullContent
         }
       });
       

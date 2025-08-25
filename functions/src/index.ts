@@ -371,3 +371,6 @@ export const deleteUser = onCall(async (request) => {
     throw new HttpsError("unknown", errorMessage);
   }
 });
+
+// Función de prueba para Gemini
+export {testGemini} from "./testGemini";

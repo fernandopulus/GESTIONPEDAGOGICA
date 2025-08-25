@@ -34,4 +34,3 @@ export const functions = getFunctions(app, 'us-central1'); // Especificar la reg
 // if (import.meta.env.MODE === "development") {
 //   connectFunctionsEmulator(functions, "localhost", 5001);
 // }
-export const GEMINI_API_KEY = 'AIzaSyDn2nxyD4XMxRJdyLgo_9MNRlPPb7f0u5w'; // API key for Gemini AI

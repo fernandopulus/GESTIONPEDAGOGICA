@@ -20,11 +20,12 @@ import {
   generateSlides,
   checkGoogleSlidesAuth
 } from '../../src/firebaseHelpers/materialesDidacticos';
+import { PresentacionDidactica, Planificacion } from '../../types';
+import TestGeminiComponent from '../test/TestGeminiComponent';
 import type { 
   PlanificacionUnidad, 
   PlanificacionClase, 
-  EstiloPresentacion, 
-  PresentacionDidactica,
+  EstiloPresentacion,
   PlanificacionDocente
 } from '../../types';
 
@@ -725,6 +726,11 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
             <span>Recursos</span>
           </button>
         </nav>
+      </div>
+      
+      {/* 🧪 COMPONENTE DE PRUEBA TEMPORAL */}
+      <div className="mb-6">
+        <TestGeminiComponent />
       </div>
       
       {/* Contenido según la tab seleccionada */}

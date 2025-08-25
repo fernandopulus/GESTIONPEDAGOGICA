@@ -123,7 +123,12 @@ export const generateSlides = async (presentacionData: Omit<PresentacionDidactic
       incluirImagenes: presentacionData.incluirImagenes,
       contenidoFuente: presentacionData.contenidoFuente || "",
       enlaces: presentacionData.enlaces || [],
-      planificacionId: presentacionData.planificacionId
+      planificacionId: presentacionData.planificacionId,
+      // ✅ Nuevas propiedades pedagógicas
+      incluirActividades: true, // Siempre activadas para mejor calidad educativa
+      incluirEvaluacion: true,
+      formatoPedagogico: true,
+      userId: currentUser.uid
     };
     
     // Guardar la presentación antes de llamar a la función
