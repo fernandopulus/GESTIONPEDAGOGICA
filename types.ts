@@ -1067,7 +1067,7 @@ export interface AnalisisTaxonomico {
 }
 
 // --- Materiales Didácticos ---
-export type EstiloPresentacion = 'sobrio' | 'visual';
+export type EstiloPresentacion = 'sobrio' | 'visual' | 'academico' | 'interactivo' | 'profesional' | 'creativo' | 'minimalista';
 
 export interface PresentacionDidactica {
     id: string;

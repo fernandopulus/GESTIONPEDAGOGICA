@@ -1,19 +1,11 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Profile, Module, User } from './types';
-import { MODULES_BY_PROFILE, LirLogoIcon, LogoutIcon, MenuIcon } from '../constants';
-  const profesorNames = useMemo(() => 
-    profesores.map(p => p.nombreCompleto).sort(), 
-    [profesores]
-  );
-
-  return { profesores, profesorNames, loading };
-};
+import { MODULES_BY_PROFILE, LirLogoIcon } from './constants';
 
 
 
 // Component imports
-// LÍNEA CORRECTA
-import TopBar from './TopBar';
+import TopBar from './components/TopBar';
 import RegistroReemplazos from './components/modules/RegistroReemplazos';
 import DashboardSubdireccion from './components/modules/DashboardSubdireccion';
 import CrearHorarios from './components/modules/CrearHorarios';
@@ -24,6 +16,7 @@ import MuroAnuncios from './components/modules/MuroAnuncios';
 import GeneradorActas from './components/modules/GeneradorActas';
 import EvaluacionAprendizajes from './components/modules/EvaluacionAprendizajes';
 import Administracion from './components/modules/Administracion';
+import MaterialesDidacticosSubmodule from './components/modules/MaterialesDidacticosSubmodule';
 import SeguimientoDual from './components/modules/SeguimientoDual';
 import ActividadesRemotas from './components/modules/ActividadesRemotas';
 import Autoaprendizaje from './components/modules/Autoaprendizaje';

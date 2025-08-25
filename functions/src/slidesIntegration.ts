@@ -181,7 +181,9 @@ export class SlidesIntegration {
       'visual': 'Dinámico y colorido, con énfasis en elementos gráficos, infografías y representaciones visuales',
       'interactivo': 'Participativo y colaborativo, con múltiples actividades, preguntas y dinámicas grupales',
       'profesional': 'Corporativo y práctico, enfocado en aplicaciones del mundo real y casos de estudio',
-      'sobrio': 'Elegante y minimalista, balanceando profesionalismo con claridad pedagógica'
+      'sobrio': 'Elegante y minimalista, balanceando profesionalismo con claridad pedagógica',
+      'creativo': 'Innovador y atractivo, con un enfoque original que estimula la imaginación y el pensamiento lateral',
+      'minimalista': 'Depurado y esencial, centrado en lo más importante sin elementos distractores'
     };
     
     return estilos[estilo] || estilos['academico'];

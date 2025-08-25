@@ -11,7 +11,8 @@ import {
   Loader2, 
   ExternalLink,
   FileDown,
-  Trash2
+  Trash2,
+  Eye
 } from 'lucide-react';
 import { 
   savePresentacion, 
@@ -20,8 +21,9 @@ import {
   generateSlides,
   checkGoogleSlidesAuth
 } from '../../src/firebaseHelpers/materialesDidacticos';
-import { PresentacionDidactica, Planificacion } from '../../types';
+import { PresentacionDidactica } from '../../types';
 import TestGeminiComponent from '../test/TestGeminiComponent';
+import EstiloPresentacionPreview from '../common/EstiloPresentacionPreview';
 import type { 
   PlanificacionUnidad, 
   PlanificacionClase, 
@@ -56,6 +58,9 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
     contenidoFuente: '',
     enlaces: ''
   });
+  
+  // Estado para mostrar vista previa del estilo
+  const [showEstiloPreview, setShowEstiloPreview] = useState(false);
   
   // Estado para las presentaciones existentes
   const [presentaciones, setPresentaciones] = useState<PresentacionDidactica[]>([]);
@@ -361,15 +366,229 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Estilo
                 </label>
-                <select
-                  name="estilo"
-                  value={formData.estilo}
-                  onChange={handleChange}
-                  className="w-full p-2 border border-gray-300 rounded-md bg-white dark:bg-slate-700 dark:border-slate-600"
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-2">
+                  <div
+                    className={`cursor-pointer border rounded-lg p-3 transition-all ${
+                      formData.estilo === 'sobrio' 
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' 
+                        : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-slate-800 dark:hover:bg-slate-700/70'
+                    }`}
+                    onClick={() => setFormData(prev => ({ ...prev, estilo: 'sobrio' }))}
+                  >
+                    <div className="flex flex-col items-center text-center">
+                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-2">
+                        <span className="text-2xl">🎭</span>
+                      </div>
+                      <span className="font-medium">Sobrio</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">Elegante y minimalista</span>
+                    </div>
+                  </div>
+                  
+                  <div
+                    className={`cursor-pointer border rounded-lg p-3 transition-all ${
+                      formData.estilo === 'visual' 
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' 
+                        : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-slate-800 dark:hover:bg-slate-700/70'
+                    }`}
+                    onClick={() => setFormData(prev => ({ ...prev, estilo: 'visual' }))}
+                  >
+                    <div className="flex flex-col items-center text-center">
+                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-2">
+                        <span className="text-2xl">🎨</span>
+                      </div>
+                      <span className="font-medium">Visual</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">Colorido y gráfico</span>
+                    </div>
+                  </div>
+                  
+                  <div
+                    className={`cursor-pointer border rounded-lg p-3 transition-all ${
+                      formData.estilo === 'academico' 
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' 
+                        : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-slate-800 dark:hover:bg-slate-700/70'
+                    }`}
+                    onClick={() => setFormData(prev => ({ ...prev, estilo: 'academico' }))}
+                  >
+                    <div className="flex flex-col items-center text-center">
+                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-2">
+                        <span className="text-2xl">📚</span>
+                      </div>
+                      <span className="font-medium">Académico</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">Formal y riguroso</span>
+                    </div>
+                  </div>
+                  
+                  <div
+                    className={`cursor-pointer border rounded-lg p-3 transition-all ${
+                      formData.estilo === 'interactivo' 
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' 
+                        : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-slate-800 dark:hover:bg-slate-700/70'
+                    }`}
+                    onClick={() => setFormData(prev => ({ ...prev, estilo: 'interactivo' }))}
+                  >
+                    <div className="flex flex-col items-center text-center">
+                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-2">
+                        <span className="text-2xl">🤝</span>
+                      </div>
+                      <span className="font-medium">Interactivo</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">Participativo y dinámico</span>
+                    </div>
+                  </div>
+                  
+                  <div
+                    className={`cursor-pointer border rounded-lg p-3 transition-all ${
+                      formData.estilo === 'profesional' 
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' 
+                        : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-slate-800 dark:hover:bg-slate-700/70'
+                    }`}
+                    onClick={() => setFormData(prev => ({ ...prev, estilo: 'profesional' }))}
+                  >
+                    <div className="flex flex-col items-center text-center">
+                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-2">
+                        <span className="text-2xl">💼</span>
+                      </div>
+                      <span className="font-medium">Profesional</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">Corporativo y práctico</span>
+                    </div>
+                  </div>
+                  
+                  <div
+                    className={`cursor-pointer border rounded-lg p-3 transition-all ${
+                      formData.estilo === 'creativo' 
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' 
+                        : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-slate-800 dark:hover:bg-slate-700/70'
+                    }`}
+                    onClick={() => setFormData(prev => ({ ...prev, estilo: 'creativo' }))}
+                  >
+                    <div className="flex flex-col items-center text-center">
+                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-2">
+                        <span className="text-2xl">💡</span>
+                      </div>
+                      <span className="font-medium">Creativo</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">Innovador y atractivo</span>
+                    </div>
+                  </div>
+                  
+                  <div
+                    className={`cursor-pointer border rounded-lg p-3 transition-all ${
+                      formData.estilo === 'minimalista' 
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' 
+                        : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-slate-800 dark:hover:bg-slate-700/70'
+                    }`}
+                    onClick={() => setFormData(prev => ({ ...prev, estilo: 'minimalista' }))}
+                  >
+                    <div className="flex flex-col items-center text-center">
+                      <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-2">
+                        <span className="text-2xl">⚪</span>
+                      </div>
+                      <span className="font-medium">Minimalista</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">Simple y esencial</span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Botón para mostrar la vista previa del estilo */}
+                <button
+                  type="button"
+                  onClick={() => setShowEstiloPreview(true)}
+                  className="mt-3 w-full flex items-center justify-center gap-2 py-2 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-800/40 transition-colors"
                 >
-                  <option value="sobrio">Sobrio</option>
-                  <option value="visual">Visual</option>
-                </select>
+                  <Eye className="w-4 h-4" />
+                  <span>Ver ejemplo del estilo seleccionado</span>
+                </button>
+                
+                {/* Modal de vista previa */}
+                {showEstiloPreview && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto">
+                      <div className="p-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                        <h3 className="text-lg font-medium">Vista previa de estilo: {formData.estilo}</h3>
+                        <button 
+                          onClick={() => setShowEstiloPreview(false)}
+                          className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                      <div className="p-5">
+                        <EstiloPresentacionPreview 
+                          estilo={formData.estilo} 
+                          tema={formData.tema || "Tema de la presentación"} 
+                        />
+                        
+                        <div className="mt-6">
+                          <h4 className="font-medium mb-2">Características del estilo {formData.estilo}</h4>
+                          <ul className="list-disc pl-5 space-y-1">
+                            {formData.estilo === 'sobrio' && (
+                              <>
+                                <li>Diseño elegante y profesional</li>
+                                <li>Colores neutros y tipografía clásica</li>
+                                <li>Énfasis en la claridad y simplicidad</li>
+                                <li>Ideal para presentaciones formales</li>
+                              </>
+                            )}
+                            {formData.estilo === 'visual' && (
+                              <>
+                                <li>Diseño colorido y dinámico</li>
+                                <li>Mayor uso de gráficos e imágenes</li>
+                                <li>Énfasis en elementos visuales e infografías</li>
+                                <li>Ideal para mantener la atención visual</li>
+                              </>
+                            )}
+                            {formData.estilo === 'academico' && (
+                              <>
+                                <li>Diseño formal y riguroso</li>
+                                <li>Espacio para citas y referencias</li>
+                                <li>Énfasis en conceptos teóricos</li>
+                                <li>Ideal para contenido académico complejo</li>
+                              </>
+                            )}
+                            {formData.estilo === 'interactivo' && (
+                              <>
+                                <li>Diseño participativo</li>
+                                <li>Incluye actividades y preguntas</li>
+                                <li>Énfasis en la participación activa</li>
+                                <li>Ideal para clases dinámicas</li>
+                              </>
+                            )}
+                            {formData.estilo === 'profesional' && (
+                              <>
+                                <li>Diseño corporativo</li>
+                                <li>Elementos de casos prácticos</li>
+                                <li>Énfasis en aplicaciones reales</li>
+                                <li>Ideal para formación profesional</li>
+                              </>
+                            )}
+                            {formData.estilo === 'creativo' && (
+                              <>
+                                <li>Diseño no convencional y llamativo</li>
+                                <li>Elementos visuales originales</li>
+                                <li>Énfasis en despertar la imaginación</li>
+                                <li>Ideal para temas creativos o artísticos</li>
+                              </>
+                            )}
+                            {formData.estilo === 'minimalista' && (
+                              <>
+                                <li>Diseño extremadamente simplificado</li>
+                                <li>Amplio espacio en blanco</li>
+                                <li>Énfasis en lo esencial</li>
+                                <li>Ideal para conceptos claros y concisos</li>
+                              </>
+                            )}
+                          </ul>
+                        </div>
+                      </div>
+                      <div className="p-4 bg-gray-100 dark:bg-slate-700 flex justify-end">
+                        <button
+                          onClick={() => setShowEstiloPreview(false)}
+                          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                        >
+                          Cerrar vista previa
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             
@@ -568,7 +787,7 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
                     {presentacion.asignatura} - {presentacion.curso}
                   </p>
                   
-                  <div className="flex items-center text-xs text-gray-500 space-x-4 mt-2">
+                  <div className="flex items-center text-xs text-gray-500 space-x-4 mt-2 flex-wrap">
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
                       {new Date(presentacion.fechaCreacion).toLocaleDateString()}
@@ -576,6 +795,25 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
                     <span className="flex items-center gap-1">
                       <Files className="w-3 h-3" />
                       {presentacion.numDiapositivas} diapositivas
+                    </span>
+                    <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full ${
+                      presentacion.estilo === 'sobrio' ? 'bg-slate-100 text-slate-700' :
+                      presentacion.estilo === 'visual' ? 'bg-blue-100 text-blue-700' :
+                      presentacion.estilo === 'academico' ? 'bg-amber-100 text-amber-700' :
+                      presentacion.estilo === 'interactivo' ? 'bg-green-100 text-green-700' :
+                      presentacion.estilo === 'profesional' ? 'bg-indigo-100 text-indigo-700' :
+                      presentacion.estilo === 'creativo' ? 'bg-purple-100 text-purple-700' :
+                      presentacion.estilo === 'minimalista' ? 'bg-gray-100 text-gray-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {presentacion.estilo === 'sobrio' && '🎭'} 
+                      {presentacion.estilo === 'visual' && '🎨'} 
+                      {presentacion.estilo === 'academico' && '📚'} 
+                      {presentacion.estilo === 'interactivo' && '🤝'} 
+                      {presentacion.estilo === 'profesional' && '💼'} 
+                      {presentacion.estilo === 'creativo' && '💡'} 
+                      {presentacion.estilo === 'minimalista' && '⚪'} 
+                      {presentacion.estilo}
                     </span>
                   </div>
                   
