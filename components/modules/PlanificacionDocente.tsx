@@ -47,15 +47,11 @@ const usePlanificaciones = (userId: string) => {
   return { planificaciones, loading, error, save, update, remove };
 };
 
-import React, { useState, useEffect, useCallback, ChangeEvent, FormEvent, lazy, Suspense } from 'react';
-import type { PlanificacionUnidad, PlanificacionClase, DetalleLeccion, ActividadPlanificada, TareaActividad, User, NivelPlanificacion, ActividadFocalizadaEvent, MomentosClase, PlanificacionDocente, ConceptoRelevante } from '../../types';
+import React, { useState, useEffect, useCallback, ChangeEvent, FormEvent } from 'react';
+import type { PlanificacionUnidad, PlanificacionClase, DetalleLeccion, ActividadPlanificada, TareaActividad, User, NivelPlanificacion, ActividadFocalizadaEvent, MomentosClase, PlanificacionDocente } from '../../types';
 import { useMemo } from 'react';
 import { EventType } from '../../types';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-
-// Importación diferida del componente de PDF
-const PdfDownloadButton = lazy(() => import('../pdf/PdfDownloadButton'));
-import MaterialesDidacticosSubmodule from './MaterialesDidacticosSubmodule';
 import { 
   BookOpen, 
   Calendar, 
@@ -70,7 +66,6 @@ import {
   BookMarked,
   School2,
   Sparkles,
-  Files,
   LayoutDashboard
 } from 'lucide-react';
 // import { saveCalendarEvent } from '../../src/firebaseHelpers/calendar'; // Función no disponible
@@ -134,21 +129,7 @@ const EditLessonModal: React.FC<EditLessonModalProps> = ({ lesson, onClose, onSa
   const [editedLesson, setEditedLesson] = useState<DetalleLeccion>(lesson);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    
-    // Manejar cambios en actividadDetallada de manera especial
-    if (name.startsWith('actividadDetallada.')) {
-      const field = name.split('.')[1];
-      setEditedLesson(prev => ({
-        ...prev,
-        actividadDetallada: {
-          ...prev.actividadDetallada,
-          [field]: value
-        }
-      }));
-    } else {
-      setEditedLesson({ ...editedLesson, [name]: value });
-    }
+    setEditedLesson({ ...editedLesson, [e.target.name]: e.target.value });
   };
 
   const handleSubmit = async () => {
@@ -165,107 +146,21 @@ const EditLessonModal: React.FC<EditLessonModalProps> = ({ lesson, onClose, onSa
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-fade-in-up" onClick={e => e.stopPropagation()}>
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 p-6 border-b dark:border-slate-700">Editar Detalle de Lección</h2>
         <div className="p-6 space-y-4 overflow-y-auto">
-          {/* Campos básicos de la lección */}
-          <div className="mb-4">
-            <h3 className="font-semibold text-lg mb-2">Información básica</h3>
-            {Object.entries(editedLesson).filter(([key]) => 
-              key !== 'actividadDetallada'
-            ).map(([key, value]) => (
-              <div key={key} className="mb-3">
-                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 capitalize mb-1">
-                  {key.replace(/([A-Z])/g, ' $1')}
-                </label>
-                <textarea
-                  name={key}
-                  value={value as string}
-                  onChange={handleChange}
-                  rows={3}
-                  className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
-                  disabled={isLoading}
-                />
-              </div>
-            ))}
-          </div>
-          
-          {/* Sección de actividad detallada */}
-          <div className="border-t pt-4 mt-4">
-            <h3 className="font-semibold text-lg mb-2">Actividad detallada</h3>
-            {editedLesson.actividadDetallada ? (
-              <>
-                <div className="mb-3">
-                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                    Estrategia didáctica
-                  </label>
-                  <textarea
-                    name="actividadDetallada.estrategiaDidactica"
-                    value={editedLesson.actividadDetallada.estrategiaDidactica}
-                    onChange={handleChange}
-                    rows={2}
-                    className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
-                    disabled={isLoading}
-                  />
-                </div>
-                <div className="mb-3">
-                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                    Materiales
-                  </label>
-                  <textarea
-                    name="actividadDetallada.materiales"
-                    value={editedLesson.actividadDetallada.materiales}
-                    onChange={handleChange}
-                    rows={2}
-                    className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
-                    disabled={isLoading}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                      Organización de estudiantes
-                    </label>
-                    <textarea
-                      name="actividadDetallada.organizacionEstudiantes"
-                      value={editedLesson.actividadDetallada.organizacionEstudiantes}
-                      onChange={handleChange}
-                      rows={2}
-                      className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
-                      disabled={isLoading}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                      Tiempo estimado
-                    </label>
-                    <textarea
-                      name="actividadDetallada.tiempoEstimado"
-                      value={editedLesson.actividadDetallada.tiempoEstimado}
-                      onChange={handleChange}
-                      rows={2}
-                      className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
-                      disabled={isLoading}
-                    />
-                  </div>
-                </div>
-                <div className="mb-3">
-                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                    Descripción detallada
-                  </label>
-                  <textarea
-                    name="actividadDetallada.descripcion"
-                    value={editedLesson.actividadDetallada.descripcion}
-                    onChange={handleChange}
-                    rows={4}
-                    className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
-                    disabled={isLoading}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="text-sm text-slate-500 dark:text-slate-400 italic">
-                Esta lección no tiene actividad detallada definida.
-              </div>
-            )}
-          </div>
+          {Object.entries(editedLesson).map(([key, value]) => (
+            <div key={key}>
+              <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 capitalize mb-1">
+                {key.replace(/([A-Z])/g, ' $1')}
+              </label>
+              <textarea
+                name={key}
+                value={value as string}
+                onChange={handleChange}
+                rows={3}
+                className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                disabled={isLoading}
+              />
+            </div>
+          ))}
         </div>
         <div className="bg-slate-50 dark:bg-slate-700/50 px-6 py-4 rounded-b-xl flex justify-end gap-3 mt-auto">
           <button 
@@ -324,17 +219,8 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
   return (
     <div className="space-y-6">
       <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-        <div className="flex justify-between items-start">
-          <div className="flex-grow">
-            <p><strong>Objetivo de Aprendizaje:</strong> {plan.objetivosAprendizaje}</p>
-            <p><strong>Indicadores de Evaluación:</strong> {plan.indicadoresEvaluacion}</p>
-          </div>
-          <div className="ml-4">
-            <Suspense fallback={<button className="bg-gray-300 text-gray-600 font-semibold px-4 py-2 rounded-md flex items-center justify-center gap-2 cursor-not-allowed opacity-50">Cargando...</button>}>
-              <PdfDownloadButton plan={plan} />
-            </Suspense>
-          </div>
-        </div>
+        <p><strong>Objetivo de Aprendizaje:</strong> {plan.objetivosAprendizaje}</p>
+        <p><strong>Indicadores de Evaluación:</strong> {plan.indicadoresEvaluacion}</p>
         <div className="mt-4">
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Avance de la Unidad</label>
           <div className="flex items-center gap-3">
@@ -357,21 +243,6 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
               <p><strong>Perfil de Egreso:</strong> {lesson.perfilEgreso}</p>
               <p><strong>Interdisciplinariedad:</strong> {lesson.asignaturasInterdisciplinariedad}</p>
             </div>
-            
-            {lesson.actividadDetallada && (
-              <div className="mt-4 bg-slate-50 dark:bg-slate-700/40 p-3 rounded-md">
-                <h5 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Actividad detallada</h5>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                  <p><strong>Estrategia:</strong> {lesson.actividadDetallada.estrategiaDidactica}</p>
-                  <p><strong>Materiales:</strong> {lesson.actividadDetallada.materiales}</p>
-                  <p><strong>Organización:</strong> {lesson.actividadDetallada.organizacionEstudiantes}</p>
-                  <p><strong>Tiempo:</strong> {lesson.actividadDetallada.tiempoEstimado}</p>
-                </div>
-                <div className="text-sm mt-2">
-                  <p><strong>Descripción:</strong> {lesson.actividadDetallada.descripcion}</p>
-                </div>
-              </div>
-            )}
             <div className="flex gap-2 mt-4">
               <button 
                 onClick={() => onEditLesson(index, lesson)} 
@@ -438,19 +309,14 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
   return (
     <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">{editablePlan.nombreClase}</h2>
-        <div className="flex items-center gap-4">
-          <Suspense fallback={<button className="bg-gray-300 text-gray-600 font-semibold px-4 py-2 rounded-md flex items-center justify-center gap-2 cursor-not-allowed opacity-50">Cargando...</button>}>
-            <PdfDownloadButton plan={editablePlan} />
-          </Suspense>
-          <button 
-            onClick={onBack} 
-            className="text-slate-600 hover:text-slate-900 font-semibold disabled:opacity-50"
-            disabled={isLoading || saving}
-          >
-            &larr; Volver
-          </button>
-        </div>
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">{plan.nombreClase}</h2>
+        <button 
+          onClick={onBack} 
+          className="text-slate-600 hover:text-slate-900 font-semibold disabled:opacity-50"
+          disabled={isLoading || saving}
+        >
+          &larr; Volver
+        </button>
       </div>
       <div className="space-y-6">
         <div>
@@ -485,100 +351,6 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
             className="w-full mt-2 p-2 border rounded-md bg-slate-50 dark:bg-slate-700"
             disabled={isLoading || saving}
           />
-        </div>
-
-        {/* Sección de Conceptos Relevantes */}
-        <div className="mt-8">
-          <h3 className="font-bold text-xl text-slate-800 dark:text-slate-200 mb-4">Conceptos Relevantes</h3>
-          
-          <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-700 rounded-lg shadow-inner">
-            <div className="flex flex-wrap gap-3 justify-center">
-              {editablePlan.conceptosRelevantes?.map((concepto, index) => (
-                <div 
-                  key={index}
-                  className="relative group cursor-pointer"
-                  style={{
-                    fontSize: `${Math.max(0.9, Math.min(2.0, 0.9 + concepto.peso / 10))}rem`,
-                  }}
-                >
-                  <span 
-                    className="p-2 rounded-md transition-all duration-300 group-hover:scale-110 inline-block"
-                    style={{
-                      backgroundColor: concepto.color || `hsl(${(index * 30) % 360}, ${Math.min(100, 50 + concepto.peso * 5)}%, ${Math.max(30, 80 - concepto.peso * 5)}%)`,
-                      color: concepto.peso > 5 ? 'white' : 'currentColor',
-                      fontWeight: concepto.peso > 7 ? 'bold' : concepto.peso > 4 ? 'semibold' : 'normal',
-                      boxShadow: concepto.peso > 8 ? '0 4px 6px rgba(0,0,0,0.1)' : 'none'
-                    }}
-                  >
-                    {concepto.texto}
-                  </span>
-                  <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                    Relevancia: {concepto.peso}/10
-                  </div>
-                </div>
-              ))}
-              
-              {(!editablePlan.conceptosRelevantes || editablePlan.conceptosRelevantes.length === 0) && (
-                <button
-                  onClick={() => {
-                    // Extraer conceptos del contenido de la clase
-                    const contenidoClase = `${editablePlan.momentosClase.inicio} ${editablePlan.momentosClase.desarrollo} ${editablePlan.momentosClase.cierre} ${editablePlan.contenidos || ''}`;
-                    
-                    // Ejemplo simple: identificar palabras que se repiten más de una vez 
-                    // (en una implementación real se usaría un algoritmo NLP más sofisticado)
-                    const palabras = contenidoClase.toLowerCase()
-                      .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '')
-                      .split(/\s+/);
-                    
-                    const stopWords = ['y', 'o', 'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 
-                      'que', 'en', 'de', 'a', 'para', 'por', 'con', 'se', 'su', 'sus', 'este', 'esta', 'estos', 
-                      'estas', 'aquel', 'aquella', 'es', 'son', 'al', 'del'];
-                    
-                    const frecuencias: Record<string, number> = {};
-                    palabras.forEach(palabra => {
-                      if (palabra.length > 3 && !stopWords.includes(palabra)) {
-                        frecuencias[palabra] = (frecuencias[palabra] || 0) + 1;
-                      }
-                    });
-                    
-                    // Seleccionar los conceptos más relevantes
-                    const conceptos = Object.entries(frecuencias)
-                      .filter(([_, freq]) => freq > 1)
-                      .sort((a, b) => b[1] - a[1])
-                      .slice(0, 15)
-                      .map(([texto, frecuencia]) => ({
-                        texto,
-                        peso: Math.min(10, Math.max(1, Math.round(frecuencia / 2) + 3))
-                      }));
-                    
-                    setEditablePlan(prev => ({
-                      ...prev,
-                      conceptosRelevantes: conceptos
-                    }));
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                >
-                  Generar Conceptos Relevantes
-                </button>
-              )}
-            </div>
-            
-            {editablePlan.conceptosRelevantes && editablePlan.conceptosRelevantes.length > 0 && (
-              <div className="mt-4 text-right">
-                <button
-                  onClick={() => {
-                    setEditablePlan(prev => ({
-                      ...prev,
-                      conceptosRelevantes: []
-                    }));
-                  }}
-                  className="text-sm text-red-500 hover:text-red-700"
-                >
-                  Reiniciar Conceptos
-                </button>
-              </div>
-            )}
-          </div>
         </div>
         {/* Avance de la Clase eliminado, solo se permite en planificación de unidad */}
       </div>
@@ -1068,7 +840,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   const [editingPlanificacion, setEditingPlanificacion] = useState<PlanificacionUnidad | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'unidad' | 'clase' | 'calendario' | 'materiales'>('unidad');
+  const [activeTab, setActiveTab] = useState<'unidad' | 'clase' | 'calendario'>('unidad');
   const [viewingClassPlan, setViewingClassPlan] = useState<PlanificacionClase | null>(null);
   const [editingLesson, setEditingLesson] = useState<{ planId: string; lessonIndex: number; lessonData: DetalleLeccion } | null>(null);
 
@@ -1140,30 +912,18 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     - Incorpora los Objetivos de Aprendizaje Transversales (OAT) cuando sea apropiado.
     - Para niveles técnico-profesionales, considera los perfiles de egreso de cada especialidad.
 
-    Debes generar un objeto JSON que se ajuste al esquema proporcionado, sin incluir comillas backticks ni símbolos de markdown. Responde SOLAMENTE con JSON válido sin ningún texto adicional. El JSON debe contener:
+    Debes generar un objeto JSON que se ajuste al esquema proporcionado. El JSON debe contener:
     1.  **objetivosAprendizaje**: Un objetivo de aprendizaje general y conciso para la unidad.
     2.  **indicadoresEvaluacion**: Un indicador de evaluación general y observable para la unidad.
     3.  **detallesLeccion**: Un array con EXACTAMENTE ${cantidadClases} objetos, donde cada objeto representa una clase o sub-tema de la unidad. Cada objeto en el array debe tener:
         - **objetivosAprendizaje**: Un objetivo de aprendizaje específico para la lección, redactado en infinitivo.
         - **contenidosConceptuales**: Los conceptos clave que se abordarán en la lección.
-    - **habilidadesBloom**: La habilidad principal de la Taxonomía de Bloom que se trabajará (ej: Analizar, Crear, Evaluar).
-    - **perfilEgreso**: Conecta la lección con una habilidad del perfil de egreso (ej: "Pensamiento crítico", "Colaboración").
-    - **actividades**: Un título descriptivo de la actividad principal.
-    - **actividadDetallada**: Un objeto con la siguiente estructura:
-        - **estrategiaDidactica**: La estrategia didáctica a utilizar (ej: "Aprendizaje basado en problemas", "Clase invertida").
-        - **materiales**: Los recursos necesarios para la actividad.
-        - **organizacionEstudiantes**: Cómo se organizarán los estudiantes (individual, parejas, grupos).
-        - **tiempoEstimado**: Tiempo estimado en minutos para realizar la actividad.
-        - **descripcion**: Descripción detallada del paso a paso de la actividad.
-    - **asignaturasInterdisciplinariedad**: Sugiere una asignatura con la que se podría realizar un trabajo interdisciplinario.    Asegúrate de que el contenido generado sea coherente, pedagógicamente sólido y esté directamente relacionado con los contenidos clave proporcionados por el docente. El nombre de la unidad debe ser exactamente el proporcionado.
+        - **habilidadesBloom**: La habilidad principal de la Taxonomía de Bloom que se trabajará (ej: Analizar, Crear, Evaluar).
+        - **perfilEgreso**: Conecta la lección con una habilidad del perfil de egreso (ej: "Pensamiento crítico", "Colaboración").
+        - **actividades**: Sugiere 1 o 2 actividades concretas, indicando el número de clase entre paréntesis (ej: "Debate grupal (Clase 1)").
+        - **asignaturasInterdisciplinariedad**: Sugiere una asignatura con la que se podría realizar un trabajo interdisciplinario.
 
-Para las actividades de cada clase, ten en cuenta que:
-1. Deben ser específicas para cada clase y no repetirse entre clases
-2. Deben incluir el tiempo estimado para su realización
-3. Deben detallar qué materiales o recursos son necesarios 
-4. Deben especificar la organización de los estudiantes (individual, parejas, grupos)
-5. Deben describir el paso a paso de la actividad de manera clara
-6. Deben alinearse con el objetivo de aprendizaje y la habilidad de Bloom trabajada`;
+    Asegúrate de que el contenido generado sea coherente, pedagógicamente sólido y esté directamente relacionado con los contenidos clave proporcionados por el docente. El nombre de la unidad debe ser exactamente el proporcionado.`;
   };
 
   const handleGenerateUnidad = async (e: FormEvent) => {
@@ -1213,16 +973,6 @@ Para las actividades de cada clase, ten en cuenta que:
                 habilidadesBloom: { type: "string" },
                 perfilEgreso: { type: "string" },
                 actividades: { type: "string" },
-                actividadDetallada: {
-                  type: "object",
-                  properties: {
-                    estrategiaDidactica: { type: "string" },
-                    materiales: { type: "string" },
-                    organizacionEstudiantes: { type: "string" },
-                    tiempoEstimado: { type: "string" },
-                    descripcion: { type: "string" }
-                  }
-                },
                 asignaturasInterdisciplinariedad: { type: "string" }
               },
               required: ["objetivosAprendizaje", "contenidosConceptuales", "habilidadesBloom", "perfilEgreso", "actividades", "asignaturasInterdisciplinariedad"]
@@ -1232,28 +982,17 @@ Para las actividades de cada clase, ten en cuenta que:
         required: ["objetivosAprendizaje", "indicadoresEvaluacion", "detallesLeccion"]
       };
       
-      const result = await model.generateContent(prompt);
+      const result = await model.generateContent({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { 
+          responseMimeType: "application/json", 
+          responseSchema 
+        }
+      });
       
       const response = await result.response;
-      let text = response.text();
-      
-      // Extraer el JSON de la respuesta si viene con formato Markdown
-      if (text.includes("```json")) {
-        const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-        if (jsonMatch && jsonMatch[1]) {
-          text = jsonMatch[1].trim();
-        }
-      }
-      
-      // Intentar parsear el JSON con manejo de errores
-      let generatedData;
-      try {
-        generatedData = JSON.parse(text);
-      } catch (jsonError) {
-        console.error("Error al parsear JSON:", jsonError);
-        console.log("Texto recibido:", text);
-        throw new Error("La respuesta de la IA no tiene un formato JSON válido. Por favor, intente nuevamente.");
-      }
+      const text = response.text();
+      const generatedData = JSON.parse(text);
 
       const newPlan: Omit<PlanificacionUnidad, 'id'> = {
         fechaCreacion: new Date().toISOString(),
@@ -1306,30 +1045,8 @@ Para las actividades de cada clase, ten en cuenta que:
     - Incluir estrategias de aprendizaje activo y centrado en el estudiante.
     - Incorporar metodologías que desarrollen habilidades del siglo XXI según el currículum chileno.
     - Considerar momentos para activación de conocimientos previos, desarrollo de aprendizajes y metacognición/evaluación.
-    - Identificar 10-15 conceptos clave de la clase con su nivel de relevancia.
     
-    Responde SÓLO con un objeto JSON válido, sin formateo markdown, sin backticks, sin comentarios ni texto adicional. El objeto debe tener la siguiente estructura:
-    
-    {
-      "inicio": "Texto detallado describiendo las actividades de inicio...",
-      "desarrollo": "Texto detallado describiendo las actividades de desarrollo...",
-      "cierre": "Texto detallado describiendo las actividades de cierre...",
-      "conceptosRelevantes": [
-        {
-          "texto": "Concepto clave 1",
-          "peso": 8
-        },
-        {
-          "texto": "Concepto clave 2",
-          "peso": 6
-        },
-        // ... más conceptos
-      ]
-    }
-    
-    En "conceptosRelevantes", incluye de 10 a 15 conceptos clave de la clase, donde cada concepto debe tener un "peso" de relevancia del 1 al 10 (donde 10 es lo más relevante). No incluyas conceptos triviales o generales, sino los específicos y fundamentales para esta clase.
-    
-    No incluyas ningún texto adicional antes o después del JSON. Asegúrate de que los valores de inicio, desarrollo y cierre sean cadenas de texto simples, no objetos ni arrays.`;
+    Responde SÓLO con un objeto JSON que contenga las claves "inicio", "desarrollo" y "cierre", con las actividades detalladas para cada momento.`;
 
     try {
       logApiCall('Planificación - Utilizar Clase');
@@ -1352,78 +1069,23 @@ Para las actividades de cada clase, ten en cuenta que:
       });
       
       const schema = {
-        type: "object",
+        type: SchemaType.OBJECT,
         properties: {
-          inicio: { type: "string" },
-          desarrollo: { type: "string" },
-          cierre: { type: "string" },
-          conceptosRelevantes: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                texto: { type: "string" },
-                peso: { type: "number" }
-              },
-              required: ["texto", "peso"]
-            }
-          }
+          inicio: { type: SchemaType.STRING },
+          desarrollo: { type: SchemaType.STRING },
+          cierre: { type: SchemaType.STRING },
         },
         required: ["inicio", "desarrollo", "cierre"],
       };
 
-      const result = await model.generateContent(prompt);
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json", responseSchema: schema },
+      });
 
       const response = await result.response;
-      let text = response.text();
-      
-      // Extraer el JSON de la respuesta si viene con formato Markdown
-      if (text.includes("```json")) {
-        const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-        if (jsonMatch && jsonMatch[1]) {
-          text = jsonMatch[1].trim();
-        }
-      }
-      
-      // Intentar parsear el JSON con manejo de errores
-      let parsedData;
-      try {
-        parsedData = JSON.parse(text);
-      } catch (jsonError) {
-        console.error("Error al parsear JSON:", jsonError);
-        console.log("Texto recibido:", text);
-        throw new Error("La respuesta de la IA no tiene un formato JSON válido. Por favor, intente nuevamente.");
-      }
-      
-      // Verificar y normalizar la estructura de los momentos de clase
-      const momentosClase: MomentosClase = {
-        inicio: typeof parsedData.inicio === 'string' ? parsedData.inicio : 
-                (parsedData.inicio ? JSON.stringify(parsedData.inicio) : "No hay contenido para el inicio de la clase"),
-                
-        desarrollo: typeof parsedData.desarrollo === 'string' ? parsedData.desarrollo : 
-                   (parsedData.desarrollo ? JSON.stringify(parsedData.desarrollo) : "No hay contenido para el desarrollo de la clase"),
-                   
-        cierre: typeof parsedData.cierre === 'string' ? parsedData.cierre : 
-               (parsedData.cierre ? JSON.stringify(parsedData.cierre) : "No hay contenido para el cierre de la clase")
-      };
-      
-      // Log para verificar la estructura
-      console.log('Estructura de momentosClase normalizada:', momentosClase);
-
-      // Asignar colores a los conceptos relevantes basados en su peso
-      const conceptosRelevantes = parsedData.conceptosRelevantes ? 
-        parsedData.conceptosRelevantes.map((concepto: ConceptoRelevante, index: number) => {
-          // Generar colores que dependen del peso para los conceptos
-          // Más peso = colores más intensos y cálidos
-          const hue = 200 + Math.floor((10 - concepto.peso) * 15); // 200 (azul) a 50 (naranja)
-          const saturation = 70 + concepto.peso * 3; // 70% a 100%
-          const lightness = Math.max(30, 80 - (concepto.peso * 5)); // 80% a 30%
-          
-          return {
-            ...concepto,
-            color: `hsl(${hue}, ${saturation}%, ${lightness}%)`
-          };
-        }) : [];
+      const text = response.text();
+      const generatedData: MomentosClase = JSON.parse(text);
 
       const newClassPlan: Omit<PlanificacionClase, 'id'> = {
         fechaCreacion: new Date().toISOString(),
@@ -1435,9 +1097,8 @@ Para las actividades de cada clase, ten en cuenta que:
         observaciones: '',
         nombreClase: lessonDetail.actividades,
         duracionClase: 80,
-        momentosClase,
+        momentosClase: generatedData,
         detalleLeccionOrigen: lessonDetail,
-        conceptosRelevantes,
       };
 
       await savePlan(newClassPlan);
@@ -1742,58 +1403,6 @@ Para las actividades de cada clase, ten en cuenta que:
       .sort((a,b) => new Date(b.fechaCreacion).getTime() - new Date(a.fechaCreacion).getTime());
 
     if (viewingClassPlan) {
-      // Debugging para verificar la estructura de momentosClase
-      console.log('Momentos de clase:', viewingClassPlan.momentosClase);
-      
-      // Verificar si momentosClase es un objeto con las propiedades esperadas
-      if (typeof viewingClassPlan.momentosClase === 'object' && viewingClassPlan.momentosClase !== null) {
-        if (!viewingClassPlan.momentosClase.inicio || typeof viewingClassPlan.momentosClase.inicio !== 'string') {
-          console.log('Corrigiendo estructura de momentosClase');
-          
-          // Extraer datos si es posible o usar un valor predeterminado
-          const momentosTexto = JSON.stringify(viewingClassPlan.momentosClase);
-          
-          // Crear un objeto con estructura correcta
-          const momentosCorregidos = {
-            inicio: typeof viewingClassPlan.momentosClase.inicio === 'string' 
-              ? viewingClassPlan.momentosClase.inicio 
-              : 'No hay contenido para el inicio de la clase',
-            desarrollo: typeof viewingClassPlan.momentosClase.desarrollo === 'string' 
-              ? viewingClassPlan.momentosClase.desarrollo 
-              : 'No hay contenido para el desarrollo de la clase',
-            cierre: typeof viewingClassPlan.momentosClase.cierre === 'string' 
-              ? viewingClassPlan.momentosClase.cierre 
-              : 'No hay contenido para el cierre de la clase'
-          };
-          
-          // Actualizar el plan con la estructura corregida
-          const planCorregido = {
-            ...viewingClassPlan,
-            momentosClase: momentosCorregidos
-          };
-          
-          // Guardar la corrección en la vista y en la base de datos
-          setViewingClassPlan(planCorregido);
-          updatePlan(planCorregido.id, { momentosClase: momentosCorregidos }).catch(err => {
-            console.error("Error al actualizar estructura de momentosClase:", err);
-          });
-          
-          return (
-            <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
-              <h2 className="text-xl font-bold mb-4">Corrigiendo formato del plan...</h2>
-              <p className="text-slate-500 mb-3">Hemos detectado un problema con el formato de este plan de clase y lo estamos corrigiendo.</p>
-              <p>Por favor, espere un momento y luego vuelva a intentarlo.</p>
-              <button 
-                onClick={() => setViewingClassPlan(null)} 
-                className="mt-4 bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300"
-              >
-                Volver
-              </button>
-            </div>
-          );
-        }
-      }
-      
       return (
         <ClassPlanViewer 
           plan={viewingClassPlan}
@@ -1910,24 +1519,12 @@ Para las actividades de cada clase, ten en cuenta que:
             <Calendar className="w-4 h-4" />
             <span>Actividades Calendario</span>
           </button>
-          <button 
-            onClick={() => setActiveTab('materiales')} 
-            className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
-              activeTab === 'materiales' 
-                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
-                : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/50'
-            }`}
-          >
-            <Files className="w-4 h-4" />
-            <span>Mis Materiales</span>
-          </button>
         </nav>
       </div>
 
       {activeTab === 'unidad' && renderUnidadTab()}
       {activeTab === 'clase' && renderClaseTab()}
       {activeTab === 'calendario' && <ActividadesCalendarioSubmodule userId={userId} />}
-      {activeTab === 'materiales' && <MaterialesDidacticosSubmodule userId={userId} planificaciones={planificaciones} />}
 
       {editingLesson && (
         <EditLessonModal
