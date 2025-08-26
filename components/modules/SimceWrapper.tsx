@@ -1,31 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/Tabs';
-import { 
-  BookOpen, 
-  Calculator, 
-  ChevronDown, 
-  PlusCircle, 
-  ListChecks, 
-  BarChart3, 
-  Users, 
-  Edit3, 
-  CheckCircle2, 
-  X, 
-  HelpCircle, 
-  FileSpreadsheet, 
-  RefreshCw
-} from 'lucide-react';
+import React from 'react';
 import { User } from '../../types';
 import { SimceGeneradorPreguntas } from './simce/SimceGeneradorPreguntas';
 import { SimceEvaluacionEstudiante } from './simce/SimceEvaluacionEstudiante';
 import { SimceResultados } from './simce/SimceResultados';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/Tabs';
+import { Edit3, BarChart3, ListChecks } from 'lucide-react';
 
-interface SimceModuleProps {
+interface SimceWrapperProps {
   currentUser: User;
 }
 
-const SimceModule: React.FC<SimceModuleProps> = ({ currentUser }) => {
-  const [activeTab, setActiveTab] = useState<string>('generador');
+const SimceWrapper: React.FC<SimceWrapperProps> = ({ currentUser }) => {
+  const [activeTab, setActiveTab] = React.useState<string>('generador');
+  
   const esProfesorODireccion = currentUser?.profile === 'PROFESORADO' || 
                               currentUser?.profile === 'SUBDIRECCION' || 
                               currentUser?.profile === 'COORDINACION_TP' ||
@@ -34,15 +21,17 @@ const SimceModule: React.FC<SimceModuleProps> = ({ currentUser }) => {
                               currentUser?.rol === 'Dirección' || 
                               currentUser?.rol === 'Subdirección' ||
                               currentUser?.rol === 'Administrador';
-  const esEstudiante = currentUser?.profile === 'ESTUDIANTE' || currentUser?.rol === 'Estudiante';
+                              
+  const esEstudiante = currentUser?.profile === 'ESTUDIANTE' || 
+                       currentUser?.rol === 'Estudiante';
   
   // Determinar la pestaña inicial según el rol del usuario
-  useEffect(() => {
+  React.useEffect(() => {
     if (esEstudiante) {
       setActiveTab('evaluacion');
     }
   }, [esEstudiante]);
-  
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between mb-6">
@@ -114,4 +103,4 @@ const SimceModule: React.FC<SimceModuleProps> = ({ currentUser }) => {
   );
 };
 
-export default SimceModule;
+export default SimceWrapper;

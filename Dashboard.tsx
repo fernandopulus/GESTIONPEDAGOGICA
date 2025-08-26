@@ -36,7 +36,7 @@ import SeguimientoCurricular from './components/modules/SeguimientoCurricular';
 import AnalisisTaxonomico from './components/modules/AnalisisTaxonomico';
 import DesarrolloProfesionalDocente from './components/modules/DesarrolloProfesionalDocente';
 import EvaluacionCompetencias from './components/modules/EvaluacionCompetencias';
-import Simce from './components/modules/Simce';
+import SimceWrapper from './components/modules/SimceWrapper';
 
 interface DashboardProps {
     currentUser: User;
@@ -170,7 +170,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onLogout, onUserUpda
             if (activeModule.name === 'Crear horarios') return <CrearHorarios />;
             if (activeModule.name === 'Seguimiento de acciones pedagógicas') return <SeguimientoAcciones />;
             if (activeModule.name === 'Inclusión') return <Inclusion currentUser={currentUser} />;
-            if (activeModule.name === 'SIMCE') return <Simce currentUser={currentUser} />;
+            if (activeModule.name === 'SIMCE') return <SimceWrapper currentUser={currentUser} />;
         }
 
         if (profile === Profile.PROFESORADO) {
@@ -193,7 +193,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onLogout, onUserUpda
                 return <EvaluacionCompetencias currentUser={user} />;
             }
             if (activeModule.name === 'SIMCE') {
-                return <Simce currentUser={currentUser} />;
+                return <SimceWrapper currentUser={currentUser} />;
             }
         }
         
@@ -201,7 +201,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onLogout, onUserUpda
             if (activeModule.name === 'Seguimiento Dual') return <SeguimientoDual />;
             if (activeModule.name === 'Asistencia Dual') return <AsistenciaDual />;
             if (activeModule.name === 'Pañol') return <Panol />;
-            if (activeModule.name === 'SIMCE') return <Simce currentUser={currentUser} />;
+            if (activeModule.name === 'SIMCE') return <SimceWrapper currentUser={currentUser} />;
         }
 
         if (profile === Profile.ESTUDIANTE) {
@@ -209,9 +209,17 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onLogout, onUserUpda
             if (activeModule.name === 'Evaluación Formativa') return <EvaluacionFormativaEstudiante currentUser={currentUser} />;
             if (activeModule.name === 'Tareas Interdisciplinarias') return <TareasInterdisciplinariasEstudiante currentUser={currentUser} />;
             if (activeModule.name === 'Asistencia a Empresa') return <AsistenciaEmpresa currentUser={currentUser} />;
-            if (activeModule.name === 'Práctica SIMCE') return <Simce currentUser={currentUser} />;
+            if (activeModule.name === 'Práctica SIMCE') return <SimceWrapper currentUser={currentUser} />;
         }
 
+        // Verificamos si el módulo seleccionado es SIMCE para evitar el mensaje predeterminado
+        if (activeModule.name === 'SIMCE') {
+            return <SimceModule currentUser={currentUser} />;
+        } else if (activeModule.name === 'Práctica SIMCE') {
+            return <SimceModule currentUser={currentUser} />;
+        }
+
+        // Si no es ninguno de los casos anteriores, mostramos el mensaje predeterminado
         return (
             <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-md h-full w-full animate-fade-in">
                 <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-6">{activeModule.name}</h1>
