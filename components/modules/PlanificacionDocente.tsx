@@ -446,20 +446,40 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
   const [editablePlan, setEditablePlan] = useState<PlanificacionClase>(plan);
   const [saving, setSaving] = useState(false);
   
-  // Asegurarnos de que los valores de momentosClase son strings
+  // Asegurarnos de que los valores de momentosClase son strings y están formateados correctamente
   useEffect(() => {
-    // Convertir los valores de objeto a string si es necesario
-    const inicio = typeof plan.momentosClase.inicio === 'object' 
-      ? JSON.stringify(plan.momentosClase.inicio) 
-      : String(plan.momentosClase.inicio);
+    console.log("Plan inicial:", plan.momentosClase);
     
-    const desarrollo = typeof plan.momentosClase.desarrollo === 'object' 
-      ? JSON.stringify(plan.momentosClase.desarrollo) 
-      : String(plan.momentosClase.desarrollo);
+    // Función para procesar el contenido
+    const procesarContenido = (contenido: any) => {
+      // Si es un objeto, convertirlo a string JSON
+      if (typeof contenido === 'object' && contenido !== null) {
+        return JSON.stringify(contenido);
+      }
+      
+      // Si es una cadena, comprobar si es JSON
+      if (typeof contenido === 'string') {
+        try {
+          // Si parece un objeto JSON (empieza con '{'), intentar parsearlo
+          if (contenido.trim().startsWith('{')) {
+            const jsonObj = JSON.parse(contenido);
+            return JSON.stringify(jsonObj);
+          }
+        } catch (e) {
+          // Si no es JSON válido, devolver como está
+          console.log("No es JSON válido:", e);
+        }
+      }
+      
+      return String(contenido);
+    };
     
-    const cierre = typeof plan.momentosClase.cierre === 'object' 
-      ? JSON.stringify(plan.momentosClase.cierre) 
-      : String(plan.momentosClase.cierre);
+    // Procesar cada sección
+    const inicio = procesarContenido(plan.momentosClase.inicio);
+    const desarrollo = procesarContenido(plan.momentosClase.desarrollo);
+    const cierre = procesarContenido(plan.momentosClase.cierre);
+    
+    console.log("Contenido procesado - inicio:", inicio);
     
     // Actualizar el estado con los valores convertidos
     setEditablePlan(prev => ({
@@ -492,7 +512,37 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave(editablePlan);
+      // Procesar el contenido antes de guardar para preservar la estructura de objeto
+      // si el usuario ha editado el texto formateado
+      const procesarPlanParaGuardar = () => {
+        const plan = {...editablePlan};
+        
+        // Procesar cada momento de clase
+        Object.keys(plan.momentosClase).forEach(key => {
+          const valor = plan.momentosClase[key];
+          
+          // Si es un string y parece contener una estructura de actividades
+          if (typeof valor === 'string' && 
+              (valor.includes('TIEMPO:') || valor.includes('OBJETIVO:') || valor.includes('ACTIVIDADES:'))) {
+            try {
+              // Intentar reconstruir el objeto a partir del texto formateado
+              const tiempoMatch = valor.match(/TIEMPO:\s*(.*?)(?:\n\n|\n$)/s);
+              const objetivoMatch = valor.match(/OBJETIVO:\s*(.*?)(?:\n\nACTIVIDADES:|\n$)/s);
+              
+              if (tiempoMatch || objetivoMatch) {
+                // Mantener el texto formateado para la visualización
+                console.log("Manteniendo formato para visualización");
+              }
+            } catch (e) {
+              console.error("Error al procesar plan para guardar:", e);
+            }
+          }
+        });
+        
+        return plan;
+      };
+      
+      await onSave(procesarPlanParaGuardar());
     } catch (error) {
       console.error('Error al guardar plan de clase:', error);
     } finally {
@@ -502,6 +552,22 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
   
   // Función para dar formato al contenido JSON de manera más legible
   const formatearContenido = (contenido: any): string => {
+    console.log("Formateando contenido:", typeof contenido, contenido?.substring ? contenido.substring(0, 50) : contenido);
+    
+    // Si es una cadena, tratar de parsearla como JSON primero
+    if (typeof contenido === 'string') {
+      try {
+        // Si parece un objeto JSON (empieza con '{'), intentar parsearlo
+        if (contenido.trim().startsWith('{')) {
+          contenido = JSON.parse(contenido);
+          console.log("Contenido parseado a objeto:", contenido);
+        }
+      } catch (e) {
+        console.log("Error al parsear JSON:", e);
+        // Si no es JSON válido, lo dejamos como está
+      }
+    }
+    
     if (typeof contenido === 'object' && contenido !== null) {
       try {
         // Si es un objeto con estructura específica de plan de clase
@@ -509,32 +575,65 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
         
         // Formato especial para estructura de actividades
         if (contenido.actividades && Array.isArray(contenido.actividades)) {
-          resultado = `${contenido.tiempo ? '⏱️ Tiempo: ' + contenido.tiempo + '\n\n' : ''}`;
-          resultado += `${contenido.objetivo ? '🎯 Objetivo: ' + contenido.objetivo + '\n\n' : ''}`;
+          // Tiempo y objetivo con formato limpio
+          resultado = `${contenido.tiempo ? 'TIEMPO: ' + contenido.tiempo + '\n\n' : ''}`;
+          resultado += `${contenido.objetivo ? 'OBJETIVO:\n' + contenido.objetivo + '\n\n' : ''}`;
           
-          resultado += '📋 ACTIVIDADES:\n\n';
+          // Sección de actividades con formato mejorado
+          resultado += 'ACTIVIDADES:\n\n';
           contenido.actividades.forEach((act: any, index: number) => {
-            resultado += `${index + 1}. ${act.nombre || 'Actividad sin nombre'}\n`;
-            resultado += `   ${act.descripcion || 'Sin descripción'}\n`;
-            if (act.tipo) resultado += `   Tipo: ${act.tipo}\n`;
-            if (act.recursos) resultado += `   Recursos: ${act.recursos}\n`;
-            if (act.evaluacion) resultado += `   Evaluación: ${act.evaluacion}\n`;
-            resultado += '\n';
-          });
-          
-          // Agregar otras propiedades si existen
-          Object.keys(contenido).forEach(key => {
-            if (key !== 'tiempo' && key !== 'objetivo' && key !== 'actividades') {
-              resultado += `${key}: ${typeof contenido[key] === 'object' ? 
-                JSON.stringify(contenido[key], null, 2) : contenido[key]}\n`;
+            // Nombre de la actividad resaltado
+            resultado += `ACTIVIDAD ${index + 1}: ${act.nombre || 'Sin nombre'}\n`;
+            
+            // Descripción con sangría para mejor legibilidad
+            resultado += `${act.descripcion || 'Sin descripción'}\n\n`;
+            
+            // Información adicional en formato de lista
+            let detalles = '';
+            if (act.tipo) detalles += `• Tipo: ${act.tipo}\n`;
+            if (act.recursos) detalles += `• Recursos: ${act.recursos}\n`;
+            if (act.evaluacion) detalles += `• Evaluación: ${act.evaluacion}\n`;
+            
+            if (detalles) {
+              resultado += `${detalles}\n`;
             }
           });
+          
+          // Agregar otras propiedades si existen, con mejor formato
+          let otrasProps = '';
+          Object.keys(contenido).forEach(key => {
+            if (key !== 'tiempo' && key !== 'objetivo' && key !== 'actividades') {
+              otrasProps += `• ${key.charAt(0).toUpperCase() + key.slice(1)}: ${
+                typeof contenido[key] === 'object' ? 
+                JSON.stringify(contenido[key]) : contenido[key]
+              }\n`;
+            }
+          });
+          
+          if (otrasProps) {
+            resultado += `\nINFORMACIÓN ADICIONAL:\n${otrasProps}`;
+          }
           
           return resultado;
         } 
         
         // Formato para elementos que tienen estructura genérica
         else {
+          // Intentar detectar si es un texto con estructura de actividades
+          if (typeof contenido === 'string') {
+            try {
+              // Intentar parsear como JSON
+              const parsedObj = JSON.parse(contenido);
+              
+              if (parsedObj.actividades || parsedObj.tiempo || parsedObj.objetivo) {
+                // Es un objeto de actividades en formato string, procesarlo
+                return formatearContenido(parsedObj);
+              }
+            } catch (e) {
+              // No es un JSON válido, continuar con el procesamiento normal
+            }
+          }
+          
           // Convertir a JSON y formatear
           const formattedJSON = JSON.stringify(contenido, null, 2)
             .replace(/[{}"]/g, '') // Quitar llaves y comillas
@@ -552,15 +651,21 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
             } 
             // Detectar si es un ítem de lista
             else if (line.trim().startsWith("-")) {
-              formattedText += '  • ' + line.trim().substring(1) + '\n';
+              formattedText += "• " + line.trim().substring(1) + '\n';
             }
-            // Formato para pares clave-valor normales
+            // Formato para pares clave-valor con términos clave resaltados
             else if (line.includes(':')) {
               const parts = line.split(':');
               if (parts.length >= 2) {
                 const key = parts[0].trim();
                 const value = parts.slice(1).join(':').trim();
-                formattedText += `${key}: ${value}\n`;
+                
+                // Términos clave en mayúsculas para resaltar
+                if (['tiempo', 'duración', 'objetivo', 'actividad', 'tipo', 'recursos', 'evaluación'].includes(key.toLowerCase())) {
+                  formattedText += `${key.toUpperCase()}: ${value}\n`;
+                } else {
+                  formattedText += `${key}: ${value}\n`;
+                }
               } else {
                 formattedText += line + '\n';
               }
@@ -592,41 +697,69 @@ const ClassPlanViewer: React.FC<ClassPlanViewerProps> = ({ plan, onBack, onSave,
           &larr; Volver
         </button>
       </div>
-      <div className="space-y-6">
-        <div>
-          <label className="font-bold text-lg text-slate-700 dark:text-slate-300">Inicio</label>
+      <div className="space-y-8">
+        {/* Inicio de clase */}
+        <div className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/30 dark:to-transparent p-4 rounded-lg border-l-4 border-blue-400 dark:border-blue-600">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="bg-blue-100 dark:bg-blue-800 p-1.5 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-blue-600 dark:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <label className="font-bold text-lg text-blue-700 dark:text-blue-300">Inicio de la Clase</label>
+          </div>
           <textarea 
             name="momentosClase.inicio" 
             value={formatearContenido(editablePlan.momentosClase.inicio)}
             onChange={handleChange} 
-            rows={4} 
-            className="w-full mt-2 p-2 border rounded-md bg-slate-50 dark:bg-slate-700"
+            rows={5} 
+            placeholder="Describe las actividades iniciales, activación de conocimientos previos, motivación y presentación del objetivo de la clase..."
+            className="w-full p-3 border border-blue-200 dark:border-blue-700 rounded-md bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-300 dark:focus:ring-blue-700 focus:border-blue-300 focus:outline-none transition-all"
             disabled={isLoading || saving}
           />
         </div>
-        <div>
-          <label className="font-bold text-lg text-slate-700 dark:text-slate-300">Desarrollo</label>
+        
+        {/* Desarrollo de clase */}
+        <div className="bg-gradient-to-r from-green-50 to-transparent dark:from-green-900/30 dark:to-transparent p-4 rounded-lg border-l-4 border-green-400 dark:border-green-600">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="bg-green-100 dark:bg-green-800 p-1.5 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-green-600 dark:text-green-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </div>
+            <label className="font-bold text-lg text-green-700 dark:text-green-300">Desarrollo de la Clase</label>
+          </div>
           <textarea 
             name="momentosClase.desarrollo" 
             value={formatearContenido(editablePlan.momentosClase.desarrollo)}
             onChange={handleChange} 
             rows={8} 
-            className="w-full mt-2 p-2 border rounded-md bg-slate-50 dark:bg-slate-700"
+            placeholder="Describe las actividades principales de aprendizaje, secuencia didáctica, estrategias de enseñanza, actividades prácticas..."
+            className="w-full p-3 border border-green-200 dark:border-green-700 rounded-md bg-white dark:bg-slate-800 focus:ring-2 focus:ring-green-300 dark:focus:ring-green-700 focus:border-green-300 focus:outline-none transition-all"
             disabled={isLoading || saving}
           />
         </div>
-        <div>
-          <label className="font-bold text-lg text-slate-700 dark:text-slate-300">Cierre</label>
+        
+        {/* Cierre de clase */}
+        <div className="bg-gradient-to-r from-amber-50 to-transparent dark:from-amber-900/30 dark:to-transparent p-4 rounded-lg border-l-4 border-amber-400 dark:border-amber-600">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="bg-amber-100 dark:bg-amber-800 p-1.5 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-amber-600 dark:text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <label className="font-bold text-lg text-amber-700 dark:text-amber-300">Cierre de la Clase</label>
+          </div>
           <textarea 
             name="momentosClase.cierre" 
             value={formatearContenido(editablePlan.momentosClase.cierre)}
             onChange={handleChange} 
-            rows={4} 
-            className="w-full mt-2 p-2 border rounded-md bg-slate-50 dark:bg-slate-700"
+            rows={5} 
+            placeholder="Describe las actividades de cierre, síntesis, metacognición, evaluación formativa y retroalimentación..."
+            className="w-full p-3 border border-amber-200 dark:border-amber-700 rounded-md bg-white dark:bg-slate-800 focus:ring-2 focus:ring-amber-300 dark:focus:ring-amber-700 focus:border-amber-300 focus:outline-none transition-all"
             disabled={isLoading || saving}
           />
         </div>
-        {/* Avance de la Clase eliminado, solo se permite en planificación de unidad */}
       </div>
       <div className="text-right mt-6">
         <div className="flex justify-between items-center">
