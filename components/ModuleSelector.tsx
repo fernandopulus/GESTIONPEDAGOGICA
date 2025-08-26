@@ -68,6 +68,7 @@ const ICONS: Record<string, JSX.Element> = {
   evaluacion_aprendizajes: <ClipboardList className="w-6 h-6" aria-hidden />,
   evaluaciones_formativas: <LineChart className="w-6 h-6" aria-hidden />,
   evaluacion_competencias: <Target className="w-6 h-6" aria-hidden />,
+  simce: <FileQuestion className="w-6 h-6" aria-hidden />,
   actas: <FileText className="w-6 h-6" aria-hidden />,
   mensajeria: <MessageSquare className="w-6 h-6" aria-hidden />,
   seguimiento_dual: <UserCheck className="w-6 h-6" aria-hidden />,
@@ -94,6 +95,7 @@ const ACCENTS: Record<string, string> = {
   interdisciplinario: 'from-blue-500/20 to-indigo-500/10',
   inclusion: 'from-green-500/20 to-emerald-500/10',
   actividades_remotas: 'from-orange-500/20 to-amber-500/10',
+  simce: 'from-purple-500/20 to-violet-500/10',
   evaluacion_aprendizajes: 'from-purple-500/20 to-indigo-500/10',
   evaluaciones_formativas: 'from-cyan-500/20 to-sky-500/10',
   actas: 'from-slate-500/20 to-slate-400/10',
@@ -159,6 +161,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'evaluacion_aprendizajes', name: 'Evaluación de Aprendizajes', icon: ICONS.evaluacion_aprendizajes, accent: ACCENTS.evaluacion_aprendizajes },
         { id: 'evaluaciones_formativas', name: 'Evaluaciones Formativas', icon: ICONS.evaluaciones_formativas, accent: ACCENTS.evaluaciones_formativas },
         { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
+        { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
         { id: 'desarrollo_profesional', name: 'Desarrollo Profesional', icon: ICONS.desarrollo_profesional, accent: ACCENTS.desarrollo_profesional },
         ...commonModules,
         { id: 'actas', name: 'Generador de Actas', icon: ICONS.actas, accent: ACCENTS.actas },
@@ -175,6 +178,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'gestion_empresas', name: 'Gestión de Empresas', icon: ICONS.gestion_empresas, accent: ACCENTS.gestion_empresas },
         { id: 'desarrollo_profesional', name: 'Desarrollo Profesional', icon: ICONS.desarrollo_profesional, accent: ACCENTS.desarrollo_profesional },
         { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
+        { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
         ...commonModules,
         { id: 'mensajeria', name: 'Mensajería Interna', icon: ICONS.mensajeria, accent: ACCENTS.mensajeria },
         { id: 'actas', name: 'Generador de Actas', icon: ICONS.actas, accent: ACCENTS.actas },
@@ -194,6 +198,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'seguimiento_acciones', name: 'Seguimiento de Acciones', icon: ICONS.evaluaciones_formativas, accent: ACCENTS.evaluaciones_formativas },
         { id: 'inclusion', name: 'Inclusión', icon: ICONS.inclusion, accent: ACCENTS.inclusion },
         { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
+        { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
         ...commonModules,
       ];
 
@@ -203,6 +208,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'auto_aprendizaje', name: 'Auto-aprendizaje', icon: ICONS.auto_aprendizaje, accent: ACCENTS.auto_aprendizaje },
         { id: 'evaluacion_formativa', name: 'Evaluación Formativa', icon: ICONS.evaluacion_formativa, accent: ACCENTS.evaluacion_formativa },
         { id: 'tareas_interdisciplinarias', name: 'Tareas Interdisciplinarias', icon: ICONS.tareas_interdisciplinarias, accent: ACCENTS.tareas_interdisciplinarias },
+        { id: 'simce', name: 'Práctica SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Práctica y evaluación para SIMCE' },
         ...commonModules,
         { id: 'mensajeria', name: 'Mensajería Interna', icon: ICONS.mensajeria, accent: ACCENTS.mensajeria },
       ];

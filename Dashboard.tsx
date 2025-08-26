@@ -36,6 +36,7 @@ import SeguimientoCurricular from './components/modules/SeguimientoCurricular';
 import AnalisisTaxonomico from './components/modules/AnalisisTaxonomico';
 import DesarrolloProfesionalDocente from './components/modules/DesarrolloProfesionalDocente';
 import EvaluacionCompetencias from './components/modules/EvaluacionCompetencias';
+import Simce from './components/modules/Simce';
 
 interface DashboardProps {
     currentUser: User;
@@ -169,6 +170,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onLogout, onUserUpda
             if (activeModule.name === 'Crear horarios') return <CrearHorarios />;
             if (activeModule.name === 'Seguimiento de acciones pedagógicas') return <SeguimientoAcciones />;
             if (activeModule.name === 'Inclusión') return <Inclusion currentUser={currentUser} />;
+            if (activeModule.name === 'SIMCE') return <Simce currentUser={currentUser} />;
         }
 
         if (profile === Profile.PROFESORADO) {
@@ -190,12 +192,16 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onLogout, onUserUpda
                 };
                 return <EvaluacionCompetencias currentUser={user} />;
             }
+            if (activeModule.name === 'SIMCE') {
+                return <Simce currentUser={currentUser} />;
+            }
         }
         
         if (profile === Profile.COORDINACION_TP) {
             if (activeModule.name === 'Seguimiento Dual') return <SeguimientoDual />;
             if (activeModule.name === 'Asistencia Dual') return <AsistenciaDual />;
             if (activeModule.name === 'Pañol') return <Panol />;
+            if (activeModule.name === 'SIMCE') return <Simce currentUser={currentUser} />;
         }
 
         if (profile === Profile.ESTUDIANTE) {
@@ -203,6 +209,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onLogout, onUserUpda
             if (activeModule.name === 'Evaluación Formativa') return <EvaluacionFormativaEstudiante currentUser={currentUser} />;
             if (activeModule.name === 'Tareas Interdisciplinarias') return <TareasInterdisciplinariasEstudiante currentUser={currentUser} />;
             if (activeModule.name === 'Asistencia a Empresa') return <AsistenciaEmpresa currentUser={currentUser} />;
+            if (activeModule.name === 'Práctica SIMCE') return <Simce currentUser={currentUser} />;
         }
 
         return (

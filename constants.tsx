@@ -101,6 +101,7 @@ const GlobeAltIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className={ic
 const WrenchScrewdriverIcon = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={iconClass}><path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.528-1.036.94-2.197 1.088-3.386l-.7M11.42 15.17l-1.06-1.06a4.5 4.5 0 01-5.656-5.656l-1.06 1.06c-1.37.66-2.58 1.6-3.58 2.75a4.5 4.5 0 00-1.06 5.656l1.06 1.06c1.15.998 2.52 1.93 3.99 2.58l1.06-1.06a4.5 4.5 0 015.656-5.656l3.032 2.496m-3.582-2.58a4.5 4.5 0 00-5.656 5.656l1.06-1.06a4.5 4.5 0 015.656-5.656l1.06 1.06m-3.032-2.496a4.5 4.5 0 00-5.656 5.656l1.06-1.06a4.5 4.5 0 015.656-5.656l1.06 1.06" /></svg>;
 const ClipboardCheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>;
 const ClipboardDocumentCheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={iconClass}><path strokeLinecap="round" strokeLinejoin="round" d="M10.125 2.25h-4.5c-1.125 0-2.25 1.125-2.25 2.25v15c0 1.125 1.125 2.25 2.25 2.25h11.25c1.125 0 2.25-1.125 2.25-2.25v-9.75M10.125 2.25c.621 0 1.125.504 1.125 1.125v3.375c0 .621-.504 1.125-1.125 1.125h-1.5c-.621 0-1.125-.504-1.125-1.125v-3.375c0-.621.504-1.125 1.125-1.125h1.5zM17.25 10.5h.375c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125h-.375m0-3.75V6.375c0-.621-.504-1.125-1.125-1.125h-1.5c-.621 0-1.125.504-1.125 1.125v3.375c0 .621.504 1.125 1.125 1.125h1.5c.621 0 1.125-.504 1.125-1.125v-1.5m-6.375 5.25v-1.5c0-.621.504-1.125 1.125-1.125h.375c.621 0 1.125.504 1.125 1.125v1.5m0 3.75V16.5c0-.621-.504-1.125-1.125-1.125h-.375a1.125 1.125 0 00-1.125 1.125v1.5m6.375 0V16.5c0-.621-.504-1.125-1.125-1.125h-.375a1.125 1.125 0 00-1.125 1.125v1.5" /></svg>;
+const SimceIcon = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={iconClass}><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0l-2.072-1.036A48.257 48.257 0 0112 10.045a48.258 48.258 0 0110.332-1.036l-2.072 1.036m-16.425 0a48.27 48.27 0 00-2.223 2.218c.958.056 1.91.118 2.857.185m16.425 0c.947-.067 1.9-.129 2.857-.185a48.27 48.27 0 00-2.223-2.218m-12.182 0A11.947 11.947 0 0112 8.636a11.947 11.947 0 014.09 1.511" /></svg>;
 
 
 // --- Profile Info ---
@@ -119,6 +120,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Seguimiento Curricular', icon: <ClipboardCheckIcon /> },
         { name: 'Acompañamiento docente', icon: <UserGroupIcon /> },
         { name: 'Análisis Taxonómico', icon: <ClipboardDocumentCheckIcon /> },
+        { name: 'SIMCE', icon: <SimceIcon /> },
         { name: 'Interdisciplinario', icon: <GlobeAltIcon /> },
         { name: 'Registro de inasistencias y reemplazos docentes', icon: <ClipboardListIcon /> },
         { name: 'Crear horarios', icon: <ClockIcon /> },
@@ -134,6 +136,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Mis Acompañamientos', icon: <CheckCircleIcon /> },
         { name: 'Recursos de Aprendizaje', icon: <PuzzleIcon /> },
         { name: 'Análisis Taxonómico', icon: <ClipboardDocumentCheckIcon /> },
+        { name: 'SIMCE', icon: <SimceIcon /> },
         { name: 'Interdisciplinario', icon: <GlobeAltIcon /> },
         { name: 'Inclusión', icon: <AcademicCapIcon /> },
         { name: 'Actividades Remotas', icon: <BeakerIcon /> },
@@ -150,7 +153,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Seguimiento Dual', icon: <TrendingUpIcon /> },
         { name: 'Asistencia Dual', icon: <ClockIcon /> },
         { name: 'Pañol', icon: <WrenchScrewdriverIcon /> },
-        // ✅ AÑADE TU NUEVO MÓDULO AQUÍ
+        { name: 'SIMCE', icon: <SimceIcon /> },
         { name: 'Gestión de Empresas', icon: <BuildingIcon /> },
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
         { name: 'Muro de Anuncios', icon: <BellIcon /> },
@@ -162,6 +165,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
     [Profile.ESTUDIANTE]: [
         { name: 'Auto-aprendizaje', icon: <BookOpenIcon /> },
         { name: 'Evaluación Formativa', icon: <TrendingUpIcon /> },
+        { name: 'SIMCE', icon: <SimceIcon /> },
         { name: 'Tareas Interdisciplinarias', icon: <GlobeAltIcon /> },
         { name: 'Asistencia a Empresa', icon: <ClockIcon /> },
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
