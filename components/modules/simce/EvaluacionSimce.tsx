@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, BookOpen, Check, X, ChevronRight, ArrowLeft, ArrowRight, RotateCcw } from 'lucide-react';
-import { obtenerSetsPreguntasPorProfesor, obtenerSetPreguntas } from '../../../src/firebaseHelpers/simceHelper';
+import { obtenerSetsPreguntasPorProfesor, obtenerSetPreguntas } from '@/firebaseHelpers/simceHelper';
 import { SetPreguntas, Pregunta, AsignaturaSimce, ResultadoIntento } from '../../../types/simce';
 
 interface EvaluacionSimceProps {

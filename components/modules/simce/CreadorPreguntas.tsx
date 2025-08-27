@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { CheckCircle, AlertCircle, Save, RefreshCcw, Loader2 } from 'lucide-react';
 import { Pregunta, AsignaturaSimce, SetPreguntas } from '../../../types/simce';
-import { crearSetPreguntas, actualizarSetPreguntas } from '../../../src/firebaseHelpers/simceHelper';
+import { crearSetPreguntas, actualizarSetPreguntas } from '@/firebaseHelpers/simceHelper';
 
 interface CreadorPreguntasProps {
   currentUser: any;

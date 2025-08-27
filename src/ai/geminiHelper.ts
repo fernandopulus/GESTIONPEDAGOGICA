@@ -229,3 +229,25 @@ function naiveKeywords(respuestas: string[]): KeywordScore[] {
       score: Math.min(1, count / words.length)
     }));
 }
+
+// Adapter ligero exportado con nombre en español para compatibilidad
+// con el código existente que importa `generarConIA`.
+export async function generarConIA(prompt: string): Promise<string> {
+  const model = await getWorkingModel();
+  if (!model) {
+    throw new Error('No se encontró un modelo de Gemini disponible');
+  }
+
+  try {
+    const result = await model.generateContent(prompt);
+    // Algunas versiones devuelven result.response.text()
+    if (result?.response && typeof result.response.text === 'function') {
+      return result.response.text();
+    }
+    // Fallback a stringify
+    return typeof result === 'string' ? result : JSON.stringify(result);
+  } catch (error) {
+    console.error('Error al invocar Gemini en generarConIA:', error);
+    throw error;
+  }
+}

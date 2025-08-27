@@ -22,7 +22,7 @@ import {
   obtenerEvaluacionPorId,
   guardarIntentoEvaluacion,
   verificarIntentoExistente
-} from '../../../src/firebaseHelpers/simceHelper';
+} from '@/firebaseHelpers/simceHelper';
 
 interface SimceEvaluacionEstudianteProps {
   currentUser: User;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User } from '../../../types';
+import { User } from '../../types';
 import { 
   PenTool, 
   Plus, 
@@ -20,7 +20,8 @@ import {
   Download,
   Eye,
   CheckCircle2,
-  XCircle
+  XCircle,
+  Users
 } from 'lucide-react';
 import { 
   SetPreguntas, 
@@ -29,14 +30,14 @@ import {
   Alternativa,
   estandaresLectura,
   estandaresMatematica
-} from '../../../types/simce';
+} from '../../types/simce';
 import { 
   crearSetPreguntas, 
   actualizarSetPreguntas, 
   obtenerSetsPreguntasPorProfesor,
   eliminarSetPreguntas
-} from '../../../src/firebaseHelpers/simceHelper';
-import { generarPreguntasSimce } from '../../../src/ai/simceGenerator';
+} from '../../src/firebaseHelpers/simceHelper';
+import { generarPreguntasSimce } from '../../src/ai/simceGenerator';
 
 interface SimceGeneradorPreguntasProps {
   currentUser: User;

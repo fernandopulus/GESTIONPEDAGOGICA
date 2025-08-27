@@ -29,6 +29,7 @@ import {
   ArrowRight,
   Shield,
   Target,
+  FileQuestion,
 } from 'lucide-react';
 
 /**
@@ -38,7 +39,7 @@ import {
 interface Module {
   id: string;
   name: string;
-  icon: string | JSX.Element;
+  icon: string | React.ReactNode;
   description?: string;
   accent?: string; // tailwind color accent para degradados
 }
@@ -53,7 +54,7 @@ interface ModuleSelectorProps {
 }
 
 /** Mapa de íconos por id para mantener el código ordenado */
-const ICONS: Record<string, JSX.Element> = {
+const ICONS: Record<string, React.ReactNode> = {
   muro: <Bell className="w-6 h-6" aria-hidden />,
   calendario: <CalendarDays className="w-6 h-6" aria-hidden />,
   selector_completo: <LayoutDashboard className="w-6 h-6" aria-hidden />,

@@ -25,7 +25,7 @@ import {
   crearEvaluacionSimce, 
   actualizarEvaluacionSimce, 
   obtenerEvaluacionesProfesor 
-} from '../../../src/firebaseHelpers/simceHelper';
+} from '@/firebaseHelpers/simceHelper';
 
 interface SimceGeneradorPreguntasProps {
   currentUser: User;

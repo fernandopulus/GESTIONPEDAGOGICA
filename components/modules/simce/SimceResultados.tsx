@@ -24,7 +24,7 @@ import {
   obtenerIntentosPorEvaluacion,
   obtenerEvaluacionPorId,
   obtenerEstadisticasPorCurso
-} from '../../../src/firebaseHelpers/simceHelper';
+} from '@/firebaseHelpers/simceHelper';
 
 interface SimceResultadosProps {
   currentUser: User;

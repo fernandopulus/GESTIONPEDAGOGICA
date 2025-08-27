@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Edit, Trash2, FileText, RefreshCw, PlusCircle } from 'lucide-react';
 import { SetPreguntas } from '../../../types/simce';
-import { obtenerSetsPreguntasPorProfesor, eliminarSetPreguntas } from '../../../src/firebaseHelpers/simceHelper';
+import { obtenerSetsPreguntasPorProfesor, eliminarSetPreguntas } from '@/firebaseHelpers/simceHelper';
 import CreadorPreguntas from './CreadorPreguntas';
 
 interface AdminPreguntasProps {

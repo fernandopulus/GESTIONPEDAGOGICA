@@ -36,6 +36,7 @@ import GestionEmpresas from '../components/modules/GestionEmpresas';
 import DesarrolloProfesionalDocente from '../components/modules/DesarrolloProfesionalDocente';
 import AlternanciaTP from './modules/AlternanciaTP';
 import EvaluacionCompetencias from './modules/EvaluacionCompetencias';
+import SimceFixed from './modules/SimceFixed';
 
 // UI
 import { Menu, ChevronLeft, ChevronRight, GraduationCap } from 'lucide-react';
@@ -211,6 +212,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (activeModule.name === 'Seguimiento Curricular') return <SeguimientoCurricular currentUser={currentUser} />;
       if (activeModule.name === 'Acompañamiento docente') return <AcompanamientoDocente currentUser={currentUser} />;
       if (activeModule.name === 'Análisis Taxonómico') return <AnalisisTaxonomico currentUser={currentUser} />;
+  if (activeModule.name === 'SIMCE') return <SimceFixed currentUser={currentUser} />;
       if (activeModule.name === 'Interdisciplinario') return <Interdisciplinario />;
       if (activeModule.name === 'Registro de inasistencias y reemplazos docentes') return <RegistroReemplazos currentUser={currentUser} />;
       if (activeModule.name === 'Crear horarios') return <CrearHorarios />;
@@ -222,7 +224,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (activeModule.name === 'Planificación') return <PlanificacionDocente currentUser={currentUser} />;
       if (activeModule.name === 'Mis Acompañamientos') return <AcompanamientoDocenteProfesor currentUser={currentUser} />;
       if (activeModule.name === 'Recursos de Aprendizaje') return <RecursosAprendizaje />;
-      if (activeModule.name === 'Análisis Taxonómico') return <AnalisisTaxonómico currentUser={currentUser} />;
+  if (activeModule.name === 'Análisis Taxonómico') return <AnalisisTaxonomico currentUser={currentUser} />;
+  if (activeModule.name === 'SIMCE') return <SimceFixed currentUser={currentUser} />;
       if (activeModule.name === 'Interdisciplinario') return <Interdisciplinario />;
       if (activeModule.name === 'Inclusión') return <Inclusion currentUser={currentUser} />;
       if (activeModule.name === 'Actividades Remotas') return <ActividadesRemotas />;
@@ -235,6 +238,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (activeModule.name === 'Seguimiento Dual') return <SeguimientoDual />;
       if (activeModule.name === 'Asistencia Dual') return <AsistenciaDual />;
       if (activeModule.name === 'Pañol') return <Panol />;
+  if (activeModule.name === 'SIMCE') return <SimceFixed currentUser={currentUser} />;
       if (activeModule.name === 'Gestión de Empresas') return <GestionEmpresas />;
       if (activeModule.name === 'Alternancia TP') return <AlternanciaTP />;
     }
@@ -243,6 +247,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (activeModule.name === 'Auto-aprendizaje') return <Autoaprendizaje currentUser={currentUser} />;
       if (activeModule.name === 'Evaluación Formativa') return <EvaluacionFormativaEstudiante currentUser={currentUser} />;
       if (activeModule.name === 'Tareas Interdisciplinarias') return <TareasInterdisciplinariasEstudiante currentUser={currentUser} />;
+  if (activeModule.name === 'SIMCE') return <SimceFixed currentUser={currentUser} />;
       if (activeModule.name === 'Asistencia a Empresa') return <AsistenciaEmpresa currentUser={currentUser} />;
     }
 
