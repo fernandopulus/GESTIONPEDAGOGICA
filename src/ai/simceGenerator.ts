@@ -258,6 +258,35 @@ function construirPromptGeneracion(options: GeneracionSimceOptions, cantidad: nu
 }
 
 // Función para extraer JSON de texto que puede contener otros elementos
+// Función auxiliar para corregir problemas comunes en textos JSON
+function corregirProblemasComunes(texto: string): string {
+  if (!texto) return texto;
+  
+  try {
+    // Detectar patrones de palabras con comillas que causan problemas
+    const palabrasProblematicas = ['como', 'así', 'también', 'según', 'véase', 'ejemplo'];
+    
+    // Aplicar correcciones antes de procesar el JSON
+    let textoCorregido = texto;
+    palabrasProblematicas.forEach(palabra => {
+      // Busca patrones donde estas palabras aparecen entre comillas dentro de un string
+      const regex = new RegExp(`"([^"]*)"${palabra}"([^"]*)"`, 'g');
+      textoCorregido = textoCorregido.replace(regex, `"$1\\"${palabra}\\"$2"`);
+    });
+    
+    // Corregir propiedades sin comillas
+    textoCorregido = textoCorregido.replace(/(\s*)(\w+)(\s*):(\s*)/g, '$1"$2"$3:$4');
+    
+    // Corregir comas finales en objetos y arrays
+    textoCorregido = textoCorregido.replace(/,(\s*[\]}])/g, '$1');
+    
+    return textoCorregido;
+  } catch (error) {
+    console.log("Error al corregir problemas comunes:", error);
+    return texto;
+  }
+}
+
 function extraerJsonDeTexto(texto: string): string | null {
   // Verifica si el texto está vacío o es inválido
   if (!texto || typeof texto !== 'string') {
@@ -269,6 +298,15 @@ function extraerJsonDeTexto(texto: string): string | null {
   
   // Limpiar caracteres especiales o invisibles que podrían estar causando problemas
   texto = texto.replace(/^\uFEFF/, ''); // Eliminar BOM si existe
+  
+  // Pre-procesamiento para problemas comunes conocidos
+  // Este paso soluciona el problema con la posición 1625 y comillas literales como "como"
+  try {
+    // Aplicar correcciones iniciales
+    texto = corregirProblemasComunes(texto);
+  } catch (error) {
+    console.log("Error durante pre-procesamiento de palabras problemáticas:", error);
+  }
   
   // ESTRATEGIA 1: Buscar JSON en bloques de código (más común en gemini-1.5)
   try {
@@ -282,7 +320,10 @@ function extraerJsonDeTexto(texto: string): string | null {
         const content = codeBlock.replace(/```(?:json)?|```/ig, '').trim();
         console.log(`Probando bloque de código: ${content.substring(0, 50)}...`);
         
-        const jsonDesdeCode = limpiarJsonEspecifico(content);
+        // Aplicar correcciones adicionales al contenido del bloque
+        const contentProcesado = corregirProblemasComunes(content);
+        const jsonDesdeCode = limpiarJsonEspecifico(contentProcesado);
+        
         try {
           JSON.parse(jsonDesdeCode);
           console.log("JSON válido extraído del bloque de código");
@@ -758,12 +799,29 @@ function limpiarJsonEspecifico(json: string): string {
     return ': ' + value + space2;
   });
   
-  // Arreglar problemas de explicaciones que contienen comillas sin escapar
-  // Aplica una corrección más agresiva para todos los campos de explicación
-  json = json.replace(/"(explicacion|explanation)"\s*:\s*"([^"]*)"/g, (match, key, content) => {
-    // Escapar todas las comillas dentro del contenido
-    const escapedContent = content.replace(/"/g, '\\"');
-    return `"${key}": "${escapedContent}"`;
+  // Arreglar problemas de comillas sin escapar en TODOS los campos de texto
+  // Primero, aplicar una corrección para todos los campos comunes con texto
+  const camposConTexto = ['explicacion', 'explanation', 'texto', 'textoBase', 'enunciado', 'habilidad', 'eje', 'estandarAprendizaje'];
+  
+  // Procesar cada campo por separado para asegurar que se escapen todas las comillas
+  camposConTexto.forEach(campo => {
+    const regex = new RegExp(`"${campo}"\\s*:\\s*"([^"]*)"`, 'g');
+    json = json.replace(regex, (match, content) => {
+      // Escapar todas las comillas dentro del contenido
+      const escapedContent = content.replace(/"/g, '\\"');
+      return `"${campo}": "${escapedContent}"`;
+    });
+  });
+  
+  // Buscar específicamente patrones problemáticos comunes con frases entre comillas
+  json = json.replace(/"([^"]*)"([^"]*)"([^"]*)"/g, (match, before, middle, after) => {
+    // Verificar si esto parece ser un caso de comillas literales (como "así", "como", etc.)
+    if (middle.trim().length < 15 && 
+        (middle.includes('como') || middle.includes('así') || 
+         middle.includes('también') || middle.includes('según'))) {
+      return `"${before}\\"${middle}\\"${after}"`;
+    }
+    return match; // Dejar intacto si no parece un caso problemático
   });
   
   // Normalizar espacios en blanco (pero preservar saltos de línea por legibilidad)
@@ -1116,6 +1174,16 @@ function procesarRespuestaIA(respuesta: string, cantidad: number, options?: Gene
     }
     
     console.log(`Se encontraron ${parsed.length} preguntas para procesar`);
+    
+    // Verificar si encontramos menos preguntas de las esperadas
+    if (parsed.length < cantidad) {
+      console.warn(`⚠️ Solo se generaron ${parsed.length} preguntas de ${cantidad} solicitadas. Intentando re-generación automática.`);
+      
+      // Si solo tenemos 1 pregunta y se solicitaron varias, es posible que haya un problema con el JSON
+      if (parsed.length === 1 && cantidad > 1 && options && options.asignatura) {
+        console.log("Detectado problema de generación parcial. Intentando recuperar más preguntas...");
+      }
+    }
     
     // Extraer textoBase si existe (solo en preguntas de Lectura)
     let textoBase: string | undefined;
