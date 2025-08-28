@@ -1,0 +1,31 @@
+[
+  {
+    "id": "p1",
+    "enunciado": "¿Cuál es el análisis más apropiado para la situación económica?",
+    "alternativas": [
+      {
+        "id": "A",
+        "texto": "La inflación está afectando a los pequeños negocios y la economía doméstica.",
+        "esCorrecta": true,
+        "explicacion": "Esta opción señala correctamente cómo la inflación impacta negativamente tanto a los pequeños negocios como a la economía doméstica, lo que está demostrado por múltiples estudios económicos."
+      },
+      {
+        "id": "B",
+        "texto": "Los índices macroeconómicos muestran señales de recuperación a corto plazo.",
+        "esCorrecta": false
+      },
+      {
+        "id": "C",
+        "texto": "La situación actual no muestra cambios significativos respecto al año anterior.",
+        "esCorrecta": false
+      },
+      {
+        "id": "D",
+        "texto": "El desempleo está disminuyendo de manera sostenida en todos los sectores.",
+        "esCorrecta": false
+      }
+    ],
+    "habilidad": "Análisis económico",
+    "textoBase": "La situación económica actual presenta múltiples desafíos para las economías emergentes. La inflación creciente está afectando el poder adquisitivo de las familias y limitando la capacidad de inversión de las pequeñas y medianas empresas. Según los últimos estudios del Banco Central, se espera que esta tendencia continúe al menos durante el próximo semestre, aunque algunas proyecciones más optimistas señalan una posible estabilización hacia fin de año."
+  }
+]

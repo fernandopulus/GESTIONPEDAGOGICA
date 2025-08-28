@@ -17,6 +17,9 @@ export interface Pregunta {
   alternativas: Alternativa[];
   estandarAprendizaje: string; // Estándar de aprendizaje al que está alineada la pregunta
   habilidad?: string; // Habilidad específica que evalúa (ej: "Interpretar" para Lectura, "Resolver problemas" para Matemática)
+  textoBase?: string; // Texto base para preguntas de Lectura (solo en la primera pregunta de un set)
+  createdAt?: any; // Timestamp de creación (para Firebase)
+  dificultad?: 'baja' | 'media' | 'alta'; // Nivel de dificultad
 }
 
 export interface SetPreguntas {

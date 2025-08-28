@@ -1,0 +1,31 @@
+[
+  {
+    "id": "p1",
+    "enunciado": "¿Cuál es el principal objetivo del proyecto descrito en el texto?",
+    "alternativas": [
+      {
+        "id": "A",
+        "texto": "Esta es una alternativa muy larga que contiene texto para llegar cerca de la posición 392. Necesitamos agregar más contenido para acercarnos a esa posición específica. El error generalmente ocurre después de una cantidad significativa de texto, especialmente en campos como explicación o textoBase que pueden contener múltiples párrafos de texto generado por la IA aquí insertaremos un carácter de control",
+        "esCorrecta": true,
+        "explicacion": "Una explicación muy detallada del porqué esta es la respuesta correcta"
+      },
+      {
+        "id": "B",
+        "texto": "Alternativa B de prueba",
+        "esCorrecta": false
+      },
+      {
+        "id": "C",
+        "texto": "Alternativa C de prueba",
+        "esCorrecta": false
+      },
+      {
+        "id": "D",
+        "texto": "Alternativa D de prueba",
+        "esCorrecta": false
+      }
+    ],
+    "habilidad": "Localizar información",
+    "textoBase": "Este es un texto base de ejemplo que simula el contenido generado por la IA."
+  }
+]

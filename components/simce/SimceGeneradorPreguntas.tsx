@@ -38,6 +38,8 @@ import {
   eliminarSetPreguntas
 } from '../../src/firebaseHelpers/simceHelper';
 import { generarPreguntasSimce } from '../../src/ai/simceGenerator';
+import { getAllUsers } from '../../src/firebaseHelpers/users';
+import { CURSOS } from '../../constants';
 
 interface SimceGeneradorPreguntasProps {
   currentUser: User;
@@ -65,39 +67,75 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
   });
   const [generandoPreguntas, setGenerandoPreguntas] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cursos, setCursos] = useState<{id: string, nombre: string}[]>([
-    { id: '1A', nombre: '1° Básico A' },
-    { id: '1B', nombre: '1° Básico B' },
-    { id: '2A', nombre: '2° Básico A' },
-    { id: '2B', nombre: '2° Básico B' },
-    { id: '3A', nombre: '3° Básico A' },
-    { id: '3B', nombre: '3° Básico B' },
-    { id: '4A', nombre: '4° Básico A' },
-    { id: '4B', nombre: '4° Básico B' }
-  ]);
+  const [cursos, setCursos] = useState<{id: string, nombre: string}[]>([]);
   const [cursosFiltrados, setCursosFiltrados] = useState<{id: string, nombre: string}[]>([]);
   const [searchCurso, setSearchCurso] = useState('');
   const [showCursoDropdown, setShowCursoDropdown] = useState(false);
   const [preguntaSeleccionada, setPreguntaSeleccionada] = useState<Pregunta | null>(null);
   const [preguntaEnEdicion, setPreguntaEnEdicion] = useState<Pregunta | null>(null);
   
-  // Cargar sets de preguntas del profesor
+  // Cargar sets de preguntas del profesor y los cursos disponibles
   useEffect(() => {
-    const cargarSetsPreguntas = async () => {
+    const inicializarDatos = async () => {
       try {
         setCargando(true);
+        
+        // Cargar los sets de preguntas
         const sets = await obtenerSetsPreguntasPorProfesor(currentUser.uid || '');
         setSetsPreguntas(sets);
+        
+        // Cargar los usuarios (estudiantes) para obtener cursos reales
+        const usuarios = await getAllUsers();
+        
+        // Obtener cursos únicos
+        const cursosUnicos = new Set<string>();
+        
+        // Primero agregamos los cursos del profesor actual
+        if (currentUser.cursos && currentUser.cursos.length > 0) {
+          currentUser.cursos.forEach(curso => cursosUnicos.add(curso));
+        } else {
+          // Si no tiene cursos asignados, usamos los de las constantes como respaldo
+          CURSOS.forEach(curso => cursosUnicos.add(curso));
+        }
+        
+        // Extraemos los cursos de los estudiantes registrados
+        usuarios
+          .filter(user => user.profile === 'ESTUDIANTE' && user.curso)
+          .forEach(user => {
+            if (user.curso) cursosUnicos.add(user.curso);
+          });
+        
+        // Convertimos a formato {id, nombre}
+        const cursosList = Array.from(cursosUnicos).sort().map(curso => ({
+          id: curso,
+          nombre: formatearNombreCurso(curso)
+        }));
+        
+        setCursos(cursosList);
       } catch (error) {
-        console.error('Error al cargar sets de preguntas:', error);
-        setError('No se pudieron cargar los sets de preguntas');
+        console.error('Error al cargar datos iniciales:', error);
+        setError('No se pudieron cargar los datos necesarios');
       } finally {
         setCargando(false);
       }
     };
     
-    cargarSetsPreguntas();
+    inicializarDatos();
   }, [currentUser]);
+  
+  // Función para dar formato al nombre del curso
+  const formatearNombreCurso = (cursoId: string): string => {
+    // Ejemplos: "1ºA" -> "1º Medio A", "3ºC" -> "3º Medio C"
+    const match = cursoId.match(/^(\d+)º?([A-E])$/i);
+    
+    if (match) {
+      const nivel = match[1];
+      const letra = match[2].toUpperCase();
+      return `${nivel}º Medio ${letra}`;
+    }
+    
+    return cursoId; // Devolver original si no coincide con el formato esperado
+  };
 
   useEffect(() => {
     if (searchCurso) {
@@ -133,6 +171,10 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
     });
     setPreguntaSeleccionada(null);
     setPreguntaEnEdicion(null);
+    setOpcionesGeneracion(prev => ({
+      ...prev,
+      textoProporcionado: ''
+    }));
     setModoVisualizacion('detalle');
   };
 
@@ -204,6 +246,32 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
     }
   };
 
+  // Estado para opciones de generación
+  const [opcionesGeneracion, setOpcionesGeneracion] = useState({
+    nivel: '1M',
+    cantidadPreguntas: '4',
+    dificultad: 'media',
+    textoProporcionado: '',
+    habilidadesLectura: {
+      'Localizar información': true,
+      'Relacionar información': true,
+      'Interpretar': true,
+      'Reflexionar y evaluar': true
+    },
+    ejesMatematica: {
+      'Números': true,
+      'Álgebra y Funciones': true,
+      'Geometría': true,
+      'Probabilidad y Estadística': true
+    }
+  });
+
+  // Estado para mostrar información de generación
+  const [infoGeneracion, setInfoGeneracion] = useState({
+    tipo: '' as 'success' | 'error' | 'warning' | '',
+    mensaje: ''
+  });
+
   const handleGenerarPreguntas = async () => {
     try {
       if (!nuevaEvaluacion.asignatura) {
@@ -213,20 +281,91 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
       
       setGenerandoPreguntas(true);
       setError(null);
+      setInfoGeneracion({ tipo: '', mensaje: '' });
       
-      const preguntasGeneradas = await generarPreguntasSimce(
-        nuevaEvaluacion.asignatura,
-        5 // Cantidad de preguntas a generar
-      );
+      // Obtener las habilidades o ejes seleccionados
+      let habilidadesLectura: string[] | undefined;
+      let ejesMatematica: string[] | undefined;
+      
+      if (nuevaEvaluacion.asignatura === 'Lectura') {
+        habilidadesLectura = Object.entries(opcionesGeneracion.habilidadesLectura)
+          .filter(([_, seleccionado]) => seleccionado)
+          .map(([habilidad]) => habilidad);
+          
+        if (habilidadesLectura.length === 0) {
+          habilidadesLectura = ['Localizar información', 'Relacionar información', 'Interpretar', 'Reflexionar y evaluar'];
+        }
+      } else if (nuevaEvaluacion.asignatura === 'Matemática') {
+        ejesMatematica = Object.entries(opcionesGeneracion.ejesMatematica)
+          .filter(([_, seleccionado]) => seleccionado)
+          .map(([eje]) => eje);
+          
+        if (ejesMatematica.length === 0) {
+          ejesMatematica = ['Números', 'Álgebra y Funciones', 'Geometría', 'Probabilidad y Estadística'];
+        }
+      }
+      
+      // Mostrar mensaje de carga específico
+      setInfoGeneracion({
+        tipo: 'warning',
+        mensaje: `Generando ${opcionesGeneracion.cantidadPreguntas} preguntas de ${nuevaEvaluacion.asignatura}. Este proceso puede tardar unos segundos...`
+      });
+      
+      // Usar los valores de los controles para la generación
+      const preguntasGeneradas = await generarPreguntasSimce({
+        asignatura: nuevaEvaluacion.asignatura,
+        cantidad: parseInt(opcionesGeneracion.cantidadPreguntas), 
+        nivel: opcionesGeneracion.nivel,
+        opcionesPorPregunta: 4, // Siempre fijo a 4 alternativas (A-D)
+        habilidadesLectura,
+        ejesMatematica,
+        dificultad: opcionesGeneracion.dificultad as 'baja' | 'media' | 'alta',
+        contextoCurricular: nuevaEvaluacion.descripcion,
+        textoProporcionado: opcionesGeneracion.textoProporcionado?.trim() || undefined
+      });
+      
+      // Verificar que se generaron preguntas
+      if (!preguntasGeneradas || preguntasGeneradas.length === 0) {
+        throw new Error('No se generaron preguntas. Intente nuevamente.');
+      }
       
       // Actualizar el estado con las nuevas preguntas
       setNuevaEvaluacion(prev => ({
         ...prev,
         preguntas: [...(prev.preguntas || []), ...preguntasGeneradas]
       }));
+      
+      // Mostrar mensaje de éxito
+      setInfoGeneracion({
+        tipo: 'success',
+        mensaje: `¡Se generaron ${preguntasGeneradas.length} preguntas correctamente!`
+      });
+      
+      // Limpiar el mensaje después de 5 segundos
+      setTimeout(() => {
+        setInfoGeneracion({ tipo: '', mensaje: '' });
+      }, 5000);
+      
     } catch (error) {
       console.error('Error al generar preguntas:', error);
-      setError('No se pudieron generar las preguntas. Intente nuevamente.');
+      
+      // Mostrar mensaje de error más descriptivo
+      let mensajeError = 'No se pudieron generar las preguntas. Intente nuevamente.';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('JSON')) {
+          mensajeError = 'Hubo un problema con el formato de las respuestas generadas. Intente nuevamente.';
+        } else {
+          // Usar el mensaje de error original si es específico
+          mensajeError = error.message;
+        }
+      }
+      
+      setError(mensajeError);
+      setInfoGeneracion({
+        tipo: 'error',
+        mensaje: mensajeError
+      });
     } finally {
       setGenerandoPreguntas(false);
     }
@@ -731,6 +870,179 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
           </div>
         </div>
         
+        {/* Opciones de generación con IA */}
+        <div className="mb-5 bg-slate-50 dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+          <h3 className="text-md font-semibold mb-3">Opciones de generación con IA</h3>
+          
+          {/* Mensaje de información/error de generación */}
+          {infoGeneracion.mensaje && (
+            <div className={`mb-4 p-3 rounded-md flex items-center gap-2 ${
+              infoGeneracion.tipo === 'error' 
+                ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
+                : infoGeneracion.tipo === 'warning'
+                  ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+                  : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-800 dark:text-green-300'
+            }`}>
+              {infoGeneracion.tipo === 'error' && <AlertTriangle className="w-5 h-5 flex-shrink-0" />}
+              {infoGeneracion.tipo === 'warning' && <RefreshCw className="w-5 h-5 flex-shrink-0 animate-spin" />}
+              {infoGeneracion.tipo === 'success' && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
+              <span>{infoGeneracion.mensaje}</span>
+            </div>
+          )}
+
+          {/* Texto proporcionado por el usuario */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+              Texto base (opcional)
+            </label>
+            <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+              Si proporciona un texto, las preguntas se generarán basadas en él. Si lo deja vacío, la IA generará automáticamente un texto adecuado.
+            </div>
+            <textarea
+              className="w-full rounded-md border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:border-indigo-500 focus:ring-indigo-500 resize-y"
+              value={opcionesGeneracion.textoProporcionado || ''}
+              onChange={(e) => setOpcionesGeneracion({...opcionesGeneracion, textoProporcionado: e.target.value})}
+              placeholder={nuevaEvaluacion.asignatura === 'Lectura' 
+                ? "Ingrese aquí un texto para generar preguntas de comprensión lectora..." 
+                : "Ingrese aquí un texto para crear problemas matemáticos relacionados..."}
+              rows={6}
+            ></textarea>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Nivel */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Nivel
+              </label>
+              <select
+                className="w-full rounded-md border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                value={opcionesGeneracion.nivel}
+                onChange={(e) => setOpcionesGeneracion({...opcionesGeneracion, nivel: e.target.value})}
+              >
+                <option value="1M">1º Medio</option>
+                <option value="2M">2º Medio</option>
+              </select>
+            </div>
+
+            {/* Cantidad de preguntas */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Cantidad de preguntas
+              </label>
+              <select
+                className="w-full rounded-md border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                value={opcionesGeneracion.cantidadPreguntas}
+                onChange={(e) => setOpcionesGeneracion({...opcionesGeneracion, cantidadPreguntas: e.target.value})}
+              >
+                <option value="2">2 preguntas</option>
+                <option value="4">4 preguntas</option>
+                <option value="6">6 preguntas</option>
+              </select>
+            </div>
+
+            {/* Dificultad */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Dificultad
+              </label>
+              <select
+                className="w-full rounded-md border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                value={opcionesGeneracion.dificultad}
+                onChange={(e) => setOpcionesGeneracion({...opcionesGeneracion, dificultad: e.target.value as 'baja' | 'media' | 'alta'})}
+              >
+                <option value="baja">Baja</option>
+                <option value="media">Media</option>
+                <option value="alta">Alta</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Habilidades específicas según asignatura */}
+          {nuevaEvaluacion.asignatura === 'Lectura' && (
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Habilidades de Lectura
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(opcionesGeneracion.habilidadesLectura).map(([habilidad, seleccionada]) => (
+                  <label key={habilidad} className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={seleccionada}
+                      onChange={() => {
+                        setOpcionesGeneracion({
+                          ...opcionesGeneracion,
+                          habilidadesLectura: {
+                            ...opcionesGeneracion.habilidadesLectura,
+                            [habilidad]: !seleccionada
+                          }
+                        });
+                      }}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 mr-2"
+                    />
+                    <span className="text-sm">{habilidad}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {nuevaEvaluacion.asignatura === 'Matemática' && (
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Ejes de Matemática
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(opcionesGeneracion.ejesMatematica).map(([eje, seleccionado]) => (
+                  <label key={eje} className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={seleccionado}
+                      onChange={() => {
+                        setOpcionesGeneracion({
+                          ...opcionesGeneracion,
+                          ejesMatematica: {
+                            ...opcionesGeneracion.ejesMatematica,
+                            [eje]: !seleccionado
+                          }
+                        });
+                      }}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 mr-2"
+                    />
+                    <span className="text-sm">{eje}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Botón de generación */}
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={handleGenerarPreguntas}
+              disabled={generandoPreguntas}
+              className={`px-4 py-2 text-white rounded-md text-sm flex items-center gap-2 ${
+                generandoPreguntas 
+                  ? 'bg-amber-500 cursor-not-allowed' 
+                  : 'bg-indigo-600 hover:bg-indigo-700'
+              }`}
+            >
+              {generandoPreguntas ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Generando preguntas...
+                </>
+              ) : (
+                <>
+                  <PenTool className="w-4 h-4" />
+                  Generar preguntas con IA
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
         {/* Sección de preguntas */}
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -740,29 +1052,11 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
             
             <div className="flex gap-2">
               <button
-                onClick={handleGenerarPreguntas}
-                disabled={generandoPreguntas}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm flex items-center gap-1.5"
-              >
-                {generandoPreguntas ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Generando...
-                  </>
-                ) : (
-                  <>
-                    <PenTool className="w-4 h-4" />
-                    Generar con IA
-                  </>
-                )}
-              </button>
-              
-              <button
                 onClick={handleAgregarPregunta}
                 className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm flex items-center gap-1.5"
               >
                 <Plus className="w-4 h-4" />
-                Agregar manualmente
+                Agregar pregunta manualmente
               </button>
             </div>
           </div>

@@ -20,18 +20,18 @@ export type KeywordScore = {
 // Configuraciones de modelos disponibles
 const MODEL_CONFIGS = [
   {
-    model: "gemini-2.5-flash-lite",
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 1024,
-    }
-  },
-  {
     model: "gemini-1.5-pro",
     generationConfig: {
       temperature: 0.7,
       topK: 40,
       topP: 0.95,
+      maxOutputTokens: 2048, // Aumentado para contenido educativo complejo
+    }
+  },
+  {
+    model: "gemini-2.5-flash-lite",
+    generationConfig: {
+      temperature: 0.7,
       maxOutputTokens: 1024,
     }
   }
@@ -230,24 +230,150 @@ function naiveKeywords(respuestas: string[]): KeywordScore[] {
     }));
 }
 
-// Adapter ligero exportado con nombre en español para compatibilidad
-// con el código existente que importa `generarConIA`.
-export async function generarConIA(prompt: string): Promise<string> {
-  const model = await getWorkingModel();
-  if (!model) {
-    throw new Error('No se encontró un modelo de Gemini disponible');
+// Función optimizada para obtener específicamente el modelo Pro para contenido educativo complejo
+async function getProModel(): Promise<any> {
+  const genAI = getGenAI();
+  if (!genAI) return null;
+  
+  // Configuración específica para el modelo Pro
+  const proConfig = {
+    model: "gemini-1.5-pro",
+    generationConfig: {
+      temperature: 0.7,
+      topK: 40,
+      topP: 0.95,
+      maxOutputTokens: 2048,
+    }
+  };
+  
+  try {
+    const model = genAI.getGenerativeModel(proConfig);
+    // Verificar disponibilidad
+    await model.generateContent("test");
+    console.log(`Usando modelo optimizado: ${proConfig.model}`);
+    return model;
+  } catch (error) {
+    console.warn(`Modelo Pro no disponible, usando fallback:`, error);
+    return getWorkingModel(); // Fallback al método estándar
+  }
+}
+
+// Adapter ligero exportado con nombre en español para compatibilidad general
+export async function generarConIA(prompt: string, maxRetries = 2, useProModel = true): Promise<string> {
+  // Registrar el tipo de solicitud para diagnóstico
+  const promptPreview = prompt.substring(0, 50).replace(/\n/g, ' ') + '...';
+  console.log(`Iniciando generación con IA. Prompt: "${promptPreview}"`);
+  console.log(`Configuración: maxRetries=${maxRetries}, useProModel=${useProModel}`);
+  
+  // Intentar usar el modelo Pro para mejor calidad si se especifica
+  let model;
+  try {
+    if (useProModel) {
+      console.log("Intentando usar modelo Pro prioritariamente...");
+      model = await getProModel();
+      
+      if (!model) {
+        console.warn("Modelo Pro no disponible, intentando fallback a modelos alternativos");
+        model = await getWorkingModel();
+      }
+    } else {
+      model = await getWorkingModel();
+    }
+    
+    if (!model) {
+      console.error("No se pudo inicializar ningún modelo de Gemini");
+      throw new Error('No se encontró un modelo de Gemini disponible. Verifique su conexión a internet y la API key.');
+    }
+  } catch (initError) {
+    console.error("Error al inicializar modelo de Gemini:", initError);
+    throw new Error(`Error al inicializar el modelo de IA: ${initError.message}`);
   }
 
-  try {
-    const result = await model.generateContent(prompt);
-    // Algunas versiones devuelven result.response.text()
-    if (result?.response && typeof result.response.text === 'function') {
-      return result.response.text();
+  let attempts = 0;
+  let lastError;
+  let bestResponse = "";
+  let bestResponseLength = 0;
+
+  while (attempts <= maxRetries) {
+    try {
+      console.log(`Intento ${attempts + 1}/${maxRetries + 1} de generación con IA`);
+      
+      // Agregar metadatos al prompt para mejorar la calidad de la respuesta
+      const enhancedPrompt = prompt + `\n\nIMPORTANTE: Devuelve SOLO el JSON estructurado sin comentarios adicionales. El JSON debe ser válido y parseable.`;
+      
+      const result = await model.generateContent(enhancedPrompt);
+      
+      // Algunas versiones devuelven result.response.text()
+      if (result?.response && typeof result.response.text === 'function') {
+        const text = result.response.text();
+        
+        // Verificar que la respuesta contiene información útil
+        if (text && text.length > 100) {  // Una respuesta válida debería tener al menos cierta longitud
+          console.log(`Respuesta generada exitosamente (${text.length} caracteres)`);
+          
+          // Comprobar si la respuesta contiene JSON
+          if ((text.includes('{') && text.includes('}')) || 
+              (text.includes('[') && text.includes(']'))) {
+            console.log("La respuesta contiene estructuras JSON");
+            return text;
+          } else {
+            console.warn("La respuesta no parece contener JSON válido");
+            
+            // Guardar esta respuesta si es la mejor hasta ahora
+            if (text.length > bestResponseLength) {
+              bestResponse = text;
+              bestResponseLength = text.length;
+            }
+            
+            // Si estamos en el último intento, devolver la mejor respuesta que tengamos
+            if (attempts === maxRetries) {
+              console.log("Usando la mejor respuesta disponible en el último intento");
+              return bestResponse;
+            }
+          }
+        } else {
+          console.warn("Respuesta de IA demasiado corta, reintentando...");
+        }
+      } else if (result) {
+        // Fallback a stringify
+        const resultString = typeof result === 'string' ? result : JSON.stringify(result);
+        console.warn("Formato de respuesta inesperado, usando fallback a string");
+        return resultString;
+      } else {
+        console.warn("No se recibió respuesta válida del modelo");
+      }
+    } catch (error) {
+      console.error(`Error en intento ${attempts + 1}:`, error);
+      lastError = error;
+      
+      // Si el error indica un problema con el prompt o límite de tokens, intentar dividir el prompt
+      if (error.message && (
+          error.message.includes('token') || 
+          error.message.includes('length') || 
+          error.message.includes('limit'))) {
+        console.log("Error relacionado con límites de tokens, intentando simplificar el prompt");
+        // Simplificar el prompt para el próximo intento
+        prompt = prompt.substring(0, Math.floor(prompt.length * 0.75));
+      }
     }
-    // Fallback a stringify
-    return typeof result === 'string' ? result : JSON.stringify(result);
-  } catch (error) {
-    console.error('Error al invocar Gemini en generarConIA:', error);
-    throw error;
+    
+    attempts++;
+    
+    // Esperar un poco antes de reintentar (backoff exponencial)
+    if (attempts <= maxRetries) {
+      const waitTime = Math.min(1000 * Math.pow(2, attempts), 8000); // max 8 segundos
+      console.log(`Esperando ${waitTime}ms antes de reintentar...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
   }
+
+  // Si llegamos aquí y tenemos alguna respuesta, devolverla aunque no sea ideal
+  if (bestResponse) {
+    console.log("Devolviendo la mejor respuesta disponible después de agotar reintentos");
+    return bestResponse;
+  }
+
+  // Si llegamos aquí, todos los intentos fallaron y no hay respuesta
+  console.error(`Todos los intentos de generación fallaron después de ${maxRetries + 1} intentos`);
+  throw lastError || new Error('No se pudo generar contenido después de múltiples intentos. Por favor, intente nuevamente.');
 }
