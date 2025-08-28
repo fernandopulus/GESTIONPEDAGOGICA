@@ -316,7 +316,15 @@ const PruebasSubmodule: React.FC = () => {
             }
 
             const ai = new GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+            const model = ai.getGenerativeModel({ 
+              model: "gemini-1.5-pro-latest",
+              generationConfig: {
+                temperature: 0.3, // Menos creatividad, más precisión para contexto educativo
+                topP: 0.8,
+                topK: 40,
+                maxOutputTokens: 8192,
+              }
+            });
             
             const result = await model.generateContent(prompt);
             const response = await result.response;
@@ -400,50 +408,80 @@ const PruebasSubmodule: React.FC = () => {
         const contentWidth = pageWidth - margin * 2;
         let y = margin;
 
+        // Imagen de encabezado
         const addHeader = (docInstance: jsPDF) => {
-            docInstance.setFillColor(230, 230, 230);
-            docInstance.rect(0, 0, pageWidth, 25, 'F');
-            docInstance.setFontSize(9);
-            docInstance.setTextColor(0, 0, 0);
-            docInstance.text('LICEO INDUSTRIAL DE RECOLETA', margin, 15, { align: 'left' });
-            docInstance.text('SUBDIRECCIÓN DE GESTIÓN PEDAGÓGICA', pageWidth - margin, 15, { align: 'right' });
+            try {
+                // Añadir la imagen del encabezado (20cm de ancho x 2cm de alto)
+                const headerImgUrl = 'https://res.cloudinary.com/dwncmu1wu/image/upload/v1756260600/Captura_de_pantalla_2025-08-26_a_la_s_10.09.17_p._m._aakgkt.png';
+                const imgWidth = 200; // 20cm en mm
+                const imgHeight = 20; // 2cm en mm
+                
+                // Colocar la imagen centrada en el encabezado
+                docInstance.addImage(headerImgUrl, 'PNG', (pageWidth - imgWidth) / 2, 0, imgWidth, imgHeight);
+            } catch (error) {
+                // Si hay un error con la imagen, usar el encabezado de respaldo
+                docInstance.setFillColor(230, 230, 230);
+                docInstance.rect(0, 0, pageWidth, 25, 'F');
+                docInstance.setFontSize(9);
+                docInstance.setTextColor(0, 0, 0);
+                docInstance.text('LICEO INDUSTRIAL DE RECOLETA', margin, 15, { align: 'left' });
+                docInstance.text('SUBDIRECCIÓN DE GESTIÓN PEDAGÓGICA', pageWidth - margin, 15, { align: 'right' });
+                console.error('Error al cargar la imagen de encabezado:', error);
+            }
         };
         
         addHeader(doc);
-        y = 30;
+        y = 25;
 
         doc.setTextColor(0, 0, 0);
 
+        // Título más llamativo
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(16);
+        doc.setFontSize(18);
         doc.text(prueba.nombre, pageWidth / 2, y, { align: 'center' });
-        y += 10;
+        y += 15;
 
+        // Datos de la prueba en una tabla mejorada
         autoTable(doc, {
             startY: y,
             body: [
                 [{ content: 'Asignatura:', styles: { fontStyle: 'bold' } }, prueba.asignatura, { content: 'Puntaje Ideal:', styles: { fontStyle: 'bold' } }, prueba.puntajeIdeal.toString()],
-                [{ content: 'Nivel:', styles: { fontStyle: 'bold' } }, prueba.nivel, '', ''],
-                [{ content: 'OA:', styles: { fontStyle: 'bold', valign: 'top' } }, { content: prueba.objetivo, colSpan: 3 }],
-                [{ content: 'Instrucciones:', styles: { fontStyle: 'bold', valign: 'top' } }, { content: prueba.instruccionesGenerales, colSpan: 3 }],
+                [{ content: 'Nivel:', styles: { fontStyle: 'bold' } }, prueba.nivel, { content: 'Fecha:', styles: { fontStyle: 'bold' } }, new Date().toLocaleDateString()],
+                [{ content: 'Objetivo de Aprendizaje:', styles: { fontStyle: 'bold', valign: 'top' } }, { content: prueba.objetivo, colSpan: 3 }],
+                [{ content: 'Instrucciones Generales:', styles: { fontStyle: 'bold', valign: 'top' } }, { content: prueba.instruccionesGenerales, colSpan: 3 }],
             ],
             theme: 'grid',
-            styles: { fontSize: 10, cellPadding: 2, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.1 },
-            columnStyles: { 0: { cellWidth: 30 }, 2: {cellWidth: 30} },
+            styles: { 
+                fontSize: 11, 
+                cellPadding: 5, 
+                textColor: [0, 0, 0], 
+                lineColor: [100, 100, 100], 
+                lineWidth: 0.1,
+                halign: 'left'
+            },
+            columnStyles: { 
+                0: { cellWidth: 45, fillColor: [245, 245, 245] }, 
+                2: { cellWidth: 30, fillColor: [245, 245, 245] } 
+            },
             didDrawPage: (data) => {
                 addHeader(doc);
-            }
+            },
+            // Asegurar que las celdas se expandan verticalmente si el contenido es largo
+            rowPageBreak: 'auto'
         });
 
-        y = (doc as any).lastAutoTable.finalY + 10;
+        y = (doc as any).lastAutoTable.finalY + 15; // Más espacio después de la tabla de información
 
         const checkPageBreak = (requiredHeight: number) => {
+            // Si no hay suficiente espacio para el elemento completo, hacer salto de página
             if (y + requiredHeight > pageHeight - margin) {
                 doc.addPage();
                 addHeader(doc);
-                y = margin + 15;
+                y = 30; // Ajustado para considerar la altura de la imagen de encabezado
                 doc.setTextColor(0,0,0);
+                return true;
             }
+            return false;
         };
         
         const estimateHeight = (text: string | string[], options: { fontSize: number, width: number, isBold?: boolean }): number => {
@@ -451,12 +489,16 @@ const PruebasSubmodule: React.FC = () => {
             doc.setFontSize(options.fontSize);
             const textToMeasure = Array.isArray(text) ? text.join('\n') : text;
             const dims = doc.getTextDimensions(textToMeasure, { maxWidth: options.width });
-            return dims.h;
+            // Añadir un pequeño margen extra para asegurar que haya suficiente espacio
+            return dims.h * 1.1;
         };
 
         for (const actividad of prueba.actividades) {
+            // Estimar la altura para el encabezado de la actividad
             let activityHeaderHeight = estimateHeight(actividad.titulo, { fontSize: 12, width: contentWidth, isBold: true }) +
-                                       estimateHeight(actividad.instrucciones, { fontSize: 10, width: contentWidth }) + 12;
+                                       estimateHeight(actividad.instrucciones, { fontSize: 10, width: contentWidth }) + 15;
+            
+            // Asegurarse de que el encabezado de la actividad no se corte
             checkPageBreak(activityHeaderHeight);
             
             doc.setFont('helvetica', 'bold');
@@ -469,126 +511,232 @@ const PruebasSubmodule: React.FC = () => {
             doc.setFontSize(10);
             const instruccionesLines = doc.splitTextToSize(actividad.instrucciones, contentWidth);
             doc.text(instruccionesLines, margin, y);
-            y += instruccionesLines.length * (10 * 0.35 * 1.15) + 4;
+            y += instruccionesLines.length * (10 * 0.35 * 1.15) + 6; // Incrementado ligeramente para mejor espaciado
 
             for (const [index, item] of actividad.items.entries()) {
+                // Calcular la altura estimada para este ítem completo
                 let itemHeight = 0;
                 const preguntaText = `${index + 1}. ${item.pregunta} (${item.puntaje} pts)`;
-                itemHeight += estimateHeight(preguntaText, { fontSize: 10, width: contentWidth, isBold: true });
+                itemHeight += estimateHeight(preguntaText, { fontSize: 10, width: contentWidth, isBold: true }) + 5;
                 
                 switch (item.tipo) {
                     case 'Selección múltiple':
                         (item as SeleccionMultipleItem).opciones.forEach(op => {
-                            itemHeight += estimateHeight(op, { fontSize: 10, width: contentWidth - 5 }) + 3;
+                            itemHeight += estimateHeight(op, { fontSize: 10, width: contentWidth - 5 }) + 4;
                         });
-                        itemHeight += 7;
+                        itemHeight += 8;
                         break;
                     case 'Verdadero o Falso':
-                        itemHeight += 10;
+                        itemHeight += 15; // Un poco más de espacio
                         break;
                     case 'Desarrollo':
-                        itemHeight += 30;
+                        itemHeight += 35; // Más espacio para escribir
                         break;
                     case 'Términos pareados':
-                        itemHeight += (item as TerminosPareadosItem).pares.length * 12 + 20;
+                        itemHeight += (item as TerminosPareadosItem).pares.length * 15 + 25; // Más espacio para cada par
                         break;
                     case 'Comprensión de lectura':
                         const ci = item as ComprensionLecturaItem;
-                        itemHeight += estimateHeight(ci.texto, { fontSize: 10, width: contentWidth - 10 }) + 10;
+                        // El texto de lectura es más largo, necesita más espacio
+                        itemHeight += estimateHeight(ci.texto, { fontSize: 10, width: contentWidth - 10 }) + 15;
+                        
                         ci.preguntas.forEach(subItem => {
                            const subPreguntaText = `${subItem.pregunta} (${subItem.puntaje} pts)`;
-                           itemHeight += estimateHeight(subPreguntaText, {fontSize: 10, width: contentWidth - 5, isBold: true});
+                           itemHeight += estimateHeight(subPreguntaText, {fontSize: 10, width: contentWidth - 5, isBold: true}) + 5;
+                           
                            if (subItem.tipo === 'Selección múltiple') {
                               (subItem as SeleccionMultipleItem).opciones.forEach(op => {
-                                   itemHeight += estimateHeight(op, { fontSize: 10, width: contentWidth - 10 }) + 3;
+                                   itemHeight += estimateHeight(op, { fontSize: 10, width: contentWidth - 10 }) + 4;
                                });
-                               itemHeight += 7;
+                               itemHeight += 8;
                            } else if (subItem.tipo === 'Desarrollo') {
-                               itemHeight += 30;
+                               itemHeight += 35;
                            }
-                           itemHeight += 5;
+                           itemHeight += 10; // Mayor espaciado entre sub-preguntas
                         });
-                        itemHeight += 15;
+                        itemHeight += 20; // Más espacio después de la comprensión de lectura
                         break;
                 }
                 
-                checkPageBreak(itemHeight);
+                // Verificar si se necesita un salto de página para esta pregunta completa
+                // Importante: no cortar preguntas entre páginas
+                if (checkPageBreak(itemHeight)) {
+                    // Si se hizo un salto de página, asegurarnos de que tenemos el contexto correcto
+                    doc.setTextColor(0,0,0);
+                }
 
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(10);
                 doc.setTextColor(0,0,0);
                 const preguntaLines = doc.splitTextToSize(preguntaText, contentWidth);
                 doc.text(preguntaLines, margin, y);
-                y += preguntaLines.length * 5 + 4;
+                y += preguntaLines.length * 5 + 5; // Incrementado para mejor espaciado
                 doc.setFont('helvetica', 'normal');
 
                 if (item.tipo === 'Selección múltiple') {
                     (item as SeleccionMultipleItem).opciones.forEach((opcion, i) => {
-                        doc.text(`${String.fromCharCode(65 + i)}) ${opcion}`, margin + 5, y);
-                        y += 7;
+                        // Mejorar la presentación de opciones de selección múltiple con interlineado sencillo
+                        const opLines = doc.splitTextToSize(`${String.fromCharCode(65 + i)}) ${opcion}`, contentWidth - 15);
+                        doc.text(opLines, margin + 5, y);
+                        // Interlineado sencillo (no añadir espacio adicional entre líneas de la misma opción)
+                        y += opLines.length * 4; // Reducido para tener interlineado sencillo
                     });
+                    y += 6; // Espacio de 1.5 entre preguntas
                 } else if (item.tipo === 'Verdadero o Falso') {
                     doc.text('V ______    F ______', margin + 5, y);
-                    y += 10;
+                    y += 6; // Espacio de 1.5 entre preguntas
                 } else if (item.tipo === 'Desarrollo') {
+                    // Mejora del área de desarrollo con líneas punteadas para escribir
                     doc.setDrawColor(200, 200, 200);
-                    doc.setFillColor(245, 245, 245);
-                    doc.rect(margin, y, contentWidth, 25, 'FD');
-                    y += 30;
+                    doc.setFillColor(248, 248, 248);
+                    const developHeight = 30; // Altura estándar para desarrollo
+                    doc.rect(margin, y, contentWidth, developHeight, 'FD');
+                    
+                    // Agregar líneas punteadas para escribir
+                    doc.setDrawColor(180, 180, 180);
+                    doc.setLineDashPattern([0.5, 1], 0);
+                    // Interlineado sencillo para líneas de escritura
+                    for (let lineY = y + 4; lineY < y + developHeight; lineY += 4) {
+                        doc.line(margin + 2, lineY, margin + contentWidth - 2, lineY);
+                    }
+                    doc.setLineDashPattern([1], 0);
+                    y += developHeight + 6; // Espacio de 1.5 entre preguntas
                 } else if (item.tipo === 'Términos pareados') {
                     const shuffledDefs = [...(item as TerminosPareadosItem).pares.map(p => p.definicion)].sort(() => Math.random() - 0.5);
                     const body = (item as TerminosPareadosItem).pares.map((par, i) => [`${i + 1}. ${par.concepto}`, `(   ) ${shuffledDefs[i]}`]);
+                    
+                    // Calcular la altura promedio del texto para ajustar la altura de las celdas
+                    const avgTextHeight = doc.getTextDimensions('X').h * 1.2;
+                    
+                    // Mejorar la tabla de términos pareados
                     autoTable(doc, {
                         startY: y,
                         head: [['Columna A: Concepto', 'Columna B: Definición']],
                         body: body,
                         theme: 'grid',
-                        styles: { fontSize: 9, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.1 },
-                        headStyles: { fontStyle: 'bold', fillColor: [230, 230, 230], textColor: [0,0,0] },
+                        styles: { 
+                            fontSize: 10, 
+                            textColor: [0, 0, 0], 
+                            lineColor: [0, 0, 0], 
+                            lineWidth: 0.1,
+                            cellPadding: 2,  // Reducido para tener celdas menos altas
+                            minCellHeight: avgTextHeight, // Altura mínima similar a la altura del texto
+                            valign: 'middle', // Centrar verticalmente el contenido
+                            // lineHeight ajustado con padding para interlineado sencillo
+                        },
+                        headStyles: { 
+                            fontStyle: 'bold', 
+                            fillColor: [230, 230, 230], 
+                            textColor: [0,0,0], 
+                            halign: 'center'
+                        },
                         didDrawPage: (data) => addHeader(doc),
+                        // Configurar el ancho de columnas más equilibrado
+                        columnStyles: {
+                            0: { cellWidth: contentWidth * 0.45 },
+                            1: { cellWidth: contentWidth * 0.55 }
+                        }
                     });
-                    y = (doc as any).lastAutoTable.finalY + 10;
+                    y = (doc as any).lastAutoTable.finalY + 6; // Espacio de 1.5 después de la tabla
                 } else if (item.tipo === 'Comprensión de lectura') {
                     const lecturaItem = item as ComprensionLecturaItem;
                     
-                    doc.setFillColor(240, 240, 240);
+                    // Mejorar el formato del texto de comprensión de lectura
+                    doc.setFillColor(245, 245, 245);
                     doc.setDrawColor(200, 200, 200);
-                    const textLines = doc.splitTextToSize(lecturaItem.texto, contentWidth - 10);
-                    const boxHeight = textLines.length * (10 * 0.35 * 1.15) + 8;
-                    doc.rect(margin, y, contentWidth, boxHeight, 'FD');
-                    y += 4;
+                    const textLines = doc.splitTextToSize(lecturaItem.texto, contentWidth - 20);
+                    // Aplicar interlineado sencillo al texto de comprensión
+                    const lineHeight = 10 * 0.35 * 1.0; // 1.0 para interlineado sencillo
+                    const boxHeight = textLines.length * lineHeight + 12;
+                    doc.roundedRect(margin, y, contentWidth, boxHeight, 2, 2, 'FD'); // Bordes redondeados
+                    y += 6; // Espacio superior
                     doc.setFont('helvetica', 'normal');
                     doc.setFontSize(10);
                     doc.setTextColor(0, 0, 0);
-                    doc.text(textLines, margin + 5, y);
-                    y += boxHeight;
+                    
+                    // Dibujar el texto línea por línea con interlineado controlado
+                    let currentY = y;
+                    textLines.forEach(line => {
+                        doc.text(line, margin + 10, currentY);
+                        currentY += lineHeight;
+                    });
+                    
+                    y += boxHeight + 6; // Espacio de 1.5 después del texto
+
+                    // Comprobar si hay espacio para al menos la primera subpregunta
+                    // Si no, hacer un salto de página para evitar que las preguntas queden separadas del texto
+                    if (lecturaItem.preguntas.length > 0) {
+                        const firstSubItem = lecturaItem.preguntas[0];
+                        const subPreguntaHeight = estimateHeight(
+                            `1. ${firstSubItem.pregunta} (${firstSubItem.puntaje} pts)`,
+                            {fontSize: 10, width: contentWidth - 10, isBold: true}
+                        );
+                        let optionsHeight = 0;
+                        
+                        if (firstSubItem.tipo === 'Selección múltiple') {
+                            optionsHeight = (firstSubItem as SeleccionMultipleItem).opciones.length * 8;
+                        } else if (firstSubItem.tipo === 'Desarrollo') {
+                            optionsHeight = 35;
+                        }
+                        
+                        if (y + subPreguntaHeight + optionsHeight > pageHeight - margin) {
+                            doc.addPage();
+                            addHeader(doc);
+                            y = 30;
+                            doc.setTextColor(0,0,0);
+                        }
+                    }
 
                     for (const [subIndex, subItem] of lecturaItem.preguntas.entries()) {
                         const subPreguntaText = `${subIndex + 1}. ${subItem.pregunta} (${subItem.puntaje} pts)`;
                         doc.setFont('helvetica', 'bold');
-                        const subPreguntaLines = doc.splitTextToSize(subPreguntaText, contentWidth - 5);
+                        const subPreguntaLines = doc.splitTextToSize(subPreguntaText, contentWidth - 10);
                         doc.text(subPreguntaLines, margin + 5, y);
                         y += subPreguntaLines.length * 5 + 4;
                         doc.setFont('helvetica', 'normal');
+                        
                         if (subItem.tipo === 'Selección múltiple') {
                             (subItem as SeleccionMultipleItem).opciones.forEach((op, i) => {
-                                doc.text(`${String.fromCharCode(65 + i)}) ${op}`, margin + 10, y);
-                                y += 7;
+                                const opLines = doc.splitTextToSize(`${String.fromCharCode(65 + i)}) ${op}`, contentWidth - 20);
+                                doc.text(opLines, margin + 10, y);
+                                // Interlineado sencillo dentro de cada opción
+                                y += opLines.length * 4;
                             });
+                            y += 6; // Espacio de 1.5 después de las opciones
                         } else if (subItem.tipo === 'Desarrollo') {
+                            // Mejora del área de desarrollo con líneas punteadas
                             doc.setDrawColor(200, 200, 200);
-                            doc.setFillColor(245, 245, 245);
-                            doc.rect(margin + 5, y, contentWidth - 5, 25, 'FD');
-                            y += 30;
+                            doc.setFillColor(248, 248, 248);
+                            doc.rect(margin + 5, y, contentWidth - 10, 25, 'FD');
+                            
+                            // Agregar líneas punteadas para escribir con interlineado sencillo
+                            doc.setDrawColor(180, 180, 180);
+                            doc.setLineDashPattern([0.5, 1], 0);
+                            // Interlineado sencillo para líneas de escritura
+                            for (let lineY = y + 4; lineY < y + 25; lineY += 4) {
+                                doc.line(margin + 7, lineY, margin + contentWidth - 7, lineY);
+                            }
+                            doc.setLineDashPattern([1], 0);
+                            
+                            y += 25 + 6; // Altura + espacio de 1.5 después
                         }
+                        // No añadir espacio adicional entre subpreguntas ya que se ha ajustado al final de cada tipo
                     }
                 }
-                y += 5;
+                y += 6; // Espacio de 1.5 entre preguntas principales
             }
         }
     
-        doc.save(`${prueba.nombre.replace(/\s/g, '_')}.pdf`);
+        // Crear un nombre de archivo más descriptivo con la fecha
+        const fechaStr = new Date().toISOString().split('T')[0]; // Formato YYYY-MM-DD
+        const fileName = `${prueba.nombre.replace(/\s/g, '_')}_${prueba.asignatura.replace(/\s/g, '_')}_${fechaStr}.pdf`;
+        
+        doc.save(fileName);
         setIsDownloading(false);
+        
+        // Notificar al usuario que el PDF se ha descargado correctamente
+        alert(`PDF generado y descargado como "${fileName}"`);
+        
     };
 
     if (currentPrueba) {
@@ -791,7 +939,7 @@ const RubricasSubmodule: React.FC<{
         };
 
         try {
-            logApiCall('Evaluación - Rúbricas');
+            logApiCall('Evaluación - Rúbricas', null);
 
             const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
             if (!apiKey) {
@@ -801,11 +949,16 @@ const RubricasSubmodule: React.FC<{
             }
 
             const ai = new GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-            const result = await model.generateContent({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: 'application/json', responseSchema: schema }
+            const model = ai.getGenerativeModel({ 
+              model: "gemini-1.5-pro-latest",
+              generationConfig: {
+                temperature: 0.3, // Menos creatividad, más precisión para contexto educativo
+                topP: 0.8,
+                topK: 40,
+                maxOutputTokens: 8192,
+              }
             });
+            const result = await model.generateContent(prompt);
             const response = await result.response;
             const text = response.text();
             
@@ -858,7 +1011,7 @@ const RubricasSubmodule: React.FC<{
         };
 
         try {
-            logApiCall('Evaluación - Rúbricas (Añadir Dimensión)');
+            logApiCall('Evaluación - Rúbricas (Añadir Dimensión)', null);
             
             const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
             if (!apiKey) {
@@ -868,11 +1021,16 @@ const RubricasSubmodule: React.FC<{
             }
 
             const ai = new GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-            const result = await model.generateContent({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: 'application/json', responseSchema: schema }
+            const model = ai.getGenerativeModel({ 
+              model: "gemini-1.5-pro-latest",
+              generationConfig: {
+                temperature: 0.3, // Menos creatividad, más precisión para contexto educativo
+                topP: 0.8,
+                topK: 40,
+                maxOutputTokens: 8192,
+              }
             });
+            const result = await model.generateContent(prompt);
             const response = await result.response;
             const text = response.text();
             
@@ -1124,10 +1282,14 @@ const RubricasInteractivas: React.FC<{
         const studentResult = rubrica.resultados[studentName];
         if (!studentResult) return { score: 0, maxScore, grade: '1.0' };
 
-        const score = Object.values(studentResult.puntajes).reduce((acc, s) => acc + s, 0);
+        // Usamos as para especificar el tipo y evitar error de compilación
+        const score = Object.values(studentResult.puntajes).reduce((acc: number, s: unknown) => acc + (s as number), 0);
         
-        const nota = 1 + (6 * (score / maxScore));
-        const grade = maxScore > 0 ? nota.toFixed(1) : '1.0';
+        // Asegurarnos de que score y maxScore sean tratados como números
+        const scoreNum = Number(score);
+        const maxScoreNum = Number(maxScore);
+        const nota = 1 + (6 * (scoreNum / maxScoreNum));
+        const grade = maxScoreNum > 0 ? nota.toFixed(1) : '1.0';
         
         return { score, maxScore, grade };
     }, [modifiedRubrica, rubricasEstaticas]);
@@ -1146,7 +1308,7 @@ const RubricasInteractivas: React.FC<{
         const prompt = `Genera una retroalimentación constructiva para un estudiante basada en estos puntajes de rúbrica (de 1 a 4): ${performance}. El nombre de la evaluación es "${staticRubric.titulo}". Destaca fortalezas y sugiere 1-2 áreas de mejora concretas. Sé breve y motivador.`;
         
         try {
-            logApiCall('Evaluación - Rúbricas Interactivas (Feedback)');
+            logApiCall('Evaluación - Rúbricas Interactivas (Feedback)', null);
             
             const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
             if (!apiKey) {
@@ -1156,7 +1318,15 @@ const RubricasInteractivas: React.FC<{
             }
 
             const ai = new GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+            const model = ai.getGenerativeModel({ 
+              model: "gemini-1.5-pro-latest",
+              generationConfig: {
+                temperature: 0.3, // Menos creatividad, más precisión para contexto educativo
+                topP: 0.8,
+                topK: 40,
+                maxOutputTokens: 8192,
+              }
+            });
             const result = await model.generateContent(prompt);
             const response = await result.response;
             const text = response.text();
