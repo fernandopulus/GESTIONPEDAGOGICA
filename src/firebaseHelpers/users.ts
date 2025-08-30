@@ -19,9 +19,18 @@ export async function getAllUsers(): Promise<User[]> {
     
     const users = snapshot.docs.map(doc => {
       const data = doc.data();
-      console.log(`👤 [DEBUG] Usuario encontrado:`, { id: doc.id, ...data });
+      // Log específico para depuración de cursos
+      if (!data.curso || typeof data.curso !== 'string' || !data.curso.trim()) {
+        console.warn(`⚠️ [ASIGNACION] Usuario sin curso asignado o curso inválido:`, { id: doc.id, ...data });
+      } else {
+        console.log(`✅ [ASIGNACION] Usuario con curso:`, { id: doc.id, curso: data.curso, nombre: data.nombreCompleto });
+      }
       return { id: doc.id, ...data } as User;
     });
+    
+    // Log de resumen de cursos
+    const cursosUnicos = Array.from(new Set(users.map(u => u.curso).filter(Boolean)));
+    console.log(`📚 [ASIGNACION] Cursos únicos encontrados en usuarios:`, cursosUnicos);
     
     console.log("✅ [DEBUG] Usuarios procesados correctamente:", users.length);
     console.log("✅ [DEBUG] Lista completa de usuarios:", users);

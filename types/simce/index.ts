@@ -1,4 +1,4 @@
-export type AsignaturaSimce = 'matematica' | 'lectura' | 'ciencias' | 'historia';
+export type AsignaturaSimce = 'pensamiento lógico' | 'competencia lectora' | 'ciencias' | 'historia';
 
 export interface Pregunta {
   enunciado: string;

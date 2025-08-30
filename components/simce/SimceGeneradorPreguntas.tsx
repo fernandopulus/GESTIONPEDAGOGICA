@@ -97,7 +97,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
   const [nuevaEvaluacion, setNuevaEvaluacion] = useState<Partial<SetPreguntas>>({
     titulo: '',
     descripcion: '',
-    asignatura: 'Lectura',
+  asignatura: 'Competencia Lectora',
     preguntas: [],
     cursosAsignados: [],
     barajarPreguntas: true,
@@ -205,7 +205,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
     setNuevaEvaluacion({
       titulo: '',
       descripcion: '',
-      asignatura: 'Lectura',
+  asignatura: 'Competencia Lectora',
       preguntas: [],
       cursosAsignados: [],
       barajarPreguntas: true,
@@ -264,8 +264,8 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
       // Asegurar que el texto base se propague correctamente si existe
       let preguntasFinales = [...(nuevaEvaluacion.preguntas || [])];
       
-      // Si es una evaluación de lectura, revisar si hay texto base
-      if (nuevaEvaluacion.asignatura === 'Lectura') {
+  // Si es una evaluación de competencia lectora, revisar si hay texto base
+  if (nuevaEvaluacion.asignatura === 'Competencia Lectora') {
         const textoBase = encontrarTextoBase(preguntasFinales);
         if (textoBase) {
           preguntasFinales = propagarTextoBase(preguntasFinales, textoBase);
@@ -281,7 +281,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
       const evaluacionActualizada: Omit<SetPreguntas, 'id'> = {
         titulo: nuevaEvaluacion.titulo || '',
         descripcion: nuevaEvaluacion.descripcion || '',
-        asignatura: nuevaEvaluacion.asignatura || 'Lectura',
+  asignatura: nuevaEvaluacion.asignatura || 'Competencia Lectora',
         preguntas: preguntasFinales,
         creadorId: currentUser.uid || '', // SIEMPRE usar uid
         creadorNombre: currentUser.nombreCompleto || '',
@@ -383,7 +383,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
       let habilidadesLectura: string[] | undefined;
       let ejesMatematica: string[] | undefined;
       
-      if (nuevaEvaluacion.asignatura === 'Lectura') {
+  if (nuevaEvaluacion.asignatura === 'Competencia Lectora') {
         habilidadesLectura = Object.entries(opcionesGeneracion.habilidadesLectura)
           .filter(([_, seleccionado]) => seleccionado)
           .map(([habilidad]) => habilidad);
@@ -391,7 +391,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
         if (habilidadesLectura.length === 0) {
           habilidadesLectura = ['Localizar información', 'Relacionar información', 'Interpretar', 'Reflexionar y evaluar'];
         }
-      } else if (nuevaEvaluacion.asignatura === 'Matemática') {
+  } else if (nuevaEvaluacion.asignatura === 'Pensamiento Lógico') {
         ejesMatematica = Object.entries(opcionesGeneracion.ejesMatematica)
           .filter(([_, seleccionado]) => seleccionado)
           .map(([eje]) => eje);
@@ -407,9 +407,21 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
         mensaje: `Generando ${opcionesGeneracion.cantidadPreguntas} preguntas de ${nuevaEvaluacion.asignatura}. Este proceso puede tardar unos segundos...`
       });
       
+      // Normalizar el valor de asignatura para la generación de preguntas
+      const asignaturaNormalizada = nuevaEvaluacion.asignatura
+        .toLowerCase()
+        .replace(/á/g, 'a')
+        .replace(/é/g, 'e')
+        .replace(/í/g, 'i')
+        .replace(/ó/g, 'o')
+        .replace(/ú/g, 'u')
+        .replace(/ñ/g, 'n')
+        .replace(/\s+/g, ' ')
+        .trim();
+
       // Crear las opciones para la generación de preguntas
       const opcionesGeneracionSimce = {
-        asignatura: nuevaEvaluacion.asignatura,
+        asignatura: asignaturaNormalizada,
         cantidad: parseInt(opcionesGeneracion.cantidadPreguntas), 
         opcionesPorPregunta: 4,
         habilidadesLectura,
@@ -493,8 +505,8 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
         throw new Error('No se generaron preguntas válidas después de todos los intentos');
       }
       
-      // Procesar preguntas válidas y agregar textoBase SIEMPRE en Lectura
-      if (nuevaEvaluacion.asignatura === 'Lectura') {
+  // Procesar preguntas válidas y agregar textoBase SIEMPRE en Competencia Lectora
+  if (nuevaEvaluacion.asignatura === 'Competencia Lectora') {
         let textoBase = opcionesGeneracion.textoProporcionado?.trim();
         // Si el usuario no lo ingresó, intentar obtenerlo de la IA (asumimos que viene en preguntasGeneradas[0].textoBase o en otro campo)
         if (!textoBase) {
@@ -569,7 +581,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
         { id: 'C', texto: '', esCorrecta: false },
         { id: 'D', texto: '', esCorrecta: false }
       ],
-      estandarAprendizaje: nuevaEvaluacion.asignatura === 'Lectura'
+      estandarAprendizaje: nuevaEvaluacion.asignatura === 'Competencia Lectora'
         ? estandaresLectura[0]
         : estandaresMatematica[0]
     };
@@ -601,8 +613,8 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
       return;
     }
     
-    // Verificar si esta pregunta tiene textoBase y es para Lectura
-    const contieneTextoBase = preguntaEnEdicion.textoBase && nuevaEvaluacion.asignatura === 'Lectura';
+  // Verificar si esta pregunta tiene textoBase y es para Competencia Lectora
+  const contieneTextoBase = preguntaEnEdicion.textoBase && nuevaEvaluacion.asignatura === 'Competencia Lectora';
     
     if (preguntaEnEdicion.id.startsWith('p')) {
       // Es una pregunta nueva
@@ -737,8 +749,8 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
               onChange={(e) => setFiltroAsignatura(e.target.value as 'todas' | AsignaturaSimce)}
             >
               <option value="todas">Todas las asignaturas</option>
-              <option value="Lectura">Lectura</option>
-              <option value="Matemática">Matemática</option>
+              <option value="Competencia Lectora">Competencia Lectora</option>
+              <option value="Pensamiento Lógico">Pensamiento Lógico</option>
             </select>
           </div>
           
@@ -782,11 +794,11 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
                 <div className="p-4 flex items-start justify-between">
                   <div className="flex items-start">
                     <div className={`p-2 rounded-md mr-3 ${
-                      set.asignatura === 'Lectura' 
+                      set.asignatura === 'Competencia Lectora' 
                         ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' 
                         : 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
                     }`}>
-                      {set.asignatura === 'Lectura' ? (
+                      {set.asignatura === 'Competencia Lectora' ? (
                         <BookOpen className="w-5 h-5" />
                       ) : (
                         <Calculator className="w-5 h-5" />
@@ -858,7 +870,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
                   <div className="border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4">
                     
                     {/* NUEVO: Mostrar texto de lectura de forma prominente */}
-                    {set.asignatura === 'Lectura' && (() => {
+                    {set.asignatura === 'Competencia Lectora' && (() => {
                       const textoBase = encontrarTextoBase(set.preguntas);
                       if (textoBase) {
                         return (
@@ -1008,7 +1020,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
                 value={nuevaEvaluacion.titulo}
                 onChange={(e) => setNuevaEvaluacion({ ...nuevaEvaluacion, titulo: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800"
-                placeholder="Ej: Evaluación SIMCE 4° Básico - Lectura"
+                placeholder="Ej: Evaluación SIMCE 4° Básico - Competencia Lectora"
               />
             </div>
             
@@ -1166,29 +1178,14 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
               className="w-full rounded-md border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:border-indigo-500 focus:ring-indigo-500 resize-y"
               value={opcionesGeneracion.textoProporcionado || ''}
               onChange={(e) => setOpcionesGeneracion({...opcionesGeneracion, textoProporcionado: e.target.value})}
-              placeholder={nuevaEvaluacion.asignatura === 'Lectura' 
+              placeholder={nuevaEvaluacion.asignatura === 'Competencia Lectora' 
                 ? "Ingrese aquí un texto para generar preguntas de comprensión lectora..." 
-                : "Ingrese aquí un texto para crear problemas matemáticos relacionados..."}
+                : "Ingrese aquí un texto para crear problemas de pensamiento lógico relacionados..."}
               rows={6}
             ></textarea>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Nivel */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Nivel
-              </label>
-              <select
-                className="w-full rounded-md border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:border-indigo-500 focus:ring-indigo-500"
-                value={opcionesGeneracion.nivel}
-                onChange={(e) => setOpcionesGeneracion({...opcionesGeneracion, nivel: e.target.value})}
-              >
-                <option value="1M">1º Medio</option>
-                <option value="2M">2º Medio</option>
-              </select>
-            </div>
-
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Cantidad de preguntas */}
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -1223,10 +1220,10 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
           </div>
 
           {/* Habilidades específicas según asignatura */}
-          {nuevaEvaluacion.asignatura === 'Lectura' && (
+          {nuevaEvaluacion.asignatura === 'Competencia Lectora' && (
             <div className="mt-4">
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Habilidades de Lectura
+                Habilidades de Competencia Lectora
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {Object.entries(opcionesGeneracion.habilidadesLectura).map(([habilidad, seleccionada]) => (
@@ -1252,10 +1249,10 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
             </div>
           )}
 
-          {nuevaEvaluacion.asignatura === 'Matemática' && (
+          {nuevaEvaluacion.asignatura === 'Pensamiento Lógico' && (
             <div className="mt-4">
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Ejes de Matemática
+                Ejes de Pensamiento Lógico
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {Object.entries(opcionesGeneracion.ejesMatematica).map(([eje, seleccionado]) => (
@@ -1309,8 +1306,8 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
           {preguntaEnEdicion ? (
             // Editor de pregunta
             <div className="bg-white dark:bg-slate-800 p-5 border border-slate-200 dark:border-slate-700 rounded-lg">
-              {/* Campo de texto base (solo visible para la primera pregunta de Lectura) */}
-              {nuevaEvaluacion.asignatura === 'Lectura' && 
+              {/* Campo de texto base (solo visible para la primera pregunta de Competencia Lectora) */}
+              {nuevaEvaluacion.asignatura === 'Competencia Lectora' && 
                nuevaEvaluacion.preguntas[0]?.id === preguntaEnEdicion.id && (
                 <div className="mb-4">
                   <label className="block mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">

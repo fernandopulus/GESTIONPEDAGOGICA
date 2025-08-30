@@ -14,11 +14,10 @@ import {
   FilePlus,
   Users
 } from 'lucide-react';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { v4 as uuidv4 } from 'uuid';
 
 // Importar los tipos
-import { SimcePregunta, SimceAlternativa, SimceEvaluacion } from '../../../types/simce';
+import { Pregunta, Alternativa, SetPreguntas } from '../../../types/simce';
 
 // Importar helpers de Firebase
 import { 
@@ -36,13 +35,13 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
   const [cantidadPreguntas, setCantidadPreguntas] = useState<number>(4);
   const [titulo, setTitulo] = useState<string>('');
   const [descripcion, setDescripcion] = useState<string>('');
-  const [preguntas, setPreguntas] = useState<SimcePregunta[]>([]);
+  const [preguntas, setPreguntas] = useState<Pregunta[]>([]);
   const [cargando, setCargando] = useState<boolean>(false);
   const [guardando, setGuardando] = useState<boolean>(false);
   const [editando, setEditando] = useState<string | null>(null); // ID de la pregunta que se está editando
-  const [preguntaActual, setPreguntaActual] = useState<SimcePregunta | null>(null);
+  const [preguntaActual, setPreguntaActual] = useState<Pregunta | null>(null);
   const [modo, setModo] = useState<'creacion' | 'edicion'>('creacion');
-  const [evaluaciones, setEvaluaciones] = useState<SimceEvaluacion[]>([]);
+  const [evaluaciones, setEvaluaciones] = useState<SetPreguntas[]>([]);
   const [evaluacionSeleccionada, setEvaluacionSeleccionada] = useState<string | null>(null);
   const [cursosDisponibles, setCursosDisponibles] = useState<string[]>([]);
   const [cursosSeleccionados, setCursosSeleccionados] = useState<string[]>([]);
@@ -85,7 +84,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
         setTitulo(evaluacion.titulo);
         setDescripcion(evaluacion.descripcion);
         setAsignatura(evaluacion.asignatura);
-        setPreguntas(evaluacion.preguntas);
+  setPreguntas(evaluacion.preguntas);
         setCursosSeleccionados(evaluacion.cursoAsignado || []);
       }
     }
@@ -96,111 +95,27 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
     setCargando(true);
     
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("La API Key de Gemini no está configurada.");
-      }
-
-      const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ 
-        model: "gemini-1.5-pro",
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.95,
-          maxOutputTokens: 8192
-        }
+      // Llamar función backend (Cloud Function) para generar preguntas
+      const response = await fetch('/api/generarPreguntasSimce', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          asignatura,
+          cantidadPreguntas
+        })
       });
-
-      const estandares = {
-        Lectura: [
-          "Localizar información explícita",
-          "Realizar inferencias a partir del texto",
-          "Reflexionar sobre el contenido del texto",
-          "Interpretar lenguaje figurado",
-          "Evaluar elementos textuales y de diseño"
-        ],
-        Matemática: [
-          "Números y operaciones",
-          "Patrones y álgebra",
-          "Geometría",
-          "Medición",
-          "Datos y probabilidad"
-        ]
-      };
-
-      const habilidades = {
-        Lectura: [
-          "Extraer información",
-          "Interpretar y relacionar",
-          "Reflexionar",
-          "Evaluar"
-        ],
-        Matemática: [
-          "Resolver problemas",
-          "Representar",
-          "Modelar",
-          "Argumentar y comunicar"
-        ]
-      };
-
-      const prompt = `Genera ${cantidadPreguntas} preguntas tipo SIMCE para estudiantes de 2º medio de ${asignatura} alineadas con los estándares de aprendizaje del MINEDUC Chile. Cada pregunta debe tener:
-1. Un enunciado claro
-2. Cuatro alternativas (A, B, C y D), donde sólo una es correcta
-3. La alternativa correcta (debe ser una letra: A, B, C o D)
-4. Una explicación breve de por qué esa es la respuesta correcta
-5. El estándar de aprendizaje al que corresponde
-6. La habilidad que evalúa
-
-Para Lectura, usa textos breves y variados (narrativos, informativos, argumentativos). Para Matemática, incluye problemas contextualizados.
-
-Estándares de aprendizaje para ${asignatura}:
-${estandares[asignatura].join(", ")}
-
-Habilidades para ${asignatura}:
-${habilidades[asignatura].join(", ")}
-
-Devuelve la respuesta en formato JSON con esta estructura:
-[
-  {
-    "enunciado": "Texto de la pregunta...",
-    "alternativas": [
-      {"id": "A", "texto": "Alternativa A..."},
-      {"id": "B", "texto": "Alternativa B..."},
-      {"id": "C", "texto": "Alternativa C..."},
-      {"id": "D", "texto": "Alternativa D..."}
-    ],
-    "respuestaCorrecta": "B",
-    "explicacion": "La respuesta es B porque...",
-    "estandarAprendizaje": "Uno de los estándares listados arriba",
-    "habilidad": "Una de las habilidades listadas arriba"
-  }
-]
-
-Asegúrate de que cada pregunta sea desafiante pero apropiada para el nivel, y que no haya ambigüedades en las respuestas.`;
-
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      let text = response.text();
-      
-      // Limpiar el texto de posibles delimitadores de código
-      if (text.includes('```')) {
-        text = text.replace(/```json\s*|\s*```/g, '');
-      }
-      
-      // Parsear el JSON
-      const preguntasGeneradas: SimcePregunta[] = JSON.parse(text);
-      
+      if (!response.ok) throw new Error('Error al generar preguntas');
+      const data = await response.json();
+      if (!Array.isArray(data)) throw new Error('Respuesta inesperada del servidor');
       // Añadir IDs únicos a las preguntas
-      const preguntasConId = preguntasGeneradas.map(pregunta => ({
+      const preguntasConId = data.map((pregunta: any) => ({
         ...pregunta,
         id: uuidv4()
       }));
-      
       setPreguntas(preguntasConId);
-      
     } catch (error) {
-      console.error("Error al generar preguntas:", error);
-      setError("Ocurrió un error al generar las preguntas. Intente nuevamente.");
+      console.error('Error al generar preguntas:', error);
+      setError('Ocurrió un error al generar las preguntas. Intente nuevamente.');
     } finally {
       setCargando(false);
     }
@@ -229,20 +144,17 @@ Asegúrate de que cada pregunta sea desafiante pero apropiada para el nivel, y q
     setGuardando(true);
     
     try {
-      const evaluacion: Omit<SimceEvaluacion, 'id'> = {
+      const evaluacion: Omit<SetPreguntas, 'id'> = {
         titulo,
         descripcion,
         asignatura,
         preguntas,
         fechaCreacion: new Date().toISOString(),
-        fechaAsignacion: new Date().toISOString(),
-        activo: true,
-        profesor: {
-          id: currentUser.id || '',
-          nombre: currentUser.nombreCompleto || 'Docente'
-        },
-        cursoAsignado: cursosSeleccionados,
-        cursosAsignados: cursosSeleccionados // Agregamos este campo para compatibilidad con obtenerSetsPreguntasPorCurso
+        cursosAsignados: cursosSeleccionados,
+        creadorId: currentUser.id || currentUser.uid || '',
+        creadorNombre: currentUser.nombreCompleto || currentUser.displayName || 'Docente',
+        barajarPreguntas: false,
+        barajarAlternativas: false
       };
       
       if (modo === 'creacion') {

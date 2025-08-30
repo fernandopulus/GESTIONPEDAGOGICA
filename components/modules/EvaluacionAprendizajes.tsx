@@ -20,7 +20,7 @@ import {
     subscribeToAllUsers
 } from '../../src/firebaseHelpers/evaluacionHelper';
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+
 
 // Esta función ha sido eliminada para evitar problemas de visualización
 
@@ -319,23 +319,15 @@ const PruebasSubmodule: React.FC = () => {
                 return;
             }
 
-            const ai = new GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ 
-              model: "gemini-1.5-pro-latest",
-              generationConfig: {
-                temperature: 0.3, // Menos creatividad, más precisión para contexto educativo
-                topP: 0.8,
-                topK: 40,
-                maxOutputTokens: 8192,
-              }
+
+            // Lógica Gemini movida al backend. Llama a un endpoint seguro:
+            const response = await fetch('/api/generarEvaluacion', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, formData })
             });
-            
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-            const text = response.text();
-            
-            const cleanedText = text.replace(/^```json\s*|```\s*$/g, '');
-            const generatedData = JSON.parse(cleanedText);
+            if (!response.ok) throw new Error('Error al generar la prueba con IA');
+            const generatedData = await response.json();
 
             let puntajeIdeal = 0;
             generatedData.actividades.forEach((act: PruebaActividad) => {
@@ -1115,21 +1107,15 @@ const RubricasSubmodule: React.FC<{
                 return;
             }
 
-            const ai = new GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ 
-              model: "gemini-1.5-pro-latest",
-              generationConfig: {
-                temperature: 0.3, // Menos creatividad, más precisión para contexto educativo
-                topP: 0.8,
-                topK: 40,
-                maxOutputTokens: 8192,
-              }
+
+            // Lógica Gemini movida al backend. Llama a un endpoint seguro:
+            const response = await fetch('/api/generarRubrica', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, title, description })
             });
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-            const text = response.text();
-            
-            const generatedDimensions = JSON.parse(text);
+            if (!response.ok) throw new Error('Error al generar la rúbrica con IA');
+            const generatedDimensions = await response.json();
             
             const newRubrica: RubricaEstatica = {
                 id: crypto.randomUUID(),
@@ -1187,21 +1173,15 @@ const RubricasSubmodule: React.FC<{
                 return;
             }
 
-            const ai = new GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ 
-              model: "gemini-1.5-pro-latest",
-              generationConfig: {
-                temperature: 0.3, // Menos creatividad, más precisión para contexto educativo
-                topP: 0.8,
-                topK: 40,
-                maxOutputTokens: 8192,
-              }
+
+            // Lógica Gemini movida al backend. Llama a un endpoint seguro:
+            const response = await fetch('/api/generarDimension', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, newDimensionName, currentRubrica })
             });
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-            const text = response.text();
-            
-            const generatedLevels = JSON.parse(text);
+            if (!response.ok) throw new Error('Error al generar la dimensión con IA');
+            const generatedLevels = await response.json();
 
             setCurrentRubrica(prev => prev ? {
                 ...prev,
@@ -1484,24 +1464,19 @@ const RubricasInteractivas: React.FC<{
                 return;
             }
 
-            const ai = new GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ 
-              model: "gemini-1.5-pro-latest",
-              generationConfig: {
-                temperature: 0.3, // Menos creatividad, más precisión para contexto educativo
-                topP: 0.8,
-                topK: 40,
-                maxOutputTokens: 8192,
-              }
+
+            // Lógica Gemini movida al backend. Llama a un endpoint seguro:
+            const response = await fetch('/api/generarFeedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, studentName, rubrica: modifiedRubrica })
             });
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-            const text = response.text();
-            
+            if (!response.ok) throw new Error('Error al generar feedback con IA');
+            const { feedback } = await response.json();
             setModifiedRubrica(prev => {
                 if (!prev) return null;
                 const updated = JSON.parse(JSON.stringify(prev));
-                updated.resultados[studentName].feedback = text.replace(/(\*\*|\*)/g, '');
+                updated.resultados[studentName].feedback = feedback;
                 return updated;
             });
         } catch(e) {

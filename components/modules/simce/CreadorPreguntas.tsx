@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { CheckCircle, AlertCircle, Save, RefreshCcw, Loader2 } from 'lucide-react';
 import { Pregunta, AsignaturaSimce, SetPreguntas } from '../../../types/simce';
 import { crearSetPreguntas, actualizarSetPreguntas } from '@/firebaseHelpers/simceHelper';
@@ -76,6 +75,7 @@ const CreadorPreguntas: React.FC<CreadorPreguntasProps> = ({
     ]
   };
 
+  // Cambio: ahora la generación de preguntas se realiza vía backend para evitar exponer la API Key y controlar el uso/costos de Gemini.
   const generarPreguntas = async () => {
     if (!eje || !objetivo || !nivel || !asignatura) {
       setError('Por favor, completa todos los campos');
@@ -86,41 +86,23 @@ const CreadorPreguntas: React.FC<CreadorPreguntasProps> = ({
     setError(null);
 
     try {
-      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
-      const prompt = `Genera ${cantidadPreguntas} preguntas tipo SIMCE para la asignatura de ${asignatura}, 
-      nivel ${nivel}, eje ${eje}, con el objetivo de aprendizaje: ${objetivo}.
-      
-      Cada pregunta debe ser desafiante pero adecuada para el nivel, con 4 alternativas donde solo una es correcta.
-      
-      Devuelve solo un JSON array con objetos con la siguiente estructura, sin texto adicional:
-      [
-        {
-          "enunciado": "Texto de la pregunta",
-          "alternativas": ["Alternativa A", "Alternativa B", "Alternativa C", "Alternativa D"],
-          "respuestaCorrecta": 0, // Índice de la alternativa correcta (0-3)
-          "explicacion": "Breve explicación de por qué esa es la respuesta correcta"
-        }
-      ]`;
-
-      const result = await model.generateContent(prompt);
-      const response = result.response;
-      const text = response.text();
-      
-      // Extraer el JSON del texto
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      
-      if (!jsonMatch) {
-        throw new Error("No se pudo generar el formato correcto de preguntas");
-      }
-      
-      const jsonStr = jsonMatch[0];
-      const preguntasGeneradas: Pregunta[] = JSON.parse(jsonStr);
-
-      setPreguntas(preguntasGeneradas);
+      const response = await fetch('/api/generarPreguntasSimce', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          asignatura,
+          nivel,
+          eje,
+          objetivo,
+          cantidadPreguntas
+        })
+      });
+      if (!response.ok) throw new Error('Error al generar preguntas');
+      const data = await response.json();
+      if (!Array.isArray(data)) throw new Error('Respuesta inesperada del servidor');
+      setPreguntas(data);
       if (onPreguntasCreadas) {
-        onPreguntasCreadas(preguntasGeneradas);
+        onPreguntasCreadas(data);
       }
     } catch (err) {
       console.error('Error generando preguntas:', err);

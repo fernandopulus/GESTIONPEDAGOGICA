@@ -261,8 +261,8 @@ export async function obtenerEvaluacionesEstudiante(estudianteId: string, cursoI
         textoBase: '' // Campo adicional para almacenar el texto base a nivel de evaluación
       };
       
-      // Si es una evaluación de Lectura, buscar y asegurar que el texto base esté disponible
-      if (set.asignatura === 'Lectura') {
+  // Si es una evaluación de Competencia Lectora, buscar y asegurar que el texto base esté disponible
+  if (set.asignatura === 'Competencia Lectora') {
         // Buscar texto base en cualquiera de las preguntas
         let textoBase = '';
         for (const pregunta of set.preguntas) {
