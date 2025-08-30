@@ -39,10 +39,38 @@ export async function actualizarSetPreguntas(id: string, data: Partial<SetPregun
 
 export async function obtenerSetPreguntas(id: string): Promise<SetPreguntas> {
   try {
-    const docSnap = await getDoc(doc(db, SETS_COLLECTION, id));
+    console.log(`[DEBUG] obtenerSetPreguntas - Buscando set con ID: ${id}`);
+    
+    // Intentar primero en la colección principal de sets
+    let docSnap = await getDoc(doc(db, SETS_COLLECTION, id));
+    
+    // Si no está en la colección principal, intentar en la colección de evaluaciones
+    if (!docSnap.exists()) {
+      console.log(`[DEBUG] obtenerSetPreguntas - No encontrado en ${SETS_COLLECTION}, buscando en simce_evaluaciones`);
+      docSnap = await getDoc(doc(db, 'simce_evaluaciones', id));
+    }
+    
     if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() } as SetPreguntas;
+      const data = docSnap.data();
+      console.log(`[DEBUG] obtenerSetPreguntas - Set encontrado: ${data.titulo || 'Sin título'}`);
+      console.log(`[DEBUG] obtenerSetPreguntas - Cantidad de preguntas: ${data.preguntas?.length || 0}`);
+      
+      // Verificar y registrar detalles del set
+      if (data.preguntas && data.preguntas.length > 0) {
+        // Verificar si alguna pregunta tiene textoBase
+        for (let i = 0; i < data.preguntas.length; i++) {
+          const pregunta = data.preguntas[i];
+          if (pregunta.textoBase) {
+            console.log(`[DEBUG] obtenerSetPreguntas - Texto base encontrado en pregunta ${i + 1}`);
+            console.log(`[DEBUG] obtenerSetPreguntas - Extracto del texto base: ${pregunta.textoBase.substring(0, 50)}...`);
+            break;
+          }
+        }
+      }
+      
+      return { id: docSnap.id, ...data } as SetPreguntas;
     } else {
+      console.log(`[DEBUG] obtenerSetPreguntas - No se encontró set con ID: ${id} en ninguna colección`);
       throw new Error('El set de preguntas no existe');
     }
   } catch (error) {
@@ -69,14 +97,57 @@ export async function obtenerSetsPreguntasPorProfesor(profesorId: string): Promi
 
 export async function obtenerSetsPreguntasPorCurso(cursoId: string): Promise<SetPreguntas[]> {
   try {
+    console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Buscando sets para curso ${cursoId}`);
+    
+    if (!cursoId) {
+      console.error("[DEBUG] obtenerSetsPreguntasPorCurso - Error: cursoId es undefined o vacío");
+      return [];
+    }
+    
+    // Primero intentamos en la colección principal de sets
     const q = query(
       collection(db, SETS_COLLECTION),
       where('cursosAsignados', 'array-contains', cursoId),
       orderBy('fechaCreacion', 'desc')
     );
     
+    console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Query ejecutando en ${SETS_COLLECTION}:`, q);
+    
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SetPreguntas));
+    console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Resultados encontrados en ${SETS_COLLECTION}: ${querySnapshot.docs.length}`);
+    
+    // Después intentamos en la colección de evaluaciones (donde se guardan las nuevas)
+    const qEvals = query(
+      collection(db, 'simce_evaluaciones'),
+      where('cursosAsignados', 'array-contains', cursoId),
+      orderBy('fechaCreacion', 'desc')
+    );
+    
+    console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Query ejecutando en simce_evaluaciones:`, qEvals);
+    
+    const evalsSnapshot = await getDocs(qEvals);
+    console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Resultados encontrados en simce_evaluaciones: ${evalsSnapshot.docs.length}`);
+    
+    // Combinamos los resultados de ambas colecciones
+    const sets = [
+      ...querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Set encontrado en ${SETS_COLLECTION}: ${doc.id}, cursosAsignados:`, data.cursosAsignados);
+        return { id: doc.id, ...data } as SetPreguntas;
+      }),
+      ...evalsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Set encontrado en simce_evaluaciones: ${doc.id}, cursosAsignados:`, data.cursosAsignados);
+        return { 
+          id: doc.id, 
+          ...data,
+          preguntas: data.preguntas || []
+        } as SetPreguntas;
+      })
+    ];
+    
+    console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Total sets combinados: ${sets.length}`);
+    return sets;
   } catch (error) {
     console.error('Error al obtener sets de preguntas por curso:', error);
     throw new Error('No se pudieron obtener los sets de preguntas');
@@ -171,17 +242,50 @@ export async function eliminarResultado(id: string): Promise<void> {
  */
 export async function obtenerEvaluacionesEstudiante(estudianteId: string, cursoId: string): Promise<any[]> {
   try {
+    console.log(`[DEBUG] obtenerEvaluacionesEstudiante - Buscando evaluaciones para estudiante ${estudianteId} en curso ${cursoId}`);
+    
     // Reutilizamos obtenerSetsPreguntasPorCurso para listar sets asignados al curso
     const sets = await obtenerSetsPreguntasPorCurso(cursoId);
-    // Mapear a una estructura de evaluación esperada por la UI
-    return sets.map(set => ({
-      id: set.id,
-      titulo: set.titulo,
-      descripcion: set.descripcion || '',
-      asignatura: set.asignatura,
-      preguntas: set.preguntas,
-      fechaAsignacion: set.fechaCreacion || new Date().toISOString(),
-    }));
+    console.log(`[DEBUG] obtenerEvaluacionesEstudiante - Encontradas ${sets.length} evaluaciones asignadas al curso ${cursoId}`);
+    
+    // Mapear a una estructura de evaluación esperada por la UI y asegurar que el texto base esté presente
+    const evaluacionesMapeadas = sets.map(set => {
+      // Crear la estructura base
+      const evaluacion = {
+        id: set.id,
+        titulo: set.titulo,
+        descripcion: set.descripcion || '',
+        asignatura: set.asignatura,
+        preguntas: [...set.preguntas], // Copia las preguntas para no modificar el original
+        fechaAsignacion: set.fechaCreacion || new Date().toISOString(),
+        textoBase: '' // Campo adicional para almacenar el texto base a nivel de evaluación
+      };
+      
+      // Si es una evaluación de Lectura, buscar y asegurar que el texto base esté disponible
+      if (set.asignatura === 'Lectura') {
+        // Buscar texto base en cualquiera de las preguntas
+        let textoBase = '';
+        for (const pregunta of set.preguntas) {
+          if (pregunta.textoBase && pregunta.textoBase.trim()) {
+            textoBase = pregunta.textoBase.trim();
+            console.log(`[DEBUG] Texto base encontrado en pregunta ${pregunta.id}:`, textoBase.substring(0, 50) + '...');
+            break;
+          }
+        }
+        
+        // Si se encontró texto base, asegurarse de que esté en la primera pregunta
+        if (textoBase && evaluacion.preguntas.length > 0) {
+          console.log(`[DEBUG] Asignando texto base a la evaluación y primera pregunta: ${set.id}`);
+          evaluacion.textoBase = textoBase;
+          evaluacion.preguntas[0].textoBase = textoBase;
+        }
+      }
+      
+      return evaluacion;
+    });
+    
+    console.log(`[DEBUG] obtenerEvaluacionesEstudiante - Evaluaciones mapeadas: ${evaluacionesMapeadas.length}`);
+    return evaluacionesMapeadas;
   } catch (error) {
     console.error('Error en obtenerEvaluacionesEstudiante:', error);
     return [];
@@ -193,7 +297,27 @@ export async function obtenerEvaluacionesEstudiante(estudianteId: string, cursoI
  */
 export async function obtenerEvaluacionPorId(id: string): Promise<any | null> {
   try {
+    console.log(`[DEBUG] obtenerEvaluacionPorId - Buscando evaluación con ID: ${id}`);
     const set = await obtenerSetPreguntas(id);
+    
+    if (set) {
+      console.log(`[DEBUG] obtenerEvaluacionPorId - Evaluación encontrada: ${set.titulo}`);
+      console.log(`[DEBUG] obtenerEvaluacionPorId - Asignatura: ${set.asignatura}`);
+      console.log(`[DEBUG] obtenerEvaluacionPorId - Cantidad de preguntas: ${set.preguntas?.length || 0}`);
+      
+      // Verificar si alguna pregunta tiene textoBase
+      const tieneTextoBase = set.preguntas.some(p => p.textoBase);
+      console.log(`[DEBUG] obtenerEvaluacionPorId - ¿Tiene texto base?: ${tieneTextoBase}`);
+      
+      if (tieneTextoBase) {
+        const preguntaConTexto = set.preguntas.find(p => p.textoBase);
+        console.log(`[DEBUG] obtenerEvaluacionPorId - Texto base encontrado en pregunta: ${preguntaConTexto?.id}`);
+        console.log(`[DEBUG] obtenerEvaluacionPorId - Texto base (primeros 50 caracteres): ${preguntaConTexto?.textoBase?.substring(0, 50)}...`);
+      }
+    } else {
+      console.log(`[DEBUG] obtenerEvaluacionPorId - No se encontró evaluación con ID: ${id}`);
+    }
+    
     return set || null;
   } catch (error) {
     console.error('Error en obtenerEvaluacionPorId:', error);

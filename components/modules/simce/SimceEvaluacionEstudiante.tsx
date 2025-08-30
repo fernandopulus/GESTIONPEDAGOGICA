@@ -13,9 +13,9 @@ import {
   BarChart
 } from 'lucide-react';
 import { 
-  SimceEvaluacion, 
-  SimcePregunta, 
-  SimceIntento 
+  SetPreguntas as SimceEvaluacion, 
+  Pregunta as SimcePregunta, 
+  ResultadoIntento as SimceIntento 
 } from '../../../types/simce';
 import { 
   obtenerEvaluacionesEstudiante, 
@@ -23,6 +23,8 @@ import {
   guardarIntentoEvaluacion,
   verificarIntentoExistente
 } from '@/firebaseHelpers/simceHelper';
+import { asegurarTextoBaseEnEvaluacion } from '@/utils/textoBaseHelper';
+import UltraSafeRenderer from '../../common/UltraSafeRenderer';
 
 interface SimceEvaluacionEstudianteProps {
   currentUser: User;
@@ -54,16 +56,20 @@ export const SimceEvaluacionEstudiante: React.FC<SimceEvaluacionEstudianteProps>
   
   useEffect(() => {
     const cargarEvaluaciones = async () => {
-      if (!currentUser.uid) return;
+      if (!currentUser.id) return;
       
       try {
         setCargando(true);
         
         // Obtener evaluaciones asignadas al estudiante
+        console.log(`[DEBUG] SimceEvaluacionEstudiante - Cargando evaluaciones para estudiante: ${currentUser.id}, curso: ${currentUser.curso}`);
+        
         const evaluacionesData = await obtenerEvaluacionesEstudiante(
-          currentUser.uid, 
+          currentUser.id, 
           currentUser.curso || ''
         );
+        
+        console.log(`[DEBUG] SimceEvaluacionEstudiante - Evaluaciones obtenidas: ${evaluacionesData.length}`, evaluacionesData);
         
         setEvaluaciones(evaluacionesData);
       } catch (error) {
@@ -85,8 +91,32 @@ export const SimceEvaluacionEstudiante: React.FC<SimceEvaluacionEstudianteProps>
       setResultados(null);
       setIntentoCompletado(false);
       
+      console.log(`[DEBUG] Seleccionando evaluación con ID: ${evaluacionId}`);
+      
+      // Primero obtener la evaluación completa para ver sus detalles
+      let evaluacionCompleta = await obtenerEvaluacionPorId(evaluacionId);
+      console.log("[DEBUG] Evaluación completa obtenida:", evaluacionCompleta);
+      console.log("[DEBUG] Preguntas en la evaluación:", evaluacionCompleta?.preguntas?.length || 0);
+      
+      // Procesar la evaluación para asegurar que tenga texto base si es de Lectura
+      if (evaluacionCompleta) {
+        evaluacionCompleta = asegurarTextoBaseEnEvaluacion(evaluacionCompleta);
+        console.log("[DEBUG] Evaluación procesada con texto base asegurado");
+        setEvaluacionSeleccionada(evaluacionCompleta);
+      }
+      
+      if (evaluacionCompleta?.preguntas) {
+        const tieneTextoBase = evaluacionCompleta.preguntas.some(p => p.textoBase) || evaluacionCompleta.textoBase;
+        console.log("[DEBUG] ¿La evaluación tiene texto base?", tieneTextoBase);
+        if (tieneTextoBase) {
+          const textoBase = evaluacionCompleta.textoBase || evaluacionCompleta.preguntas.find(p => p.textoBase)?.textoBase;
+          console.log("[DEBUG] Texto base encontrado:", textoBase?.substring(0, 50) + "...");
+        }
+      }
+      
       // Verificar si ya existe un intento para esta evaluación
-      const intentos = await verificarIntentoExistente(currentUser.uid || '', evaluacionId);
+      const intentos = await verificarIntentoExistente(currentUser.id || '', evaluacionId);
+      console.log(`[DEBUG] Intentos existentes para esta evaluación: ${intentos.length}`);
       setIntentosExistentes(intentos);
       
       if (intentos.length > 0) {
@@ -203,17 +233,21 @@ export const SimceEvaluacionEstudiante: React.FC<SimceEvaluacionEstudianteProps>
       const tiempoRealizacion = tiempoInicio ? Math.floor((tiempoFin - tiempoInicio) / 1000) : 0;
       
       const nuevoIntento: Omit<SimceIntento, 'id'> = {
-        evaluacionId: evaluacionSeleccionada.id,
+        setId: evaluacionSeleccionada.id,
         estudianteId: currentUser.uid || '',
         estudianteNombre: currentUser.nombreCompleto || '',
-        respuestas: Object.entries(respuestas).map(([preguntaId, alternativaSeleccionada]) => ({
-          preguntaId,
-          alternativaSeleccionada
-        })),
-        porcentajeLogro,
+        respuestas: Object.entries(respuestas).map(([preguntaId, alternativaSeleccionada]) => {
+          const pregunta = evaluacionSeleccionada.preguntas.find(p => p.id === preguntaId);
+          const alternativaCorrecta = pregunta?.respuestaCorrecta;
+          return {
+            preguntaId,
+            alternativaSeleccionadaId: String(alternativaSeleccionada),
+            esCorrecta: String(alternativaSeleccionada) === alternativaCorrecta
+          };
+        }),
+        porcentajeAciertos: porcentajeLogro,
         nivelLogro,
-        fechaRealizacion: new Date().toISOString(),
-        tiempoRealizacion
+        fechaEnvio: new Date().toISOString(),
       };
       
       await guardarIntentoEvaluacion(nuevoIntento);
@@ -488,6 +522,60 @@ export const SimceEvaluacionEstudiante: React.FC<SimceEvaluacionEstudianteProps>
               {error}
             </div>
           )}
+
+          {/* Mostrar texto base de comprensión si existe y es asignatura Lectura */}
+          {evaluacionSeleccionada.asignatura === 'Lectura' && (() => {
+            console.log("[DEBUG] Asignatura de Lectura detectada, buscando texto base");
+            
+            // Buscar texto base en múltiples ubicaciones posibles
+            // 1. En la propiedad directa textoBase (si existe)
+            // 2. En cualquier pregunta
+            // 3. En la primera pregunta específicamente
+            
+            let textoBase = (evaluacionSeleccionada as any).textoBase || 
+                           evaluacionSeleccionada.preguntas.find(p => p.textoBase)?.textoBase ||
+                           (evaluacionSeleccionada.preguntas[0]?.textoBase);
+            
+            console.log("[DEBUG] Texto base encontrado:", textoBase ? "SÍ" : "NO");
+            
+            // Si no se encontró texto base pero es una evaluación de Lectura, mostrar mensaje
+            if (!textoBase) {
+              console.log("[WARNING] Es una evaluación de Lectura pero no tiene texto base");
+              
+              // Verificar si hay alguna descripción que pueda servir como texto base
+              if (evaluacionSeleccionada.descripcion && evaluacionSeleccionada.descripcion.length > 50) {
+                textoBase = "⚠️ NOTA: El texto de comprensión no está disponible. La evaluación podría estar incompleta. Comunícate con tu profesor.\n\n" + 
+                           evaluacionSeleccionada.descripcion;
+                console.log("[DEBUG] Usando descripción como texto base alternativo");
+              }
+            }
+            
+            if (textoBase) {
+              return (
+                <div className="mb-8 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg border-2 border-blue-200 dark:border-blue-700 shadow-sm">
+                  <div className="flex items-center mb-3">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-800 rounded-lg mr-3">
+                      <BookOpen className="w-6 h-6 text-blue-600 dark:text-blue-300" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-blue-800 dark:text-blue-200 text-lg">
+                        📖 Texto de Comprensión Lectora
+                      </h4>
+                      <p className="text-blue-600 dark:text-blue-400 text-sm">
+                        Lee atentamente el siguiente texto antes de responder las preguntas
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-white dark:bg-slate-800 p-4 rounded-md border border-blue-100 dark:border-blue-800">
+                    <div className="prose prose-sm max-w-none text-slate-800 dark:text-slate-200">
+                      <UltraSafeRenderer content={textoBase} context="simce-texto-base" />
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           <div className="space-y-6">
             {evaluacionSeleccionada.preguntas.map((pregunta, index) => (

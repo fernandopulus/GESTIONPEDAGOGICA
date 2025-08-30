@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import AdminPreguntas from './AdminPreguntas';
+import { SimceGeneradorPreguntas } from '../../simce/SimceGeneradorPreguntas';
+import SimceResultadosLibroClases from '../../simce/SimceResultadosLibroClases';
 // import EvaluacionSimce from './EvaluacionSimce'; // Comentado temporalmente mientras se integra
 
 interface SimceModuleProps {
@@ -8,9 +10,10 @@ interface SimceModuleProps {
 }
 
 const SimceModule: React.FC<SimceModuleProps> = ({ currentUser, permisos }) => {
-  const [activeTab, setActiveTab] = useState<'admin' | 'evaluacion'>('admin');
+  const [activeTab, setActiveTab] = useState<'admin' | 'evaluacion' | 'generador' | 'resultados'>('admin');
 
   const isAdmin = permisos.includes('admin') || permisos.includes('simce_admin');
+  const isProfesor = permisos.includes('profesor') || isAdmin;
 
   return (
     <div className="container mx-auto py-6">
@@ -32,6 +35,34 @@ const SimceModule: React.FC<SimceModuleProps> = ({ currentUser, permisos }) => {
                 Administración de Preguntas
               </button>
             )}
+            {isProfesor && (
+              <button
+                onClick={() => setActiveTab('generador')}
+                className={`
+                  py-4 px-1 border-b-2 font-medium text-sm
+                  ${activeTab === 'generador'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+                `}
+              >
+                Crear Evaluaciones
+              </button>
+            )}
+
+            {isProfesor && (
+              <button
+                onClick={() => setActiveTab('resultados')}
+                className={`
+                  py-4 px-1 border-b-2 font-medium text-sm
+                  ${activeTab === 'resultados'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+                `}
+              >
+                Libro de Clases
+              </button>
+            )}
+
             <button
               onClick={() => setActiveTab('evaluacion')}
               className={`
@@ -41,7 +72,7 @@ const SimceModule: React.FC<SimceModuleProps> = ({ currentUser, permisos }) => {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
               `}
             >
-              Evaluación SIMCE
+              Realizar Evaluación
             </button>
           </nav>
         </div>
@@ -50,6 +81,14 @@ const SimceModule: React.FC<SimceModuleProps> = ({ currentUser, permisos }) => {
       <div className="mt-6">
         {activeTab === 'admin' && isAdmin && (
           <AdminPreguntas currentUser={currentUser} />
+        )}
+        
+        {activeTab === 'generador' && isProfesor && (
+          <SimceGeneradorPreguntas currentUser={currentUser} />
+        )}
+        
+        {activeTab === 'resultados' && isProfesor && (
+          <SimceResultadosLibroClases currentUser={currentUser} />
         )}
         
         {activeTab === 'evaluacion' && (

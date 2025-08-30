@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback, FormEvent, ChangeEvent } from 'react';
 import { User, Profile, RubricaInteractiva, ResultadoInteractivo, Prueba, PruebaItemTipo, PruebaActividad, PruebaItem, SeleccionMultipleItem, TerminosPareadosItem, RubricaEstatica, DimensionRubrica, NivelDescriptor, VerdaderoFalsoItem, ComprensionLecturaItem, DesarrolloItem, DificultadAprendizaje } from '../../types';
 import { ASIGNATURAS, CURSOS, NIVELES, PDFIcon, DIFICULTADES_APRENDIZAJE } from '../../constants';
+import { User as UserIcon, BookOpen, Calendar, School, GraduationCap, FileText, Info, CheckSquare, BookMarked, ListOrdered } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logApiCall } from '../utils/apiLogger';
+// Importamos la fuente Google Sans Code y su función de carga
+import { addGoogleSansCodeFont } from '../../utils/fonts/googleSansCode';
 import {
     subscribeToPruebas,
     savePrueba,
@@ -19,6 +22,7 @@ import {
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+// Esta función ha sido eliminada para evitar problemas de visualización
 
 const TIPOS_ACTIVIDAD_PRUEBA: PruebaItemTipo[] = ['Selección múltiple', 'Verdadero o Falso', 'Desarrollo', 'Términos pareados', 'Comprensión de lectura'];
 
@@ -306,7 +310,7 @@ const PruebasSubmodule: React.FC = () => {
         `;
 
         try {
-            logApiCall('Evaluación - Pruebas');
+            logApiCall('Evaluación - Pruebas', null);
             
             const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
             if (!apiKey) {
@@ -402,6 +406,19 @@ const PruebasSubmodule: React.FC = () => {
     const handleDownloadPDF = async (prueba: Prueba) => {
         setIsDownloading(true);
         const doc = new jsPDF('p', 'mm', 'a4');
+        
+        // Intentar añadir la fuente Google Sans Code (esto es un esqueleto y no funcionará sin los datos reales)
+        try {
+            addGoogleSansCodeFont(doc);
+            // Si la fuente se carga correctamente, establecerla como fuente por defecto
+            doc.setFont('GoogleSansCode'); // Esto solo funcionará si la fuente se carga correctamente
+        } catch (e) {
+            console.warn("No se pudo cargar Google Sans Code, usando helvetica como fallback", e);
+        }
+        
+        // Establecer helvetica como fuente global para todo el documento
+        doc.setFont("helvetica");
+        
         const margin = 20;
         const pageHeight = doc.internal.pageSize.getHeight();
         const pageWidth = doc.internal.pageSize.getWidth();
@@ -435,42 +452,109 @@ const PruebasSubmodule: React.FC = () => {
 
         doc.setTextColor(0, 0, 0);
 
-        // Título más llamativo
-        doc.setFont('helvetica', 'bold');
+        // Título simple y claro con Google Sans Code si está disponible
+        // La fuente ya está configurada en la inicialización
         doc.setFontSize(18);
         doc.text(prueba.nombre, pageWidth / 2, y, { align: 'center' });
         y += 15;
 
-        // Datos de la prueba en una tabla mejorada
+        // Datos de la prueba en una tabla mejorada con iconos
         autoTable(doc, {
             startY: y,
             body: [
-                [{ content: 'Asignatura:', styles: { fontStyle: 'bold' } }, prueba.asignatura, { content: 'Puntaje Ideal:', styles: { fontStyle: 'bold' } }, prueba.puntajeIdeal.toString()],
-                [{ content: 'Nivel:', styles: { fontStyle: 'bold' } }, prueba.nivel, { content: 'Fecha:', styles: { fontStyle: 'bold' } }, new Date().toLocaleDateString()],
-                [{ content: 'Objetivo de Aprendizaje:', styles: { fontStyle: 'bold', valign: 'top' } }, { content: prueba.objetivo, colSpan: 3 }],
-                [{ content: 'Instrucciones Generales:', styles: { fontStyle: 'bold', valign: 'top' } }, { content: prueba.instruccionesGenerales, colSpan: 3 }],
+                [{ 
+                    content: 'Nombre del Estudiante:', 
+                    styles: { fontStyle: 'bold', cellPadding: 2 } 
+                }, { 
+                    content: '', 
+                    colSpan: 3,
+                    styles: { cellPadding: 2 }
+                }],
+                [{ 
+                    content: 'Curso:', 
+                    styles: { fontStyle: 'bold', cellPadding: 2 } 
+                }, { 
+                    content: '', 
+                    colSpan: 1,
+                    styles: { cellPadding: 2 }
+                }, { 
+                    content: 'Fecha:', 
+                    styles: { fontStyle: 'bold', cellPadding: 2 } 
+                }, {
+                    content: new Date().toLocaleDateString(),
+                    styles: { cellPadding: 2 }
+                }],
+                [{ 
+                    content: 'Asignatura:', 
+                    styles: { fontStyle: 'bold', cellPadding: 2 } 
+                }, {
+                    content: prueba.asignatura,
+                    styles: { cellPadding: 2 }
+                }, { 
+                    content: 'Puntaje Ideal:', 
+                    styles: { fontStyle: 'bold', cellPadding: 2 } 
+                }, {
+                    content: prueba.puntajeIdeal.toString(),
+                    styles: { cellPadding: 2 }
+                }],
+                [{ 
+                    content: 'Nivel:', 
+                    styles: { fontStyle: 'bold', cellPadding: 2 } 
+                }, {
+                    content: prueba.nivel,
+                    styles: { cellPadding: 2 }
+                }, { 
+                    content: 'Nota:', 
+                    styles: { fontStyle: 'bold', cellPadding: 2 } 
+                }, {
+                    content: '',
+                    styles: { cellPadding: 2 }
+                }],
+                [{ 
+                    content: 'Objetivo de Aprendizaje:', 
+                    styles: { fontStyle: 'bold', valign: 'top', cellPadding: 2 } 
+                }, { 
+                    content: prueba.objetivo, 
+                    colSpan: 3,
+                    styles: { cellPadding: 2 }
+                }],
+                [{ 
+                    content: 'Instrucciones Generales:', 
+                    styles: { fontStyle: 'bold', valign: 'top', cellPadding: 2 } 
+                }, { 
+                    content: prueba.instruccionesGenerales, 
+                    colSpan: 3,
+                    styles: { cellPadding: 2 }
+                }],
             ],
+            didDrawCell: (data) => {
+                // Eliminados todos los símbolos de las celdas de encabezado
+            },
             theme: 'grid',
             styles: { 
-                fontSize: 11, 
-                cellPadding: 5, 
+                fontSize: 10, // Tamaño de fuente más pequeño
+                cellPadding: 2.5, // Padding aún más reducido
                 textColor: [0, 0, 0], 
-                lineColor: [100, 100, 100], 
-                lineWidth: 0.1,
-                halign: 'left'
+                lineColor: [180, 180, 180], 
+                lineWidth: 0.1, // Líneas finas
+                halign: 'left',
+                minCellHeight: 10, // Altura mínima más reducida
+                overflow: 'linebreak', // Asegurar que el texto haga saltos de línea y no se corte
+                font: 'GoogleSansCode' // Usar Google Sans Code si está disponible
             },
             columnStyles: { 
-                0: { cellWidth: 45, fillColor: [245, 245, 245] }, 
-                2: { cellWidth: 30, fillColor: [245, 245, 245] } 
+                0: { cellWidth: 30, fillColor: [245, 245, 245] }, 
+                2: { cellWidth: 25, fillColor: [245, 245, 245] } 
             },
             didDrawPage: (data) => {
                 addHeader(doc);
             },
             // Asegurar que las celdas se expandan verticalmente si el contenido es largo
-            rowPageBreak: 'auto'
+            rowPageBreak: 'auto',
+            margin: { top: 3, right: 3, bottom: 3, left: 3 } // Margen reducido para la tabla
         });
 
-        y = (doc as any).lastAutoTable.finalY + 15; // Más espacio después de la tabla de información
+        y = (doc as any).lastAutoTable.finalY + 8; // Reducido el espacio después de la tabla de información
 
         const checkPageBreak = (requiredHeight: number) => {
             // Si no hay suficiente espacio para el elemento completo, hacer salto de página
@@ -484,8 +568,25 @@ const PruebasSubmodule: React.FC = () => {
             return false;
         };
         
+        // Nueva función para prevenir títulos huérfanos
+        // Verifica si hay suficiente espacio para título + altura mínima requerida para contenido siguiente
+        const preventOrphanedTitle = (titleHeight: number, minContentHeight: number) => {
+            const totalRequiredHeight = titleHeight + minContentHeight;
+            // Si no hay espacio suficiente para el título + un mínimo de contenido,
+            // mejor hacer salto de página antes
+            if (y + totalRequiredHeight > pageHeight - margin) {
+                doc.addPage();
+                addHeader(doc);
+                y = 30; // Ajustado para considerar la altura de la imagen de encabezado
+                doc.setTextColor(0,0,0);
+                return true;
+            }
+            return false;
+        };
+        
         const estimateHeight = (text: string | string[], options: { fontSize: number, width: number, isBold?: boolean }): number => {
-            doc.setFont('helvetica', options.isBold ? 'bold' : 'normal');
+            // Intentar usar Google Sans Code si está disponible, de lo contrario usar helvetica
+            doc.setFont(doc.getFont().fontName === 'GoogleSansCode' ? 'GoogleSansCode' : 'helvetica', options.isBold ? 'bold' : 'normal');
             doc.setFontSize(options.fontSize);
             const textToMeasure = Array.isArray(text) ? text.join('\n') : text;
             const dims = doc.getTextDimensions(textToMeasure, { maxWidth: options.width });
@@ -495,19 +596,26 @@ const PruebasSubmodule: React.FC = () => {
 
         for (const actividad of prueba.actividades) {
             // Estimar la altura para el encabezado de la actividad
-            let activityHeaderHeight = estimateHeight(actividad.titulo, { fontSize: 12, width: contentWidth, isBold: true }) +
-                                       estimateHeight(actividad.instrucciones, { fontSize: 10, width: contentWidth }) + 15;
+            const titleHeight = estimateHeight(actividad.titulo, { fontSize: 12, width: contentWidth, isBold: true });
+            const instrHeight = estimateHeight(actividad.instrucciones, { fontSize: 10, width: contentWidth });
+            let activityHeaderHeight = titleHeight + instrHeight + 15;
             
-            // Asegurarse de que el encabezado de la actividad no se corte
-            checkPageBreak(activityHeaderHeight);
+            // Estimar la altura del primer ítem como contenido mínimo para evitar títulos huérfanos
+            const minContentHeight = actividad.items.length > 0 ? 40 : 0; // Altura mínima para mostrar algo del primer ítem
             
-            doc.setFont('helvetica', 'bold');
+            // Verificar si el título quedaría huérfano, y si es así, hacer salto de página antes
+            preventOrphanedTitle(activityHeaderHeight, minContentHeight);
+            
+            // Título simple sin decoraciones - Usar la fuente configurada anteriormente
+            const currentFont = doc.getFont().fontName;
+            doc.setFont(currentFont, 'bold'); // Usar la fuente actual con estilo bold
             doc.setFontSize(12);
             doc.setTextColor(0,0,0);
             doc.text(actividad.titulo, margin, y);
+            
             y += 8;
 
-            doc.setFont('helvetica', 'normal');
+            doc.setFont(currentFont, 'normal'); // Volver al estilo normal con la misma fuente
             doc.setFontSize(10);
             const instruccionesLines = doc.splitTextToSize(actividad.instrucciones, contentWidth);
             doc.text(instruccionesLines, margin, y);
@@ -538,40 +646,74 @@ const PruebasSubmodule: React.FC = () => {
                     case 'Comprensión de lectura':
                         const ci = item as ComprensionLecturaItem;
                         // El texto de lectura es más largo, necesita más espacio
-                        itemHeight += estimateHeight(ci.texto, { fontSize: 10, width: contentWidth - 10 }) + 15;
+                        // Añadimos un margen extra para asegurar que todo quepa junto
+                        itemHeight += estimateHeight(ci.texto, { fontSize: 10, width: contentWidth - 10 }) + 30;
                         
                         ci.preguntas.forEach(subItem => {
                            const subPreguntaText = `${subItem.pregunta} (${subItem.puntaje} pts)`;
-                           itemHeight += estimateHeight(subPreguntaText, {fontSize: 10, width: contentWidth - 5, isBold: true}) + 5;
+                           itemHeight += estimateHeight(subPreguntaText, {fontSize: 10, width: contentWidth - 5, isBold: true}) + 8;
                            
                            if (subItem.tipo === 'Selección múltiple') {
                               (subItem as SeleccionMultipleItem).opciones.forEach(op => {
-                                   itemHeight += estimateHeight(op, { fontSize: 10, width: contentWidth - 10 }) + 4;
+                                   itemHeight += estimateHeight(op, { fontSize: 10, width: contentWidth - 10 }) + 5;
                                });
-                               itemHeight += 8;
+                               itemHeight += 10;
                            } else if (subItem.tipo === 'Desarrollo') {
-                               itemHeight += 35;
+                               itemHeight += 40;
                            }
-                           itemHeight += 10; // Mayor espaciado entre sub-preguntas
+                           itemHeight += 15; // Mayor espaciado entre sub-preguntas
                         });
-                        itemHeight += 20; // Más espacio después de la comprensión de lectura
+                        itemHeight += 30; // Más espacio después de la comprensión de lectura
                         break;
                 }
                 
-                // Verificar si se necesita un salto de página para esta pregunta completa
-                // Importante: no cortar preguntas entre páginas
-                if (checkPageBreak(itemHeight)) {
-                    // Si se hizo un salto de página, asegurarnos de que tenemos el contexto correcto
+                // Para comprensión de lectura, necesitamos un manejo especial
+                if (item.tipo === 'Comprensión de lectura') {
+                    // Calculamos el espacio que va a ocupar el ítem completo
+                    // Si no hay suficiente espacio, forzamos salto de página ANTES de imprimir cualquier parte
+                    if (y + itemHeight > pageHeight - margin) {
+                        doc.addPage();
+                        addHeader(doc);
+                        y = 30;
+                        doc.setTextColor(0,0,0);
+                    }
+                }
+                // Para otros tipos de preguntas, verificar si el título quedaría huérfano
+                else {
+                    // Calcular la altura del título de la pregunta
+                    const titleHeight = estimateHeight(preguntaText, { fontSize: 10, width: contentWidth, isBold: true }) + 5;
+                    
+                    // Calcular una altura mínima para el contenido de la pregunta
+                    let minContentHeight = 20; // Altura mínima por defecto
+                    
+                    if (item.tipo === 'Selección múltiple') {
+                        minContentHeight = Math.min(30, (item as SeleccionMultipleItem).opciones.length * 7); // Al menos mostrar algunas opciones
+                    } else if (item.tipo === 'Desarrollo') {
+                        minContentHeight = 20; // Mostrar al menos parte del área para escribir
+                    }
+                    
+                    // Prevenir que el título quede huérfano
+                    preventOrphanedTitle(titleHeight, minContentHeight);
+                    
+                    // Establecer el contexto correcto
                     doc.setTextColor(0,0,0);
                 }
 
-                doc.setFont('helvetica', 'bold');
+                const currentFont = doc.getFont().fontName;
+                doc.setFont(currentFont, 'bold');
                 doc.setFontSize(10);
                 doc.setTextColor(0,0,0);
-                const preguntaLines = doc.splitTextToSize(preguntaText, contentWidth);
+                
+                // Eliminados todos los elementos gráficos
+                doc.setFontSize(10);
+                
+                const preguntaLines = doc.splitTextToSize(preguntaText, contentWidth - 2);
                 doc.text(preguntaLines, margin, y);
-                y += preguntaLines.length * 5 + 5; // Incrementado para mejor espaciado
-                doc.setFont('helvetica', 'normal');
+                
+                // Eliminada la etiqueta de tipo de pregunta
+                
+                y += preguntaLines.length * 5 + 2; // Espaciado normal entre enunciado y alternativas
+                doc.setFont(currentFont, 'normal');
 
                 if (item.tipo === 'Selección múltiple') {
                     (item as SeleccionMultipleItem).opciones.forEach((opcion, i) => {
@@ -579,12 +721,12 @@ const PruebasSubmodule: React.FC = () => {
                         const opLines = doc.splitTextToSize(`${String.fromCharCode(65 + i)}) ${opcion}`, contentWidth - 15);
                         doc.text(opLines, margin + 5, y);
                         // Interlineado sencillo (no añadir espacio adicional entre líneas de la misma opción)
-                        y += opLines.length * 4; // Reducido para tener interlineado sencillo
+                        y += opLines.length * 3.5; // Reducido aún más para disminuir espacio entre opciones
                     });
-                    y += 6; // Espacio de 1.5 entre preguntas
+                    y += 4; // Reducido el espacio entre preguntas
                 } else if (item.tipo === 'Verdadero o Falso') {
                     doc.text('V ______    F ______', margin + 5, y);
-                    y += 6; // Espacio de 1.5 entre preguntas
+                    y += 4; // Reducido el espacio entre preguntas
                 } else if (item.tipo === 'Desarrollo') {
                     // Mejora del área de desarrollo con líneas punteadas para escribir
                     doc.setDrawColor(200, 200, 200);
@@ -622,12 +764,13 @@ const PruebasSubmodule: React.FC = () => {
                             cellPadding: 2,  // Reducido para tener celdas menos altas
                             minCellHeight: avgTextHeight, // Altura mínima similar a la altura del texto
                             valign: 'middle', // Centrar verticalmente el contenido
+                            font: 'GoogleSansCode' // Usar Google Sans Code si está disponible
                             // lineHeight ajustado con padding para interlineado sencillo
                         },
                         headStyles: { 
                             fontStyle: 'bold', 
-                            fillColor: [230, 230, 230], 
-                            textColor: [0,0,0], 
+                            fillColor: [80, 80, 80], 
+                            textColor: [255, 255, 255], 
                             halign: 'center'
                         },
                         didDrawPage: (data) => addHeader(doc),
@@ -637,20 +780,25 @@ const PruebasSubmodule: React.FC = () => {
                             1: { cellWidth: contentWidth * 0.55 }
                         }
                     });
-                    y = (doc as any).lastAutoTable.finalY + 6; // Espacio de 1.5 después de la tabla
+                    y = (doc as any).lastAutoTable.finalY + 4; // Reducido el espacio después de la tabla
                 } else if (item.tipo === 'Comprensión de lectura') {
                     const lecturaItem = item as ComprensionLecturaItem;
+                    
+                    // Calcular el tamaño total del texto para asegurar que no se corte
+                    const textLines = doc.splitTextToSize(lecturaItem.texto, contentWidth - 20);
+                    const lineHeight = 10 * 0.35 * 1.0; // 1.0 para interlineado sencillo
+                    const boxHeight = textLines.length * lineHeight + 8; // Altura del texto
+                    
+                    // Ya no necesitamos verificar el espacio aquí porque lo hicimos antes
+                    // Solo para casos extremos donde el texto por sí solo es muy largo
                     
                     // Mejorar el formato del texto de comprensión de lectura
                     doc.setFillColor(245, 245, 245);
                     doc.setDrawColor(200, 200, 200);
-                    const textLines = doc.splitTextToSize(lecturaItem.texto, contentWidth - 20);
-                    // Aplicar interlineado sencillo al texto de comprensión
-                    const lineHeight = 10 * 0.35 * 1.0; // 1.0 para interlineado sencillo
-                    const boxHeight = textLines.length * lineHeight + 12;
                     doc.roundedRect(margin, y, contentWidth, boxHeight, 2, 2, 'FD'); // Bordes redondeados
-                    y += 6; // Espacio superior
-                    doc.setFont('helvetica', 'normal');
+                    y += 4; // Reducido el espacio superior
+                    const currentFont = doc.getFont().fontName;
+                    doc.setFont(currentFont, 'normal');
                     doc.setFontSize(10);
                     doc.setTextColor(0, 0, 0);
                     
@@ -661,7 +809,7 @@ const PruebasSubmodule: React.FC = () => {
                         currentY += lineHeight;
                     });
                     
-                    y += boxHeight + 6; // Espacio de 1.5 después del texto
+                    y += boxHeight + 4; // Reducido el espacio después del texto
 
                     // Comprobar si hay espacio para al menos la primera subpregunta
                     // Si no, hacer un salto de página para evitar que las preguntas queden separadas del texto
@@ -679,30 +827,49 @@ const PruebasSubmodule: React.FC = () => {
                             optionsHeight = 35;
                         }
                         
-                        if (y + subPreguntaHeight + optionsHeight > pageHeight - margin) {
-                            doc.addPage();
-                            addHeader(doc);
-                            y = 30;
-                            doc.setTextColor(0,0,0);
-                        }
+                        // Usar la función preventOrphanedTitle para asegurar que haya suficiente espacio
+                        // para la subpregunta y al menos parte de sus opciones
+                        preventOrphanedTitle(subPreguntaHeight, Math.min(30, optionsHeight));
                     }
 
                     for (const [subIndex, subItem] of lecturaItem.preguntas.entries()) {
                         const subPreguntaText = `${subIndex + 1}. ${subItem.pregunta} (${subItem.puntaje} pts)`;
-                        doc.setFont('helvetica', 'bold');
+                        
+                        // Calcular altura para esta subpregunta
+                        const titleHeight = estimateHeight(subPreguntaText, { fontSize: 10, width: contentWidth - 10, isBold: true }) + 2;
+                        
+                        // Altura mínima para el contenido
+                        let minContentHeight = 20; // Por defecto
+                        if (subItem.tipo === 'Selección múltiple') {
+                            minContentHeight = Math.min(30, (subItem as SeleccionMultipleItem).opciones.length * 7);
+                        } else if (subItem.tipo === 'Desarrollo') {
+                            minContentHeight = 20; // Para desarrollo
+                        }
+                        
+                        // Prevenir título huérfano para esta subpregunta
+                        preventOrphanedTitle(titleHeight, minContentHeight);
+                        
+                        const currentFont = doc.getFont().fontName;
+                        doc.setFont(currentFont, 'bold');
+                        // Eliminados todos los elementos gráficos para subpreguntas
+                        doc.setFontSize(10);
+                        
                         const subPreguntaLines = doc.splitTextToSize(subPreguntaText, contentWidth - 10);
                         doc.text(subPreguntaLines, margin + 5, y);
-                        y += subPreguntaLines.length * 5 + 4;
-                        doc.setFont('helvetica', 'normal');
+                        
+                        // Eliminada la etiqueta de tipo de subpregunta
+                        
+                        y += subPreguntaLines.length * 5 + 2; // Espaciado normal
+                        doc.setFont(currentFont, 'normal');
                         
                         if (subItem.tipo === 'Selección múltiple') {
                             (subItem as SeleccionMultipleItem).opciones.forEach((op, i) => {
                                 const opLines = doc.splitTextToSize(`${String.fromCharCode(65 + i)}) ${op}`, contentWidth - 20);
                                 doc.text(opLines, margin + 10, y);
                                 // Interlineado sencillo dentro de cada opción
-                                y += opLines.length * 4;
+                                y += opLines.length * 3.5; // Reducido para disminuir espacio entre opciones
                             });
-                            y += 6; // Espacio de 1.5 después de las opciones
+                            y += 4; // Reducido el espacio entre preguntas
                         } else if (subItem.tipo === 'Desarrollo') {
                             // Mejora del área de desarrollo con líneas punteadas
                             doc.setDrawColor(200, 200, 200);
@@ -718,12 +885,12 @@ const PruebasSubmodule: React.FC = () => {
                             }
                             doc.setLineDashPattern([1], 0);
                             
-                            y += 25 + 6; // Altura + espacio de 1.5 después
+                            y += 25 + 4; // Altura + espacio reducido después
                         }
                         // No añadir espacio adicional entre subpreguntas ya que se ha ajustado al final de cada tipo
                     }
                 }
-                y += 6; // Espacio de 1.5 entre preguntas principales
+                y += 4; // Reducido el espacio entre preguntas principales
             }
         }
     

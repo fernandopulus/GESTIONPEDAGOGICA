@@ -25,7 +25,7 @@ import {
   crearEvaluacionSimce, 
   actualizarEvaluacionSimce, 
   obtenerEvaluacionesProfesor 
-} from '@/firebaseHelpers/simceHelper';
+} from '@/firebaseHelpers/simceHelperExt';
 
 interface SimceGeneradorPreguntasProps {
   currentUser: User;
@@ -238,10 +238,11 @@ Asegúrate de que cada pregunta sea desafiante pero apropiada para el nivel, y q
         fechaAsignacion: new Date().toISOString(),
         activo: true,
         profesor: {
-          id: currentUser.uid || currentUser.id || '',
+          id: currentUser.id || '',
           nombre: currentUser.nombreCompleto || 'Docente'
         },
-        cursoAsignado: cursosSeleccionados
+        cursoAsignado: cursosSeleccionados,
+        cursosAsignados: cursosSeleccionados // Agregamos este campo para compatibilidad con obtenerSetsPreguntasPorCurso
       };
       
       if (modo === 'creacion') {
