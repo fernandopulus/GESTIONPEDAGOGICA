@@ -10,7 +10,11 @@ app.use(express.json());
 // Endpoint para generar evaluaciones (ajusta la lógica según tu prompt y procesamiento)
 app.post("/generarEvaluacion", async (req: Request, res: Response) => {
   try {
-    const { prompt } = req.body;
+    const { prompt, uid } = req.body;
+    if (!uid) {
+      res.status(401).json({ error: "Usuario no autenticado. Debes iniciar sesión para generar una evaluación." });
+      return;
+    }
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       res.status(500).json({ error: "No Gemini API Key configured" });
