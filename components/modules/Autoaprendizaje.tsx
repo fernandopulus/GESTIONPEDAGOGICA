@@ -48,56 +48,20 @@ const generateAIFeedbackWithRetry = async (
   feedback: DetailedFeedback, 
   maxRetries = 3
 ): Promise<FeedbackAI | null> => {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) {
-    console.warn('⚠️ API Key de Gemini no encontrada');
+  // Lógica Gemini movida al backend. Llama a un endpoint seguro:
+  try {
+    const response = await fetch('/api/generarFeedbackAutoaprendizaje', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actividad, feedback })
+    });
+    if (!response.ok) throw new Error('Error al generar feedback con IA');
+    const data = await response.json();
+    return data as FeedbackAI;
+  } catch (error) {
+    console.error('Error al generar feedback con IA:', error);
     return null;
   }
-
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`🤖 Intento ${attempt} de generar feedback con IA`);
-      
-      const prompt = generateFeedbackPrompt(actividad, feedback);
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-
-      let text = response.text().trim();
-      text = text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '');
-      const jsonMatch = text.match(/\{[\s\S]*\}$/);
-
-      try {
-        const feedbackAI = JSON.parse(jsonMatch ? jsonMatch[0] : text);
-        console.log(`✅ Feedback generado exitosamente en intento ${attempt}`);
-        return feedbackAI;
-      } catch (parseError) {
-        console.warn(`⚠️ Error al parsear JSON en intento ${attempt}:`, parseError);
-        throw new Error('JSON parsing failed');
-      }
-      
-    } catch (error: any) {
-      console.log(`❌ Error en intento ${attempt}:`, error.message);
-      
-      // Si es error 503 (sobrecarga) y no es el último intento
-      if (error.message?.includes('503') && attempt < maxRetries) {
-        const delay = Math.pow(2, attempt) * 1000; // Backoff exponencial
-        console.log(`⏱️ Esperando ${delay}ms antes del siguiente intento...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
-      }
-      
-      // Si es el último intento o un error diferente
-      if (attempt === maxRetries) {
-        console.log(`🚫 Todos los intentos fallaron. Procediendo sin IA.`);
-        return null;
-      }
-    }
-  }
-  
-  return null;
 };
 
 /**

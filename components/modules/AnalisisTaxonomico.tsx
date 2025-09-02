@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, ChangeEvent } from 'react';
 import { User, AnalisisTaxonomico as AnalisisTaxonomicoType, BloomLevel } from '../../types';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+
 import { logApiCall } from '../utils/apiLogger';
 import { ASIGNATURAS } from '../../constants';
 import {
@@ -160,27 +160,15 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
 
         try {
             logApiCall('Análisis Taxonómico', currentUser);
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-            if (!apiKey) throw new Error("La clave de API no está configurada.");
 
-            const genAI = new GoogleGenerativeAI(apiKey);
-            const model = genAI.getGenerativeModel({ 
-                model: "gemini-1.5-pro",
-                generationConfig: { responseMimeType: "application/json", responseSchema: schema }
+            // Lógica Gemini movida al backend. Llama a un endpoint seguro:
+            const response = await fetch('/api/analisisTaxonomico', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, fileData, documentName, nivelForm, asignaturaForm, userId: currentUser.id })
             });
-
-            const filePart = { inlineData: { mimeType: fileData.mimeType, data: fileData.data } };
-            const result = await model.generateContent([prompt, filePart]);
-            const responseText = result.response.text();
-
-            let parsedResult: any;
-            try {
-                parsedResult = JSON.parse(responseText);
-            } catch (jsonError) {
-                console.error("Error al parsear JSON:", jsonError);
-                console.error("Respuesta recibida (no es JSON válido):", responseText);
-                throw new Error("La respuesta de la IA no tuvo un formato válido. Intente de nuevo.");
-            }
+            if (!response.ok) throw new Error('Error al analizar el documento con IA');
+            const parsedResult = await response.json();
 
             const newAnalysis: Omit<AnalisisTaxonomicoExt, 'id'> = {
                 documentName,

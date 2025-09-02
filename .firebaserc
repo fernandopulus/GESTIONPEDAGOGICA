@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "planificador-145df"
-  }
+    "default": "plania-clase",
+    "LIR": "plania-clase"
+  },
+  "targets": {},
+  "etags": {}
 }

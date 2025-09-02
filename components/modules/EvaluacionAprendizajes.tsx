@@ -312,12 +312,7 @@ const PruebasSubmodule: React.FC = () => {
         try {
             logApiCall('Evaluación - Pruebas', null);
             
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-            if (!apiKey) {
-                setError("La API Key de Gemini no está configurada.");
-                setIsGenerating(false);
-                return;
-            }
+            // Eliminado: la API Key de Gemini solo se usa en el backend
 
 
             // Lógica Gemini movida al backend. Llama a un endpoint seguro:
@@ -1099,13 +1094,7 @@ const RubricasSubmodule: React.FC<{
 
         try {
             logApiCall('Evaluación - Rúbricas', null);
-
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-            if (!apiKey) {
-                alert("La API Key de Gemini no está configurada.");
-                setIsLoading(false);
-                return;
-            }
+            // Eliminado: la API Key de Gemini solo se usa en el backend
 
 
             // Lógica Gemini movida al backend. Llama a un endpoint seguro:
@@ -1165,13 +1154,7 @@ const RubricasSubmodule: React.FC<{
 
         try {
             logApiCall('Evaluación - Rúbricas (Añadir Dimensión)', null);
-            
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-            if (!apiKey) {
-                alert("La API Key de Gemini no está configurada.");
-                setCurrentRubrica(prev => prev ? { ...prev, dimensiones: prev.dimensiones.filter(d => d.id !== newDimId) } : null);
-                return;
-            }
+            // Eliminado: la API Key de Gemini solo se usa en el backend
 
 
             // Lógica Gemini movida al backend. Llama a un endpoint seguro:
@@ -1457,12 +1440,7 @@ const RubricasInteractivas: React.FC<{
         try {
             logApiCall('Evaluación - Rúbricas Interactivas (Feedback)', null);
             
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-            if (!apiKey) {
-                alert("La API Key de Gemini no está configurada.");
-                setFeedbackLoadingStudent(null);
-                return;
-            }
+            // Eliminado: la API Key de Gemini solo se usa en el backend
 
 
             // Lógica Gemini movida al backend. Llama a un endpoint seguro:

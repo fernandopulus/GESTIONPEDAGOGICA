@@ -29,7 +29,7 @@ import { generatePDF, PDFGeneratorData } from '../../src/utils/pdfHelperApi';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logApiCall } from '../utils/apiLogger';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+
 import AcompanamientoDocenteDashboard from './AcompanamientoDocenteDashboard';
 
 // Firebase helpers (usa la versión con callback de progreso)
@@ -515,49 +515,22 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
   const handleImproveOPRText = async () => {
     setIaImproving(true);
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) {
-        alert('La API Key de Gemini no está configurada.');
-        return;
+      // Lógica Gemini movida al backend. Llama a un endpoint seguro:
+      setIaImproving(true);
+      try {
+        const response = await fetch('/api/mejorarTextoOPR', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ formData })
+        });
+        if (!response.ok) throw new Error('Error al mejorar el texto con IA');
+        const improved = await response.json();
+        setFormData((prev) => ({ ...prev, ...improved }));
+      } catch (error) {
+        setError('Error al mejorar el texto con IA');
+      } finally {
+        setIaImproving(false);
       }
-      // No necesitamos registrar este log por ahora
-      const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
-
-      const retro = formData.retroalimentacion;
-      const plan = formData.planificacion;
-
-      const results = await Promise.all([
-        improveText(model, 'Éxito', retro.exito),
-        improveText(model, 'Modelo', retro.modelo),
-        improveText(model, 'Foco', retro.foco),
-        improveText(model, 'Elementos a identificar', retro.elementosIdentificar),
-        improveText(model, 'Brecha - Preguntas', retro.brecha?.preguntas || ''),
-        improveText(model, 'Brecha - Indicadores', retro.brecha?.indicadores || ''),
-        improveText(model, 'Planificación - Preparación', plan.preparacion),
-        improveText(model, 'Planificación - Objetivo', plan.objetivo),
-        improveText(model, 'Planificación - Actividad', plan.actividad),
-        improveText(model, 'Planificación - Tiempo', plan.tiempo),
-      ]);
-
-      setFormData((prev) => ({
-        ...prev,
-        retroalimentacion: {
-          ...prev.retroalimentacion,
-          exito: results[0],
-          modelo: results[1],
-          foco: results[2],
-          elementosIdentificar: results[3],
-          brecha: { ...prev.retroalimentacion.brecha, preguntas: results[4], indicadores: results[5] },
-        },
-        planificacion: {
-          ...prev.planificacion,
-          preparacion: results[6],
-          objetivo: results[7],
-          actividad: results[8],
-          tiempo: results[9],
-        },
-      }));
       alert('Textos mejorados exitosamente con IA');
     } catch (e) {
       console.error(e);
@@ -1489,39 +1462,23 @@ const AcompanamientoDocente: React.FC = () => {
     setError(null);
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error('API Key de Gemini no configurada.');
-
-      // No necesitamos registrar este log por ahora
-      const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
-
-      const rubricaTexto = Object.entries(formData.rubricaResultados || {})
-        .map(([criterio, nivel]) => `- ${criterio}: Nivel ${nivel}`)
-        .join('\n');
-      const prompt = `
-Eres un asesor pedagógico experto. Redacta una retroalimentación consolidada y constructiva para un docente.
-Contexto de la observación:
-- Docente: ${formData.docente}
-- Asignatura: ${formData.asignatura}
-- Curso: ${formData.curso}
-- Resultados de la pauta de observación (rúbrica):
-${rubricaTexto || 'No se completó la pauta.'}
-- Observaciones adicionales del evaluador:
-${formData.observacionesGenerales || 'Sin observaciones adicionales.'}
-
-Basado en esta información, tu texto debe:
-1. Iniciar con un reconocimiento positivo.
-2. Mencionar 1 o 2 fortalezas clave observadas.
-3. Identificar 1 o 2 áreas de mejora concretas, con un tono de sugerencia.
-4. Concluir con una frase motivadora.
-La respuesta debe ser solo el texto de la retroalimentación.
-      `;
-      const result = await model.generateContent(prompt);
-      const feedbackText = result.response.text();
-
-      setFormData((prev: any) => ({ ...prev, retroalimentacionConsolidada: feedbackText }));
-      alert('Retroalimentación generada exitosamente con IA.');
+      // Lógica Gemini movida al backend. Llama a un endpoint seguro:
+      try {
+        const response = await fetch('/api/generarFeedbackDocente', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ formData })
+        });
+        if (!response.ok) throw new Error('Error al generar la retroalimentación con IA');
+        const { feedback } = await response.json();
+        setFormData((prev: any) => ({ ...prev, retroalimentacionConsolidada: feedback }));
+        alert('Retroalimentación generada exitosamente con IA.');
+      } catch (error: any) {
+        setError('No se pudo generar la retroalimentación automática.');
+        alert('Error: No se pudo generar la retroalimentación automática.');
+      } finally {
+        setIaLoadingGeneral(false);
+      }
     } catch (error: any) {
       console.error('❌ Error al generar retroalimentación:', error);
       const errorMessage = error.message || 'No se pudo generar la retroalimentación automática.';

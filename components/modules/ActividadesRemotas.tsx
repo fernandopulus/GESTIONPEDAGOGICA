@@ -33,7 +33,7 @@ import {
   calcularNota60,
 } from '../../src/firebaseHelpers/actividadesRemotasHelper';
 
-import { GoogleGenerativeAI as GoogleGenAI } from '@google/generative-ai';
+
 
 // Íconos Lucide
 import {
@@ -632,30 +632,16 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
         }))
       );
 
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error('No se encontró la API Key de Gemini.');
 
-      const ai = new GoogleGenAI(apiKey);
-      // Usando gemini-1.5-pro para mayor calidad en generación de preguntas
-      const model = ai.getGenerativeModel({ 
-        model: 'gemini-1.5-pro',
-        generationConfig: {
-          temperature: 0.7,           // Control de creatividad (balanceado)
-          topP: 0.9,                  // Diversidad controlada
-          topK: 40,                   // Mayor variedad de vocabulario
-          maxOutputTokens: 8192,      // Asegurar respuestas completas
-        }
-      });
-      
+      // Lógica Gemini movida al backend. Llama a un endpoint seguro:
       const prompt = buildPrompt();
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      let text = await response.text();
-      text = text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '');
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('La IA no devolvió JSON válido.');
-      
-      const generatedData = JSON.parse(jsonMatch[0]);
+      const response = await fetch('/api/generarActividadRemota', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, formData, selectedFiles })
+      });
+      if (!response.ok) throw new Error('Error al generar la actividad con IA');
+      const generatedData = await response.json();
 
       const adaptedContent: Record<string, any> = {};
       for (const tipo of formData.tipos) {
@@ -700,36 +686,16 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
     setError(null);
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error('No se encontró la API Key de Gemini.');
 
-      const ai = new GoogleGenAI(apiKey);
-      // Usando gemini-1.5-pro para mayor calidad en generación de evaluaciones
-      const model = ai.getGenerativeModel({ 
-        model: 'gemini-1.5-pro',
-        generationConfig: {
-          temperature: 0.65,          // Control preciso para evaluación
-          topP: 0.85,                 // Diversidad controlada para preguntas coherentes
-          topK: 30,                   // Control de vocabulario específico
-          maxOutputTokens: 12288,     // Mayor capacidad para generar evaluaciones completas con 30 preguntas
-        }
-      });
+      // Lógica Gemini movida al backend. Llama a un endpoint seguro:
       const prompt = buildPruebaPrompt();
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      let text = await response.text();
-      text = text
-        .replace(/```json\s*/gi, '')
-        .replace(/```\s*$/g, '')
-        .replace(/\/\/.*$/gm, '')
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .trim();
-
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No se encontró JSON válido en la respuesta.');
-
-      const jsonText = jsonMatch[0].replace(/,(\s*[}\]])/g, '$1');
-      const generatedData = JSON.parse(jsonText);
+      const response = await fetch('/api/generarPruebaRemota', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, pruebaFormData })
+      });
+      if (!response.ok) throw new Error('Error al generar la prueba con IA');
+      const generatedData = await response.json();
 
       if (!generatedData.preguntas || !Array.isArray(generatedData.preguntas)) {
         throw new Error('La respuesta de la IA no contiene un array de preguntas válido');

@@ -5,13 +5,12 @@ import { getStorage } from "firebase/storage"; // ✅ Import correcto
 import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAfL9dpeLfpWQPg4orpFSh3X5dzXrSsBwc",
-  authDomain: "planificador-145df.firebaseapp.com",
-  projectId: "planificador-145df",
-  storageBucket: "planificador-145df.appspot.com", // ✅ corregido
-  messagingSenderId: "1022861144167",
-  appId: "1:1022861144167:web:7c277dd701dad5986864c2",
-  measurementId: "G-LKJRFMVC9F"
+  apiKey: "AIzaSyBX_n9qoSh0N2c1OAPurBAl6FC9ltX4tK0",
+  authDomain: "plania-clase.firebaseapp.com",
+  projectId: "plania-clase",
+  storageBucket: "plania-clase.appspot.com",
+  messagingSenderId: "978612067917",
+  appId: "1:978612067917:web:299137755ec80939d7c604"
 };
 
 const app = initializeApp(firebaseConfig);

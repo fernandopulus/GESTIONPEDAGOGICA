@@ -201,7 +201,7 @@ import React, { useState, useEffect, useCallback, ChangeEvent, FormEvent } from 
 import type { PlanificacionUnidad, PlanificacionClase, DetalleLeccion, ActividadPlanificada, TareaActividad, User, NivelPlanificacion, ActividadFocalizadaEvent, MomentosClase, PlanificacionDocente } from '../../types';
 import { useMemo } from 'react';
 import { EventType } from '../../types';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+
 import { 
   BookOpen, 
   Calendar, 
@@ -870,29 +870,18 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
     try {
       logApiCall('Planificación - Actividad Calendario');
       
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) {
-        alert("La API Key de Gemini no está configurada.");
-        setIsLoading(false);
-        return;
-      }
 
-      const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ 
-        model: "gemini-1.5-pro",
-        generationConfig: {
-          temperature: 0.4,  // Más bajo para mayor precisión y alineación curricular
-          topP: 0.95,
-          maxOutputTokens: 1024  // Respuestas más cortas para objetivos
-        }
+      // Lógica Gemini movida al backend. Llama a un endpoint seguro:
+      const response = await fetch('/api/generarObjetivoActividad', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, formData })
       });
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
-      
+      if (!response.ok) throw new Error('Error al generar el objetivo con IA');
+      const { objetivo } = await response.json();
       const newActividad: Omit<ActividadPlanificada, 'id'> = {
         ...formData,
-        objetivo: text.replace(/(\*\*|\*)/g, ''),
+        objetivo: objetivo || 'No generado',
       };
 
       const actividadId = await saveActividad(newActividad);
@@ -1346,67 +1335,16 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     try {
       logApiCall('Planificación - Unidad');
       
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) {
-        setError("La API Key de Gemini no está configurada.");
-        setLoading(false);
-        return;
-      }
 
-      const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ 
-        model: "gemini-1.5-pro",
-        generationConfig: {
-          temperature: 0.4,  // Más bajo para mayor precisión y alineación curricular
-          topP: 0.95,
-          maxOutputTokens: 8192  // Suficiente para planificaciones detalladas
-        }
-      });
+      // Lógica Gemini movida al backend. Llama a un endpoint seguro:
       const prompt = buildUnidadPrompt();
-      
-      const responseSchema = {
-        type: "object",
-        properties: {
-          objetivosAprendizaje: { type: "string" },
-          indicadoresEvaluacion: { type: "string" },
-          detallesLeccion: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                objetivosAprendizaje: { type: "string" },
-                contenidosConceptuales: { type: "string" },
-                habilidadesBloom: { type: "string" },
-                perfilEgreso: { type: "string" },
-                actividades: { type: "string" },
-                asignaturasInterdisciplinariedad: { type: "string" }
-              },
-              required: ["objetivosAprendizaje", "contenidosConceptuales", "habilidadesBloom", "perfilEgreso", "actividades", "asignaturasInterdisciplinariedad"]
-            }
-          }
-        },
-        required: ["objetivosAprendizaje", "indicadoresEvaluacion", "detallesLeccion"]
-      };
-      
-      // Enviar solicitud a la API de Gemini
-      const result = await model.generateContent([
-        { text: prompt }
-      ]);
-      
-      const response = await result.response;
-      let text = response.text();
-      
-      // Limpiar el texto de delimitadores de código Markdown antes de parsearlo
-      if (text.includes('```')) {
-        console.log('La respuesta contiene delimitadores de código Markdown, limpiando...');
-        // Eliminar delimitadores de código ```json y ``` 
-        text = text.replace(/```json\s*|\s*```/g, '');
-      }
-      
-      // Imprimir los primeros caracteres para depuración
-      console.log('Primeros 50 caracteres del texto limpio:', text.substring(0, 50));
-      
-      const generatedData = JSON.parse(text);
+      const response = await fetch('/api/generarUnidadPlanificacion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, unidadFormData })
+      });
+      if (!response.ok) throw new Error('Error al generar la unidad con IA');
+      const generatedData = await response.json();
 
       const newPlan: Omit<PlanificacionUnidad, 'id'> = {
         fechaCreacion: new Date().toISOString(),
@@ -1465,40 +1403,16 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     try {
       logApiCall('Planificación - Utilizar Clase');
       
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) {
-        setError("La API Key de Gemini no está configurada.");
-        setLoading(false);
-        return;
-      }
 
-      const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ 
-        model: "gemini-1.5-pro",
-        generationConfig: {
-          temperature: 0.4,  // Más bajo para mayor precisión y alineación curricular
-          topP: 0.95,
-          maxOutputTokens: 4096  // Suficiente para planes de clase detallados
-        }
+      // Lógica Gemini movida al backend. Llama a un endpoint seguro:
+      const prompt = buildClasePrompt();
+      const response = await fetch('/api/generarClasePlanificacion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, unitPlan, lessonDetail, currentUser })
       });
-      
-      // Simplificamos la solicitud para evitar problemas con el schema
-      const result = await model.generateContent([
-        { text: prompt }
-      ]);
-
-      const response = await result.response;
-      let text = response.text();
-      
-      // Limpiar el texto de delimitadores de código Markdown antes de parsearlo
-      if (text.includes('```')) {
-        console.log('La respuesta contiene delimitadores de código Markdown, limpiando...');
-        // Eliminar delimitadores de código ```json y ``` 
-        text = text.replace(/```json\s*|\s*```/g, '');
-      }
-      
-      console.log('Primeros 50 caracteres del texto limpio:', text.substring(0, 50));
-      const generatedData: MomentosClase = JSON.parse(text);
+      if (!response.ok) throw new Error('Error al generar el plan de clase con IA');
+      const generatedData = await response.json();
 
       const newClassPlan: Omit<PlanificacionClase, 'id'> = {
         fechaCreacion: new Date().toISOString(),
