@@ -1,201 +1,113 @@
+// functions/src/api.ts (hardened)
 import { onRequest } from "firebase-functions/v2/https";
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
+import cors from "cors";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { defineSecret } from "firebase-functions/params";
+import { initializeApp, getApps } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 
+// ---- Init admin SDK once ----
+if (!getApps().length) initializeApp();
+
+// ---- Secrets ----
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
+
+// ---- Express app ----
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
-// Endpoint para generar evaluaciones (ajusta la lógica según tu prompt y procesamiento)
-app.post("/generarEvaluacion", async (req: Request, res: Response) => {
+// If you will call *.run.app from the browser directly, allow CORS; otherwise keep this strict or remove.
+// Adjust origin to your hosting domain.
+app.use(
+  cors({
+    origin: ["https://plania-clase.web.app"],
+    methods: ["POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    maxAge: 86400,
+  })
+);
+
+// ---- Auth middleware (verify Firebase ID token) ----
+const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { prompt, uid } = req.body;
-    if (!uid) {
-      res.status(401).json({ error: "Usuario no autenticado. Debes iniciar sesión para generar una evaluación." });
-      return;
-    }
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      res.status(500).json({ error: "No Gemini API Key configured" });
-      return;
-    }
-    const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = await response.text();
-    // Aquí puedes procesar el texto y devolver el JSON esperado por el frontend
-    res.json({ resultado: text });
+    const auth = req.headers.authorization || "";
+    if (!auth.startsWith("Bearer ")) return res.status(401).json({ error: "Missing token" });
+    const token = auth.slice(7);
+    const decoded = await getAuth().verifyIdToken(token);
+    (req as any).uid = decoded.uid;
+    return next();
+  } catch (e) {
+    console.error("Auth error:", e);
+    return res.status(401).json({ error: "Invalid token" });
+  }
+};
+
+// ---- Gemini helper ----
+const callGeminiText = async (prompt: string, modelName = "gemini-1.5-pro") => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("No Gemini API Key configured");
+  const ai = new GoogleGenerativeAI(apiKey);
+  const model = ai.getGenerativeModel({ model: modelName });
+  const result = await model.generateContent(prompt);
+  return result.response.text();
+};
+
+const respondJsonFromGemini = async (
+  res: Response,
+  prompt: string,
+  modelName?: string
+) => {
+  const text = await callGeminiText(prompt, modelName);
+  try {
+    const json = JSON.parse(text);
+    return res.status(200).json(json);
+  } catch {
+    console.error("Gemini returned non-JSON:", text);
+    return res.status(502).json({ error: "Respuesta de IA no JSON", raw: text });
+  }
+};
+
+// ---- Endpoints ----
+app.post("/generarEvaluacion", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { prompt } = req.body || {};
+    if (!prompt) return res.status(400).json({ error: "Prompt requerido" });
+    return await respondJsonFromGemini(res, prompt);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error al generar evaluación" });
+    console.error("generarEvaluacion error:", error);
+    return res.status(500).json({ error: "IA call failed" });
   }
 });
 
-// Puedes agregar más endpoints aquí, por ejemplo /generarRubrica, /generarFeedback, etc.
-
-// Endpoint para AcompanamientoDocente
-app.post("/generarAcompanamientoDocente", async (req: Request, res: Response) => {
+app.post("/generarRubricaEditor", requireAuth, async (req, res) => {
   try {
-    const { prompt } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY as string;
-    const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = await response.text();
-    res.json({ resultado: text });
+    const { prompt } = req.body || {};
+    if (!prompt) return res.status(400).json({ error: "Prompt requerido" });
+    return await respondJsonFromGemini(res, prompt);
   } catch (error) {
-    res.status(500).json({ error: "Error al generar acompañamiento docente" });
+    console.error("generarRubricaEditor error:", error);
+    return res.status(500).json({ error: "IA call failed" });
   }
 });
 
-// Endpoint para ActividadesRemotas
-app.post("/generarActividadRemota", async (req: Request, res: Response) => {
+// Ejemplo genérico de texto libre (no JSON)
+app.post("/generarTexto", requireAuth, async (req, res) => {
   try {
-    const { prompt } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY as string;
-    const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = await response.text();
-    res.json({ resultado: text });
+    const { prompt } = req.body || {};
+    if (!prompt) return res.status(400).json({ error: "Prompt requerido" });
+    const text = await callGeminiText(prompt);
+    return res.status(200).json({ resultado: text });
   } catch (error) {
-    res.status(500).json({ error: "Error al generar actividad remota" });
+    console.error("generarTexto error:", error);
+    return res.status(500).json({ error: "IA call failed" });
   }
 });
 
-// Endpoint para AnalisisTaxonomico
-app.post("/analisisTaxonomico", async (req: Request, res: Response) => {
-  try {
-    const { prompt } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY as string;
-    const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
-    // Aquí podrías usar fileData si tu modelo lo soporta
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = await response.text();
-    res.json({ resultado: text });
-  } catch (error) {
-    res.status(500).json({ error: "Error en análisis taxonómico" });
-  }
-});
+// Exporta una sola función Express; añade el rewrite en firebase.json:
+// { "hosting": { "rewrites": [ { "source": "/api/**", "function": { "functionId": "api", "region": "us-central1" } } ] } }
+export const api = onRequest(
+  { region: "us-central1", secrets: [GEMINI_API_KEY], timeoutSeconds: 120, memory: "512MiB" },
+  app
+);
 
-// Endpoint para Autoaprendizaje
-app.post("/generarFeedbackAutoaprendizaje", async (req: Request, res: Response) => {
-  try {
-    const { actividad, feedback } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY as string;
-    // Si actividad y feedback existen en req.body, se usan aquí:
-    const prompt = JSON.stringify({ actividad, feedback });
-    const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = await response.text();
-    res.json({ resultado: text });
-  } catch (error) {
-    res.status(500).json({ error: "Error al generar feedback de autoaprendizaje" });
-  }
-});
-
-// Endpoint para DashboardOPR
-app.post("/generarDashboardOPR", async (req: Request, res: Response) => {
-  try {
-    const { prompt } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY as string;
-    const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = await response.text();
-    res.json({ resultado: text });
-  } catch (error) {
-    res.status(500).json({ error: "Error al generar dashboard OPR" });
-  }
-});
-
-// Endpoint para DesarrolloProfesionalDocente
-app.post("/generarDesarrolloProfesionalDocente", async (req: Request, res: Response) => {
-  try {
-    const { prompt } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY as string;
-    const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = await response.text();
-    res.json({ resultado: text });
-  } catch (error) {
-    res.status(500).json({ error: "Error al generar desarrollo profesional docente" });
-  }
-});
-
-// Endpoint para Interdisciplinario
-app.post("/generarInterdisciplinario", async (req: Request, res: Response) => {
-  try {
-    const { prompt } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY as string;
-    const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = await response.text();
-    res.json({ resultado: text });
-  } catch (error) {
-    res.status(500).json({ error: "Error al generar interdisciplinario" });
-  }
-});
-
-// Endpoint para PlanificacionDocente
-app.post("/generarPlanificacionDocente", async (req: Request, res: Response) => {
-  try {
-    const { prompt } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY as string;
-    const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = await response.text();
-    res.json({ resultado: text });
-  } catch (error) {
-    res.status(500).json({ error: "Error al generar planificación docente" });
-  }
-});
-
-// Endpoint para RecursosAprendizaje
-app.post("/generarRecursosAprendizaje", async (req: Request, res: Response) => {
-  try {
-    const { prompt } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY as string;
-    const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = await response.text();
-    res.json({ resultado: text });
-  } catch (error) {
-    res.status(500).json({ error: "Error al generar recursos de aprendizaje" });
-  }
-});
-
-// Endpoint para RubricaEditor
-app.post("/generarRubricaEditor", async (req: Request, res: Response) => {
-  try {
-    const { prompt } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY as string;
-    const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = await response.text();
-    res.json({ resultado: text });
-  } catch (error) {
-    res.status(500).json({ error: "Error al generar rúbrica" });
-  }
-});
-
-export const api = onRequest({ secrets: [GEMINI_API_KEY] }, app);

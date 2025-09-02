@@ -11,11 +11,13 @@ export const useAuth = () => {
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+            console.log('[useAuth] FirebaseUser:', firebaseUser);
             if (firebaseUser && firebaseUser.email) {
                 // El usuario está autenticado en Firebase, ahora buscamos su perfil en Firestore
                 try {
                     const userProfile = await getUserProfile(firebaseUser.email); // ✅ USAMOS TU FUNCIÓN
-                    setCurrentUser(userProfile);
+                    console.log('[useAuth] Perfil Firestore:', userProfile);
+                    setCurrentUser(userProfile ? { ...userProfile, uid: firebaseUser.uid } : null);
                 } catch (error) {
                     console.error("Error al obtener el perfil del usuario:", error);
                     setCurrentUser(null);

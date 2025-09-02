@@ -398,3 +398,5 @@ export {testGemini} from "./testGemini";
 
 // Función para generar preguntas SIMCE
 export {generarPreguntasSimce} from "./simceGenerator";
+
+export { api } from "./api";

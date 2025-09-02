@@ -68,7 +68,7 @@ async function callGemini({
   }
   const data = await response.json();
   return (
-    data.candidates?.[0]?.content?.parts?.[0]?.text ||
+  (data as any).candidates?.[0]?.content?.parts?.[0]?.text ||
     "Lo siento, no pude generar una respuesta."
   );
 }

@@ -1,4 +1,4 @@
-// src/firebaseHelpers/evaluacionHelper.ts
+// src/firebaseHelpers/evaluacionHelper.ts (completo)
 import {
   collection,
   doc,
@@ -8,142 +8,125 @@ import {
   onSnapshot,
   query,
   orderBy,
+  serverTimestamp,
   Timestamp,
-} from 'firebase/firestore';
-import { db } from './config'; // Asegúrate de que la ruta a tu config sea correcta
-import { Prueba, RubricaEstatica, RubricaInteractiva, User } from '../../types';
+} from "firebase/firestore";
+import { db } from "./config";
+import { Prueba, RubricaEstatica, RubricaInteractiva, User } from "../../types";
 
-// --- CONSTANTES DE COLECCIONES ---
-const PRUEBAS_COLLECTION = 'evaluaciones_pruebas';
-const RUBRICAS_ESTATICAS_COLLECTION = 'evaluaciones_rubricas_estaticas';
-const RUBRICAS_INTERACTIVAS_COLLECTION = 'evaluaciones_rubricas_interactivas';
-const USERS_COLLECTION = 'usuarios';
+// --- Colecciones ---
+const PRUEBAS_COLLECTION = "evaluaciones_pruebas";
+const RUBRICAS_ESTATICAS_COLLECTION = "rubricas_estaticas";
+const RUBRICAS_INTERACTIVAS_COLLECTION = "rubricas_interactivas";
+const USERS_COLLECTION = "usuarios";
 
-// --- HELPERS DE CONVERSIÓN ---
-const convertFirestoreDoc = <T>(docSnapshot: any): T => {
-  const data = docSnapshot.data();
-  return {
-    id: docSnapshot.id,
-    ...data,
-    fechaCreacion: data.fechaCreacion?.toDate?.().toISOString() || data.fechaCreacion,
-  } as T;
+// --- Helper de conversión ---
+const convertFirestoreDoc = <T>(docSnap: any): T => {
+  const data = docSnap.data() || {};
+  const fecha = data.fechaCreacion;
+  const fechaISO =
+    fecha?.toDate?.()?.toISOString?.() ??
+    (typeof fecha === "string" ? fecha : undefined);
+  return { id: docSnap.id, ...data, fechaCreacion: fechaISO } as T;
 };
 
-// --- GESTIÓN DE PRUEBAS ---
-
-export const subscribeToPruebas = (callback: (data: Prueba[]) => void) => {
-  const q = query(collection(db, PRUEBAS_COLLECTION), orderBy('fechaCreacion', 'desc'));
-  const unsubscribe = onSnapshot(q, (snapshot) => {
-    callback(snapshot.docs.map(doc => convertFirestoreDoc<Prueba>(doc)));
-  }, (error) => {
-    console.error("Error al suscribirse a las pruebas:", error);
-    callback([]);
-  });
-  return unsubscribe;
-};
-
-export const savePrueba = async (prueba: Prueba): Promise<void> => {
-  try {
-    const { id, ...dataToSave } = prueba;
-    const docRef = doc(db, PRUEBAS_COLLECTION, id);
-    await setDoc(docRef, {
-      ...dataToSave,
-      fechaCreacion: Timestamp.fromDate(new Date(dataToSave.fechaCreacion)),
-    });
-  } catch (error) {
-    console.error("Error al guardar la prueba:", error);
-    throw new Error("No se pudo guardar la prueba.");
-  }
-};
-
-export const deletePrueba = async (id: string): Promise<void> => {
-  try {
-    await deleteDoc(doc(db, PRUEBAS_COLLECTION, id));
-  } catch (error) {
-    console.error("Error al eliminar la prueba:", error);
-    throw new Error("No se pudo eliminar la prueba.");
-  }
-};
-
-// --- GESTIÓN DE RÚBRICAS ESTÁTICAS ---
-
-export const subscribeToRubricasEstaticas = (callback: (data: RubricaEstatica[]) => void) => {
-  const q = query(collection(db, RUBRICAS_ESTATICAS_COLLECTION), orderBy('fechaCreacion', 'desc'));
-  const unsubscribe = onSnapshot(q, (snapshot) => {
-    callback(snapshot.docs.map(doc => convertFirestoreDoc<RubricaEstatica>(doc)));
-  }, (error) => {
-    console.error("Error al suscribirse a las rúbricas estáticas:", error);
-    callback([]);
-  });
-  return unsubscribe;
-};
-
-export const saveRubricaEstatica = async (rubrica: RubricaEstatica): Promise<void> => {
-    try {
-        const { id, ...dataToSave } = rubrica;
-        const docRef = doc(db, RUBRICAS_ESTATICAS_COLLECTION, id);
-        await setDoc(docRef, {
-            ...dataToSave,
-            fechaCreacion: Timestamp.fromDate(new Date(dataToSave.fechaCreacion)),
-        });
-    } catch (error) {
-        console.error("Error al guardar la rúbrica estática:", error);
-        throw new Error("No se pudo guardar la rúbrica.");
+// --- PRUEBAS ---
+export const subscribeToPruebas = (cb: (rows: Prueba[]) => void) => {
+  const qRef = query(collection(db, PRUEBAS_COLLECTION), orderBy("fechaCreacion", "desc"));
+  const unsub = onSnapshot(
+    qRef,
+    (snap) => cb(snap.docs.map((d) => convertFirestoreDoc<Prueba>(d))),
+    (err) => {
+      console.error("[subscribeToPruebas]", err);
+      cb([]);
     }
+  );
+  return unsub;
 };
 
-export const deleteRubricaEstatica = async (id: string): Promise<void> => {
-    try {
-        await deleteDoc(doc(db, RUBRICAS_ESTATICAS_COLLECTION, id));
-    } catch (error) {
-        console.error("Error al eliminar la rúbrica estática:", error);
-        throw new Error("No se pudo eliminar la rúbrica.");
+export const savePrueba = async (p: Prueba) => {
+  const { id, fechaCreacion, ...rest } = p;
+  const ref = doc(db, PRUEBAS_COLLECTION, id);
+  const payload: any = {
+    ...rest,
+    // si viene fecha ISO la preservamos; si no, serverTimestamp()
+    fechaCreacion:
+      fechaCreacion ? Timestamp.fromDate(new Date(fechaCreacion)) : serverTimestamp(),
+  };
+  await setDoc(ref, payload, { merge: true });
+};
+
+export const deletePrueba = async (id: string) => {
+  await deleteDoc(doc(db, PRUEBAS_COLLECTION, id));
+};
+
+// --- RÚBRICAS ESTÁTICAS ---
+export const subscribeToRubricasEstaticas = (cb: (rows: RubricaEstatica[]) => void) => {
+  const qRef = query(
+    collection(db, RUBRICAS_ESTATICAS_COLLECTION),
+    orderBy("fechaCreacion", "desc")
+  );
+  return onSnapshot(
+    qRef,
+    (snap) => cb(snap.docs.map((d) => convertFirestoreDoc<RubricaEstatica>(d))),
+    (err) => {
+      console.error("[subscribeToRubricasEstaticas]", err);
+      cb([]);
     }
+  );
 };
 
-// --- GESTIÓN DE RÚBRICAS INTERACTIVAS ---
-
-export const subscribeToRubricasInteractivas = (callback: (data: RubricaInteractiva[]) => void) => {
-    const q = query(collection(db, RUBRICAS_INTERACTIVAS_COLLECTION));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-        callback(snapshot.docs.map(doc => convertFirestoreDoc<RubricaInteractiva>(doc)));
-    }, (error) => {
-        console.error("Error al suscribirse a las rúbricas interactivas:", error);
-        callback([]);
-    });
-    return unsubscribe;
+export const saveRubricaEstatica = async (r: RubricaEstatica) => {
+  const { id, fechaCreacion, ...rest } = r;
+  const ref = doc(db, RUBRICAS_ESTATICAS_COLLECTION, id);
+  const payload: any = {
+    ...rest,
+    fechaCreacion:
+      fechaCreacion ? Timestamp.fromDate(new Date(fechaCreacion)) : serverTimestamp(),
+  };
+  await setDoc(ref, payload, { merge: true });
 };
 
-export const saveRubricaInteractiva = async (rubrica: RubricaInteractiva): Promise<void> => {
-    try {
-        const { id, ...dataToSave } = rubrica;
-        const docRef = doc(db, RUBRICAS_INTERACTIVAS_COLLECTION, id);
-        await setDoc(docRef, dataToSave);
-    } catch (error) {
-        console.error("Error al guardar la rúbrica interactiva:", error);
-        throw new Error("No se pudo guardar la rúbrica interactiva.");
+export const deleteRubricaEstatica = async (id: string) => {
+  await deleteDoc(doc(db, RUBRICAS_ESTATICAS_COLLECTION, id));
+};
+
+// --- RÚBRICAS INTERACTIVAS ---
+export const subscribeToRubricasInteractivas = (cb: (rows: RubricaInteractiva[]) => void) => {
+  const qRef = query(
+    collection(db, RUBRICAS_INTERACTIVAS_COLLECTION),
+    orderBy("curso", "asc")
+  );
+  return onSnapshot(
+    qRef,
+    (snap) => cb(snap.docs.map((d) => convertFirestoreDoc<RubricaInteractiva>(d))),
+    (err) => {
+      console.error("[subscribeToRubricasInteractivas]", err);
+      cb([]);
     }
+  );
 };
 
-export const createRubricaInteractiva = async (rubricaData: Omit<RubricaInteractiva, 'id'>): Promise<string> => {
-    try {
-        const docRef = await addDoc(collection(db, RUBRICAS_INTERACTIVAS_COLLECTION), rubricaData);
-        return docRef.id;
-    } catch (error) {
-        console.error("Error al crear la rúbrica interactiva:", error);
-        throw new Error("No se pudo crear la rúbrica interactiva.");
+export const createRubricaInteractiva = async (
+  r: Omit<RubricaInteractiva, "id">
+): Promise<string> => {
+  const payload: any = {
+    ...r,
+    fechaCreacion: serverTimestamp(),
+  };
+  const ref = await addDoc(collection(db, RUBRICAS_INTERACTIVAS_COLLECTION), payload);
+  return ref.id;
+};
+
+// --- USUARIOS ---
+export const subscribeToAllUsers = (cb: (rows: User[]) => void) => {
+  const qRef = query(collection(db, USERS_COLLECTION), orderBy("nombreCompleto", "asc"));
+  return onSnapshot(
+    qRef,
+    (snap) => cb(snap.docs.map((d) => convertFirestoreDoc<User>(d))),
+    (err) => {
+      console.error("[subscribeToAllUsers]", err);
+      cb([]);
     }
-};
-
-// --- GESTIÓN DE USUARIOS ---
-
-export const subscribeToAllUsers = (callback: (data: User[]) => void) => {
-    const q = query(collection(db, USERS_COLLECTION));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-        callback(snapshot.docs.map(doc => convertFirestoreDoc<User>(doc)));
-    }, (error) => {
-        console.error("Error al suscribirse a los usuarios:", error);
-        callback([]);
-    });
-    return unsubscribe;
+  );
 };

@@ -3,7 +3,7 @@
  */
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
-import { GOOGLE_OAUTH_CONFIG } from '../credentials/oauth-config';
+import { GOOGLE_OAUTH_CONFIG } from './credentials/oauth-config';
 
 // Cliente OAuth2 para autenticación
 const oauth2Client = new OAuth2Client(

@@ -25,7 +25,7 @@ import {
   TerminosPareadosItem,
   RubricaEstatica,
   DimensionRubrica,
- run b  NivelDescriptor,
+  NivelDescriptor,
   VerdaderoFalsoItem,
   ComprensionLecturaItem,
   DesarrolloItem,
@@ -354,9 +354,20 @@ const PruebasSubmodule: React.FC = () => {
     });
   };
 
-  const { currentUser } = useAuth();
+  const { currentUser, loading } = useAuth();
+
+  if (loading) {
+    return <div style={{textAlign: 'center', marginTop: '2rem'}}>Cargando sesión...</div>;
+  }
+  if (!currentUser || !currentUser.uid) {
+    return <div style={{textAlign: 'center', marginTop: '2rem'}}>Debes iniciar sesión.</div>;
+  }
 
   const handleGeneratePrueba = async (e: FormEvent) => {
+    if (!currentUser || !currentUser.uid) {
+      setError("Debes iniciar sesión para generar una evaluación.");
+      return;
+    }
     e.preventDefault();
     if (!currentUser) {
       setError('Debes iniciar sesión para generar una prueba con IA.');
