@@ -1,5 +1,5 @@
 import { onRequest } from "firebase-functions/v2/https";
-import * as express from "express";
+import express, { Request, Response } from "express";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { defineSecret } from "firebase-functions/params";
 
@@ -8,9 +8,9 @@ const app = express();
 app.use(express.json());
 
 // Endpoint para generar evaluaciones (ajusta la lógica según tu prompt y procesamiento)
-app.post("/generarEvaluacion", async (req, res) => {
+app.post("/generarEvaluacion", async (req: Request, res: Response) => {
   try {
-    const { prompt, formData } = req.body;
+    const { prompt } = req.body;
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       res.status(500).json({ error: "No Gemini API Key configured" });
@@ -32,10 +32,10 @@ app.post("/generarEvaluacion", async (req, res) => {
 // Puedes agregar más endpoints aquí, por ejemplo /generarRubrica, /generarFeedback, etc.
 
 // Endpoint para AcompanamientoDocente
-app.post("/generarAcompanamientoDocente", async (req: express.Request, res: express.Response) => {
+app.post("/generarAcompanamientoDocente", async (req: Request, res: Response) => {
   try {
-    const { prompt, formData } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY as string;
+    const { prompt } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY as string;
     const ai = new GoogleGenerativeAI(apiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
     const result = await model.generateContent(prompt);
@@ -48,10 +48,10 @@ app.post("/generarAcompanamientoDocente", async (req: express.Request, res: expr
 });
 
 // Endpoint para ActividadesRemotas
-app.post("/generarActividadRemota", async (req: express.Request, res: express.Response) => {
+app.post("/generarActividadRemota", async (req: Request, res: Response) => {
   try {
-    const { prompt, formData } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY as string;
+    const { prompt } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY as string;
     const ai = new GoogleGenerativeAI(apiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
     const result = await model.generateContent(prompt);
@@ -64,10 +64,10 @@ app.post("/generarActividadRemota", async (req: express.Request, res: express.Re
 });
 
 // Endpoint para AnalisisTaxonomico
-app.post("/analisisTaxonomico", async (req: express.Request, res: express.Response) => {
+app.post("/analisisTaxonomico", async (req: Request, res: Response) => {
   try {
-    const { prompt, fileData, documentName, nivelForm, asignaturaForm, userId } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY as string;
+    const { prompt } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY as string;
     const ai = new GoogleGenerativeAI(apiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
     // Aquí podrías usar fileData si tu modelo lo soporta
@@ -81,13 +81,14 @@ app.post("/analisisTaxonomico", async (req: express.Request, res: express.Respon
 });
 
 // Endpoint para Autoaprendizaje
-app.post("/generarFeedbackAutoaprendizaje", async (req: express.Request, res: express.Response) => {
+app.post("/generarFeedbackAutoaprendizaje", async (req: Request, res: Response) => {
   try {
     const { actividad, feedback } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY as string;
+    const apiKey = process.env.GEMINI_API_KEY as string;
+    // Si actividad y feedback existen en req.body, se usan aquí:
+    const prompt = JSON.stringify({ actividad, feedback });
     const ai = new GoogleGenerativeAI(apiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const prompt = JSON.stringify({ actividad, feedback });
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = await response.text();
@@ -98,10 +99,10 @@ app.post("/generarFeedbackAutoaprendizaje", async (req: express.Request, res: ex
 });
 
 // Endpoint para DashboardOPR
-app.post("/generarDashboardOPR", async (req: express.Request, res: express.Response) => {
+app.post("/generarDashboardOPR", async (req: Request, res: Response) => {
   try {
-    const { prompt, formData } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY as string;
+    const { prompt } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY as string;
     const ai = new GoogleGenerativeAI(apiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
     const result = await model.generateContent(prompt);
@@ -114,10 +115,10 @@ app.post("/generarDashboardOPR", async (req: express.Request, res: express.Respo
 });
 
 // Endpoint para DesarrolloProfesionalDocente
-app.post("/generarDesarrolloProfesionalDocente", async (req: express.Request, res: express.Response) => {
+app.post("/generarDesarrolloProfesionalDocente", async (req: Request, res: Response) => {
   try {
-    const { prompt, formData } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY as string;
+    const { prompt } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY as string;
     const ai = new GoogleGenerativeAI(apiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
     const result = await model.generateContent(prompt);
@@ -130,10 +131,10 @@ app.post("/generarDesarrolloProfesionalDocente", async (req: express.Request, re
 });
 
 // Endpoint para Interdisciplinario
-app.post("/generarInterdisciplinario", async (req: express.Request, res: express.Response) => {
+app.post("/generarInterdisciplinario", async (req: Request, res: Response) => {
   try {
-    const { prompt, formData } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY as string;
+    const { prompt } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY as string;
     const ai = new GoogleGenerativeAI(apiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
     const result = await model.generateContent(prompt);
@@ -146,10 +147,10 @@ app.post("/generarInterdisciplinario", async (req: express.Request, res: express
 });
 
 // Endpoint para PlanificacionDocente
-app.post("/generarPlanificacionDocente", async (req: express.Request, res: express.Response) => {
+app.post("/generarPlanificacionDocente", async (req: Request, res: Response) => {
   try {
-    const { prompt, formData } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY as string;
+    const { prompt } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY as string;
     const ai = new GoogleGenerativeAI(apiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
     const result = await model.generateContent(prompt);
@@ -162,10 +163,10 @@ app.post("/generarPlanificacionDocente", async (req: express.Request, res: expre
 });
 
 // Endpoint para RecursosAprendizaje
-app.post("/generarRecursosAprendizaje", async (req: express.Request, res: express.Response) => {
+app.post("/generarRecursosAprendizaje", async (req: Request, res: Response) => {
   try {
-    const { prompt, formData } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY as string;
+    const { prompt } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY as string;
     const ai = new GoogleGenerativeAI(apiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
     const result = await model.generateContent(prompt);
@@ -178,10 +179,10 @@ app.post("/generarRecursosAprendizaje", async (req: express.Request, res: expres
 });
 
 // Endpoint para RubricaEditor
-app.post("/generarRubricaEditor", async (req: express.Request, res: express.Response) => {
+app.post("/generarRubricaEditor", async (req: Request, res: Response) => {
   try {
-    const { prompt, formData } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY as string;
+    const { prompt } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY as string;
     const ai = new GoogleGenerativeAI(apiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
     const result = await model.generateContent(prompt);
