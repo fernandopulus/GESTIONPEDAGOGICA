@@ -65,13 +65,20 @@ const respondJsonFromGemini = async (
   prompt: string,
   modelName?: string
 ) => {
-  const text = await callGeminiText(prompt, modelName);
+  let text = await callGeminiText(prompt, modelName);
   try {
+    // Clean potential markdown code block from Gemini response
+    const match = text.match(/```(json)?\n([\s\S]*?)\n```/);
+    if (match && match[2]) {
+      text = match[2].trim();
+    }
+
     const json = JSON.parse(text);
     return res.status(200).json(json);
-  } catch {
-    console.error("Gemini returned non-JSON:", text);
-    return res.status(502).json({ error: "Respuesta de IA no JSON", raw: text });
+  } catch (e) {
+    console.error("Gemini returned non-JSON or parsing failed:", text);
+    console.error("Parsing error:", e);
+    return res.status(502).json({ error: "Respuesta de IA no es un JSON válido", raw: text });
   }
 };
 

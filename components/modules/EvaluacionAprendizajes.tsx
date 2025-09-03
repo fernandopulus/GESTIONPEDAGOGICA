@@ -9,6 +9,7 @@ import {
   createRubricaInteractiva,
   subscribeToAllUsers
 } from '../../src/firebaseHelpers/evaluacionHelper';
+import { auth } from '../../src/firebase';
 
 import React, { useState, useEffect, useMemo, FormEvent, ChangeEvent } from 'react';
 import { useAuth } from '../../src/hooks/useAuth';
@@ -292,29 +293,32 @@ const PruebaItemViewer: React.FC<{
 // Submódulo 1: Pruebas
 // -------------------------------------------------------------------
 const PruebasSubmodule: React.FC = () => {
-  const [pruebas, setPruebas] = useState<Prueba[]>([]);
-  const [currentPrueba, setCurrentPrueba] = useState<Prueba | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showAnswers, setShowAnswers] = useState(false);
-
   const initialFormState = {
     nombre: '',
     asignatura: ASIGNATURAS[0],
     nivel: NIVELES[0],
     contenido: '',
-    tiposActividad: {} as Partial<Record<PruebaItemTipo, number>>,
+    tiposActividad: {} as Record<PruebaItemTipo, number>,
     dificultad: 'Intermedio' as 'Fácil' | 'Intermedio' | 'Avanzado',
     isNee: false,
     selectedNee: [] as DificultadAprendizaje[],
   };
+
   const [formData, setFormData] = useState(initialFormState);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [currentPrueba, setCurrentPrueba] = useState<Prueba | null>(null);
+  const [pruebas, setPruebas] = useState<Prueba[]>([]);
+  const [showAnswers, setShowAnswers] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const { currentUser } = useAuth();
 
   useEffect(() => {
-    const unsubscribe = subscribeToPruebas(setPruebas);
-    return () => unsubscribe();
-  }, []);
+    if (currentUser) {
+      const unsubscribe = subscribeToPruebas(setPruebas);
+      return () => unsubscribe();
+    }
+  }, [currentUser]);
 
   const handleFormChange = (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -335,13 +339,10 @@ const PruebasSubmodule: React.FC = () => {
     });
   };
 
-  const handleQuantityChange = (tipo: PruebaItemTipo, cantidad: number) => {
+  const handleQuantityChange = (tipo: PruebaItemTipo, qty: number) => {
     setFormData((prev) => ({
       ...prev,
-      tiposActividad: {
-        ...prev.tiposActividad,
-        [tipo]: cantidad,
-      },
+      tiposActividad: { ...prev.tiposActividad, [tipo]: qty },
     }));
   };
 
@@ -354,23 +355,12 @@ const PruebasSubmodule: React.FC = () => {
     });
   };
 
-  const { currentUser, loading } = useAuth();
-
-  if (loading) {
-    return <div style={{textAlign: 'center', marginTop: '2rem'}}>Cargando sesión...</div>;
-  }
-  if (!currentUser || !currentUser.uid) {
-    return <div style={{textAlign: 'center', marginTop: '2rem'}}>Debes iniciar sesión.</div>;
-  }
-
+  // La función debe estar dentro del componente para acceder a los estados
   const handleGeneratePrueba = async (e: FormEvent) => {
-    if (!currentUser || !currentUser.uid) {
-      setError("Debes iniciar sesión para generar una evaluación.");
-      return;
-    }
     e.preventDefault();
-    if (!currentUser) {
-      setError('Debes iniciar sesión para generar una prueba con IA.');
+    // Validar usuario completo antes de continuar
+    if (!currentUser || !currentUser.uid || !currentUser.email || !currentUser.id) {
+      setError("Debes iniciar sesión para generar una evaluación.");
       return;
     }
     if (
@@ -392,24 +382,16 @@ const PruebasSubmodule: React.FC = () => {
 
     const neeAdaptationPrompt =
       formData.isNee && formData.selectedNee.length > 0
-        ? `
-**Adaptación CRÍTICA para Necesidades Educativas Especiales (NEE):**
-Adapta esta prueba para estudiantes con las siguientes características: ${formData.selectedNee.join(
+        ? `\n**Adaptación CRÍTICA para Necesidades Educativas Especiales (NEE):**\nAdapta esta prueba para estudiantes con las siguientes características: ${formData.selectedNee.join(
             ', '
-          )}.
-Esto implica las siguientes modificaciones OBLIGATORIAS:
-- Usa un lenguaje claro, simple y directo en todas las preguntas e instrucciones.
-- Evita preguntas con doble negación o estructuras gramaticales complejas.
-- En preguntas de desarrollo, desglosa la pregunta en partes más pequeñas si es posible.
-- Para 'Comprensión de Lectura', usa textos más cortos (100-150 palabras) y con vocabulario accesible.
-- Para 'Selección Múltiple', asegúrate de que los distractores sean claramente incorrectos y no ambiguos.`
+          )}.\nEsto implica las siguientes modificaciones OBLIGATORIAS:\n- Usa un lenguaje claro, simple y directo en todas las preguntas e instrucciones.\n- Evita preguntas con doble negación o estructuras gramaticales complejas.\n- En preguntas de desarrollo, desglosa la pregunta en partes más pequeñas si es posible.\n- Para 'Comprensión de Lectura', usa textos más cortos (100-150 palabras) y con vocabulario accesible.\n- Para 'Selección Múltiple', asegúrate de que los distractores sean claramente incorrectos y no ambiguos.`
         : '';
 
     const prompt = `
 Eres un experto en evaluación educativa para la educación media en Chile.
 Genera una prueba o guía de trabajo completa en formato JSON estructurado.
 
-Información base:
+**Información base:**
 - Nombre de la prueba: ${formData.nombre}
 - Asignatura: ${formData.asignatura}
 - Nivel: ${formData.nivel}
@@ -420,8 +402,33 @@ Información base:
 
 ${neeAdaptationPrompt}
 
+**Reglas Estrictas de Generación por Tipo de Ítem:**
+- **Selección Múltiple:**
+  - **Siempre** debe tener 4 alternativas (A, B, C, D).
+  - Las alternativas deben ser presentadas en el campo 'opciones' como un array de 4 strings.
+  - Solo una alternativa es la correcta.
+  - Los distractores (alternativas incorrectas) deben ser plausibles, relevantes al contenido y no ambiguos.
+  - 'respuestaCorrecta' debe ser el índice numérico (0 a 3) de la opción correcta en el array 'opciones'.
+- **Comprensión de Lectura:**
+  - El texto proporcionado en el campo 'texto' debe tener entre 150 y 250 palabras.
+  - **Todas** las preguntas asociadas deben basarse **estrictamente** en la información contenida en el texto. No se debe requerir conocimiento externo.
+- **Términos Pareados:**
+  - Debe entregar exactamente la cantidad de pares solicitada.
+  - Cada par en el array 'pares' debe tener un 'concepto' y una 'definicion'.
+  - Las definiciones deben ser claras, concisas y no circulares (no usar el concepto en su propia definición).
+- **Verdadero o Falso:**
+  - Las afirmaciones en el campo 'pregunta' deben ser claras, inequívocas y declarativas.
+  - 'respuestaCorrecta' debe ser un valor booleano (\`true\` para verdadero, \`false\` para falso).
+- **Desarrollo:**
+  - Las preguntas deben ser abiertas y diseñadas para que el estudiante deba analizar, argumentar, comparar o crear, en lugar de solo recordar información literal.
+
+**Directrices Generales Adicionales:**
+- **Distribución por Defecto:** Si no se especifica una distribución de ítems, asume una que sea coherente con la cantidad total solicitada y el nivel de dificultad 'Intermedio'.
+- **Adecuación Curricular:** El vocabulario, la complejidad y el contexto de toda la prueba deben ser apropiados para el nivel educativo 'Educación Media' en Chile y estar alineados con el contenido a evaluar.
+
+**Formato de Salida OBLIGATORIO:**
 Tu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, explicaciones, ni el bloque \`\`\`json. El objeto debe contener:
-1. 'objetivo': Un objetivo de aprendizaje claro para la evaluación.
+1. 'objetivo': Un objetivo de aprendizaje claro para la evaluación, alineado con el contenido y nivel.
 2. 'instruccionesGenerales': Instrucciones claras para el estudiante.
 3. 'actividades': Un array de objetos, donde cada objeto es una actividad por cada tipo de ítem solicitado. Cada actividad debe tener:
    - 'id': Un UUID generado por ti.
@@ -433,20 +440,30 @@ Tu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, exp
        - 'pregunta': El enunciado de la pregunta.
        - 'puntaje': Un puntaje numérico.
        - 'habilidadBloom': La habilidad principal de la Taxonomía de Bloom que se trabaja (ej: Analizar, Crear, Evaluar).
-       - Campos adicionales según el tipo:
-           - Para 'Selección múltiple': 'opciones' (array de EXACTAMENTE 4 strings sin la letra de la alternativa) y 'respuestaCorrecta' (índice numérico de la respuesta correcta, de 0 a 3).
+       - Campos adicionales según el tipo (respetando las reglas estrictas de arriba):
+           - Para 'Selección múltiple': 'opciones' (array de EXACTAMENTE 4 strings) y 'respuestaCorrecta' (índice numérico 0-3).
            - Para 'Verdadero o Falso': 'respuestaCorrecta' (booleano).
            - Para 'Términos pareados': 'pares' (array de objetos con 'concepto' y 'definicion').
-           - Para 'Comprensión de lectura': 'texto' (150 a 250 palabras, generado por ti) y 'preguntas' (array de sub-preguntas tipo 'Selección múltiple' o 'Desarrollo').
+           - Para 'Comprensión de lectura': 'texto' (150-250 palabras) y 'preguntas' (array de sub-preguntas tipo 'Selección múltiple' o 'Desarrollo').
            - Para 'Desarrollo': no necesita campos adicionales.
 `;
 
     try {
-      logApiCall('Evaluación - Pruebas', null);
+      const user = auth.currentUser;
+      if (!user) {
+        setError("No se pudo obtener el usuario. Por favor, inicie sesión de nuevo.");
+        setIsGenerating(false);
+        return;
+      }
 
+      logApiCall('Evaluación - Pruebas', currentUser); // Solo si el usuario está listo
+      const token = await user.getIdToken();
       const response = await fetch('/api/generarEvaluacion', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ prompt, formData, uid: currentUser.uid }),
       });
       if (!response.ok) throw new Error('Error al generar la prueba con IA');
@@ -1083,90 +1100,72 @@ const RubricasSubmodule: React.FC<{
     }
   };
 
-  // ...existing code...
-  const handleGeneratePrueba = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!currentUser || !currentUser.uid) {
-      setError("Debes iniciar sesión para generar una evaluación.");
-      return;
+  const handleCreateNew = () => {
+    setCurrentRubrica({
+      id: '', // ID se generará al guardar
+      titulo: '',
+      descripcion: '',
+      fechaCreacion: new Date().toISOString(),
+      dimensiones: [],
+    });
+    setView('form');
+  };
+
+  const handleEdit = (rubrica: RubricaEstatica) => {
+    setCurrentRubrica(rubrica);
+    setView('form');
+  };
+
+  const handleSave = () => {
+    if (!currentRubrica) return;
+    if (currentRubrica.id) {
+      onSave(currentRubrica);
+    } else {
+      onCreate({ ...currentRubrica, id: crypto.randomUUID() });
     }
-    if (
-      !formData.nombre.trim() ||
-      !formData.contenido.trim() ||
-      Object.keys(formData.tiposActividad).length === 0
-    ) {
-      setError(
-        'Nombre, Contenido y al menos un tipo de actividad son obligatorios.'
-      );
-      return;
-    }
-    setIsGenerating(true);
-    setError(null);
+    setView('list');
+    setCurrentRubrica(null);
+  };
 
-    const promptInstructions = Object.entries(formData.tiposActividad)
-      .map(([tipo, cantidad]) => `- ${cantidad} ítem(s) de tipo '${tipo}'`)
-      .join('\n');
+  const handleAddDimensionWithAI = async () => {
+    if (!currentRubrica || !newDimensionName.trim()) return;
 
-    const neeAdaptationPrompt =
-      formData.isNee && formData.selectedNee.length > 0
-        ? `\n**Adaptación CRÍTICA para Necesidades Educativas Especiales (NEE):**\nAdapta esta prueba para estudiantes con las siguientes características: ${formData.selectedNee.join(
-            ', '
-          )}.\nEsto implica las siguientes modificaciones OBLIGATORIAS:\n- Usa un lenguaje claro, simple y directo en todas las preguntas e instrucciones.\n- Evita preguntas con doble negación o estructuras gramaticales complejas.\n- En preguntas de desarrollo, desglosa la pregunta en partes más pequeñas si es posible.\n- Para 'Comprensión de Lectura', usa textos más cortos (100-150 palabras) y con vocabulario accesible.\n- Para 'Selección Múltiple', asegúrate de que los distractores sean claramente incorrectos y no ambiguos.`
-        : '';
+    const dimensionName = newDimensionName;
+    setNewDimensionName('');
 
-    const prompt = `\nEres un experto en evaluación educativa para la educación media en Chile.\nGenera una prueba o guía de trabajo completa en formato JSON estructurado.\n\nInformación base:\n- Nombre de la prueba: ${formData.nombre}\n- Asignatura: ${formData.asignatura}\n- Nivel: ${formData.nivel}\n- Contenido a evaluar: "${formData.contenido}"\n- Tipos y cantidad de ítems solicitados:\n  ${promptInstructions}\n- Nivel de Dificultad General: ${formData.dificultad}. 'Fácil' implica preguntas directas y de recuerdo. 'Intermedio' incluye aplicación y análisis simple. 'Avanzado' requiere síntesis, evaluación y resolución de problemas complejos.\n\n${neeAdaptationPrompt}\n\nTu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, explicaciones, ni el bloque \`\`\`json. El objeto debe contener:\n1. 'objetivo': Un objetivo de aprendizaje claro para la evaluación.\n2. 'instruccionesGenerales': Instrucciones claras para el estudiante.\n3. 'actividades': Un array de objetos, donde cada objeto es una actividad por cada tipo de ítem solicitado. Cada actividad debe tener:\n   - 'id': Un UUID generado por ti.\n   - 'titulo': Un título descriptivo (ej: "Actividad 1: Selección Múltiple").\n   - 'instrucciones': Instrucciones para esa actividad específica.\n   - 'items': Un array de preguntas con la cantidad exacta solicitada. Cada pregunta (item) debe tener:\n       - 'id': Un UUID generado por ti.\n       - 'tipo': El tipo de ítem.\n       - 'pregunta': El enunciado de la pregunta.\n       - 'puntaje': Un puntaje numérico.\n       - 'habilidadBloom': La habilidad principal de la Taxonomía de Bloom que se trabaja (ej: Analizar, Crear, Evaluar).\n       - Campos adicionales según el tipo:\n           - Para 'Selección múltiple': 'opciones' (array de EXACTAMENTE 4 strings sin la letra de la alternativa) y 'respuestaCorrecta' (índice numérico de la respuesta correcta, de 0 a 3).\n           - Para 'Verdadero o Falso': 'respuestaCorrecta' (booleano).\n           - Para 'Términos pareados': 'pares' (array de objetos con 'concepto' y 'definicion').\n           - Para 'Comprensión de lectura': 'texto' (150 a 250 palabras, generado por ti) y 'preguntas' (array de sub-preguntas tipo 'Selección múltiple' o 'Desarrollo').\n           - Para 'Desarrollo': no necesita campos adicionales.\n`;
+    const tempDimId = `temp-${crypto.randomUUID()}`;
+    setCurrentRubrica(prev => prev ? {
+      ...prev,
+      dimensiones: [
+        ...prev.dimensiones,
+        { id: tempDimId, nombre: dimensionName, niveles: { insuficiente: '', suficiente: '', competente: '', avanzado: '' }, isLoading: true } as any
+      ]
+    } : null);
+
+    const prompt = `Para una rúbrica sobre "${currentRubrica.titulo}", genera descriptores para la dimensión "${dimensionName}" en 4 niveles: Insuficiente, Suficiente, Competente y Avanzado. Tu respuesta DEBE ser un único objeto JSON válido con las claves "insuficiente", "suficiente", "competente", "avanzado".`;
 
     try {
-      logApiCall('Evaluación - Pruebas', null);
-      const token = await currentUser.getIdToken();
-      const response = await fetch('/api/generarEvaluacion', {
+      const response = await fetch('/api/generarDescriptorDimension', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ prompt, formData, uid: currentUser.uid }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
       });
-      if (!response.ok) throw new Error('Error al generar la prueba con IA');
-      const generatedData = await response.json();
+      if (!response.ok) throw new Error('Error en la API');
+      const niveles = await response.json();
 
-      let puntajeIdeal = 0;
-      generatedData.actividades.forEach((act: PruebaActividad) => {
-        act.items.forEach((item: any) => {
-          puntajeIdeal += item.puntaje || 0;
-          if (item.tipo === 'Comprensión de lectura' && item.preguntas) {
-            item.preguntas.forEach((subItem: any) => {
-              puntajeIdeal += subItem.puntaje || 0;
-            });
-          }
-        });
-      });
+      setCurrentRubrica(prev => prev ? {
+        ...prev,
+        dimensiones: prev.dimensiones.map(d => d.id === tempDimId ? { ...d, niveles, isLoading: false } : d)
+      } : null);
 
-      const newPrueba: Prueba = {
-        id: crypto.randomUUID(),
-        fechaCreacion: new Date().toISOString(),
-        nombre: formData.nombre,
-        asignatura: formData.asignatura,
-        nivel: formData.nivel,
-        contenidoOriginal: formData.contenido,
-        tiposActividadOriginal: formData.tiposActividad,
-        objetivo: generatedData.objetivo,
-        instruccionesGenerales: generatedData.instruccionesGenerales,
-        puntajeIdeal,
-        actividades: generatedData.actividades,
-        dificultad: formData.dificultad,
-        ...(formData.isNee && { adaptacionNEE: formData.selectedNee }),
-      };
-
-      setCurrentPrueba(newPrueba);
-      setShowAnswers(false);
-    } catch (err) {
-      console.error(err);
-      setError(
-        'Error al generar la prueba con IA. Revisa la consola para más detalles.'
-      );
-    } finally {
-      setIsGenerating(false);
+    } catch (error) {
+      console.error(error);
+      alert('No se pudo generar la dimensión con IA.');
+      // Eliminar la dimensión temporal en caso de error
+      setCurrentRubrica(prev => prev ? {
+        ...prev,
+        dimensiones: prev.dimensiones.filter(d => d.id !== tempDimId)
+      } : null);
     }
   };
 
@@ -1571,73 +1570,51 @@ const EvaluacionAprendizajes: React.FC = () => {
     };
   }, []);
 
-  const handleSaveRubrica = async (rubrica: RubricaEstatica) => {
-    try {
-      await saveRubricaEstatica(rubrica);
-    } catch (error) {
-      console.error(error);
-      alert('No se pudo guardar la rúbrica.');
-    }
-  };
-
-  const handleDeleteRubrica = async (id: string) => {
-    try {
-      await deleteRubricaEstatica(id);
-    } catch (error) {
-      console.error(error);
-      alert('No se pudo eliminar la rúbrica.');
-    }
-  };
-
-  const TabButton: React.FC<{ tabName: typeof activeTab; label: string }> = ({
-    tabName,
-    label,
-  }) => (
-    <button
-      onClick={() => setActiveTab(tabName)}
-      className={`${
-        activeTab === tabName
-          ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-          : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:border-slate-600'
-      } whitespace-nowrap py-4 px-3 border-b-2 font-medium text-sm transition-colors focus:outline-none`}
-    >
-      {label}
-    </button>
-  );
-
   if (loading) {
-    return <div className="text-center py-10">Cargando módulo de evaluaciones...</div>;
+    return <div className="text-center py-10 text-lg">Cargando datos...</div>;
   }
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">
-        Evaluación de Aprendizajes
-      </h1>
-      <div className="border-b border-slate-200 dark:border-slate-700">
-        <nav className="-mb-px flex space-x-6" aria-label="Tabs">
-          <TabButton tabName="pruebas" label="Pruebas y Guías" />
-          <TabButton tabName="rubricas" label="Generador de Rúbricas" />
-          <TabButton tabName="rubricasInteractivas" label="Rúbricas Interactivas" />
-          <TabButton tabName="nominas" label="Gestión de Nóminas" />
-        </nav>
+    <div className="space-y-8">
+      <div className="flex gap-2 mb-4">
+        <button
+          className={`px-4 py-2 rounded-lg font-semibold ${activeTab === 'pruebas' ? 'bg-amber-500 text-white' : 'bg-slate-200 dark:bg-slate-700 dark:text-slate-200'}`}
+          onClick={() => setActiveTab('pruebas')}
+        >
+          Pruebas
+        </button>
+        <button
+          className={`px-4 py-2 rounded-lg font-semibold ${activeTab === 'rubricas' ? 'bg-amber-500 text-white' : 'bg-slate-200 dark:bg-slate-700 dark:text-slate-200'}`}
+          onClick={() => setActiveTab('rubricas')}
+        >
+          Rúbricas
+        </button>
+        <button
+          className={`px-4 py-2 rounded-lg font-semibold ${activeTab === 'rubricasInteractivas' ? 'bg-amber-500 text-white' : 'bg-slate-200 dark:bg-slate-700 dark:text-slate-200'}`}
+          onClick={() => setActiveTab('rubricasInteractivas')}
+        >
+          Rúbricas Interactivas
+        </button>
+        <button
+          className={`px-4 py-2 rounded-lg font-semibold ${activeTab === 'nominas' ? 'bg-amber-500 text-white' : 'bg-slate-200 dark:bg-slate-700 dark:text-slate-200'}`}
+          onClick={() => setActiveTab('nominas')}
+        >
+          Nóminas
+        </button>
       </div>
-
-      <div className="mt-6">
-        {activeTab === 'pruebas' && <PruebasSubmodule />}
-        {activeTab === 'rubricas' && (
-          <RubricasSubmodule
-            rubricas={rubricasEstaticas}
-            onSave={handleSaveRubrica}
-            onDelete={handleDeleteRubrica}
-            onCreate={handleSaveRubrica}
-          />
-        )}
-        {activeTab === 'rubricasInteractivas' && (
-          <RubricasInteractivas allUsers={allUsers} rubricasEstaticas={rubricasEstaticas} />
-        )}
-        {activeTab === 'nominas' && <GestionNominas allUsers={allUsers} />}
-      </div>
+      {activeTab === 'pruebas' && <PruebasSubmodule />}
+      {activeTab === 'rubricas' && (
+        <RubricasSubmodule
+          rubricas={rubricasEstaticas}
+          onSave={() => {}}
+          onDelete={() => {}}
+          onCreate={() => {}}
+        />
+      )}
+      {activeTab === 'rubricasInteractivas' && (
+        <RubricasInteractivas allUsers={allUsers} rubricasEstaticas={rubricasEstaticas} />
+      )}
+      {activeTab === 'nominas' && <GestionNominas allUsers={allUsers} />}
     </div>
   );
 };

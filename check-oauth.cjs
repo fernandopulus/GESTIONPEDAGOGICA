@@ -2,7 +2,7 @@ const admin = require('firebase-admin');
 
 // Inicializar Firebase Admin con credenciales por defecto
 admin.initializeApp({
-  projectId: 'planificador-145df'
+  projectId: 'plania-clase'
 });
 
 const db = admin.firestore();

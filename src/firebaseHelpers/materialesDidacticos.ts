@@ -209,7 +209,7 @@ export const checkGoogleSlidesAuth = async (): Promise<{
 
   try {
     const token = await currentUser.getIdToken();
-    const response = await fetch('https://us-central1-planificador-145df.cloudfunctions.net/checkGoogleSlidesAuth', {
+    const response = await fetch('https://us-central1-plania-clase.cloudfunctions.net/checkGoogleSlidesAuth', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

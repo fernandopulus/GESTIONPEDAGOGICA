@@ -131,8 +131,8 @@ export const oauthCallback = onRequest({
       state.toString()
     );
     
-    // Redirigir al usuario de vuelta a la aplicación
-    res.redirect(`https://planificador-145df.web.app/?auth=success&userId=${userId}&module=materialesDidacticos`);
+  // Redirigir al usuario de vuelta a la aplicación
+  res.redirect(`https://plania-clase.web.app/?auth=success&userId=${userId}&module=materialesDidacticos`);
   } catch (error: any) {
     console.error("Error en el callback de OAuth:", error);
     res.status(500).send(`Error en la autorización: ${error.message}`);

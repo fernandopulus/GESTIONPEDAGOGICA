@@ -6,7 +6,7 @@ const { getAuth } = require('firebase-admin/auth');
 
 // Inicializa la app de Firebase Admin apuntando al emulador
 initializeApp({
-  projectId: "planificador-145df",
+  projectId: "plania-clase",
 });
 
 // Configura la variable de entorno para el emulador

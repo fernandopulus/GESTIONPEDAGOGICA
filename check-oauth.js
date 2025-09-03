@@ -2,7 +2,7 @@ import admin from 'firebase-admin';
 import serviceAccount from './functions/serviceAccountKey.json' assert { type: 'json' };
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  projectId: 'planificador-145df'
+  projectId: 'plania-clase'
 });
 
 const db = admin.firestore();

@@ -833,7 +833,7 @@ const MaterialesDidacticosSubmodule: React.FC<MaterialesDidacticosSubmoduleProps
                     <button
                       onClick={() => {
                         // Llamar directamente al endpoint para autorizar con Google
-                        const authUrl = `https://us-central1-planificador-145df.cloudfunctions.net/slidesAuthorize?userId=${userId}`;
+                        const authUrl = `https://us-central1-plania-clase.cloudfunctions.net/slidesAuthorize?userId=${userId}`;
                         // Usar window.location.href en lugar de window.open para mejor manejo
                         window.location.href = authUrl;
                       }}
