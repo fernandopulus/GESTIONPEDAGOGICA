@@ -1083,91 +1083,91 @@ const RubricasSubmodule: React.FC<{
     }
   };
 
-  const handleAddDimensionWithAI = async () => {
-    if (!newDimensionName.trim() || !currentRubrica) return;
+  // ...existing code...
+  const handleGeneratePrueba = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!currentUser || !currentUser.uid) {
+      setError("Debes iniciar sesión para generar una evaluación.");
+      return;
+    }
+    if (
+      !formData.nombre.trim() ||
+      !formData.contenido.trim() ||
+      Object.keys(formData.tiposActividad).length === 0
+    ) {
+      setError(
+        'Nombre, Contenido y al menos un tipo de actividad son obligatorios.'
+      );
+      return;
+    }
+    setIsGenerating(true);
+    setError(null);
 
-    const newDimId = crypto.randomUUID();
-    const placeholderDimension: DimensionRubrica & { isLoading?: boolean } = {
-      id: newDimId,
-      nombre: newDimensionName,
-      niveles: {
-        insuficiente: '',
-        suficiente: '',
-        competente: '',
-        avanzado: '',
-      },
-      isLoading: true,
-    };
+    const promptInstructions = Object.entries(formData.tiposActividad)
+      .map(([tipo, cantidad]) => `- ${cantidad} ítem(s) de tipo '${tipo}'`)
+      .join('\n');
 
-    setCurrentRubrica((prev) =>
-      prev ? { ...prev, dimensiones: [...prev.dimensiones, placeholderDimension] } : null
-    );
-    setNewDimensionName('');
+    const neeAdaptationPrompt =
+      formData.isNee && formData.selectedNee.length > 0
+        ? `\n**Adaptación CRÍTICA para Necesidades Educativas Especiales (NEE):**\nAdapta esta prueba para estudiantes con las siguientes características: ${formData.selectedNee.join(
+            ', '
+          )}.\nEsto implica las siguientes modificaciones OBLIGATORIAS:\n- Usa un lenguaje claro, simple y directo en todas las preguntas e instrucciones.\n- Evita preguntas con doble negación o estructuras gramaticales complejas.\n- En preguntas de desarrollo, desglosa la pregunta en partes más pequeñas si es posible.\n- Para 'Comprensión de Lectura', usa textos más cortos (100-150 palabras) y con vocabulario accesible.\n- Para 'Selección Múltiple', asegúrate de que los distractores sean claramente incorrectos y no ambiguos.`
+        : '';
 
-    const prompt = `Para una rúbrica sobre "${currentRubrica?.titulo}", genera los descriptores para los 4 niveles de logro (Insuficiente, Suficiente, Competente, Avanzado) para la nueva dimensión: "${newDimensionName}". Considera las dimensiones existentes como contexto: ${currentRubrica?.dimensiones
-      .map((d) => d.nombre)
-      .join(
-        ', '
-      )}. Tu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, explicaciones, ni el bloque \`\`\`json.`;
+    const prompt = `\nEres un experto en evaluación educativa para la educación media en Chile.\nGenera una prueba o guía de trabajo completa en formato JSON estructurado.\n\nInformación base:\n- Nombre de la prueba: ${formData.nombre}\n- Asignatura: ${formData.asignatura}\n- Nivel: ${formData.nivel}\n- Contenido a evaluar: "${formData.contenido}"\n- Tipos y cantidad de ítems solicitados:\n  ${promptInstructions}\n- Nivel de Dificultad General: ${formData.dificultad}. 'Fácil' implica preguntas directas y de recuerdo. 'Intermedio' incluye aplicación y análisis simple. 'Avanzado' requiere síntesis, evaluación y resolución de problemas complejos.\n\n${neeAdaptationPrompt}\n\nTu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, explicaciones, ni el bloque \`\`\`json. El objeto debe contener:\n1. 'objetivo': Un objetivo de aprendizaje claro para la evaluación.\n2. 'instruccionesGenerales': Instrucciones claras para el estudiante.\n3. 'actividades': Un array de objetos, donde cada objeto es una actividad por cada tipo de ítem solicitado. Cada actividad debe tener:\n   - 'id': Un UUID generado por ti.\n   - 'titulo': Un título descriptivo (ej: "Actividad 1: Selección Múltiple").\n   - 'instrucciones': Instrucciones para esa actividad específica.\n   - 'items': Un array de preguntas con la cantidad exacta solicitada. Cada pregunta (item) debe tener:\n       - 'id': Un UUID generado por ti.\n       - 'tipo': El tipo de ítem.\n       - 'pregunta': El enunciado de la pregunta.\n       - 'puntaje': Un puntaje numérico.\n       - 'habilidadBloom': La habilidad principal de la Taxonomía de Bloom que se trabaja (ej: Analizar, Crear, Evaluar).\n       - Campos adicionales según el tipo:\n           - Para 'Selección múltiple': 'opciones' (array de EXACTAMENTE 4 strings sin la letra de la alternativa) y 'respuestaCorrecta' (índice numérico de la respuesta correcta, de 0 a 3).\n           - Para 'Verdadero o Falso': 'respuestaCorrecta' (booleano).\n           - Para 'Términos pareados': 'pares' (array de objetos con 'concepto' y 'definicion').\n           - Para 'Comprensión de lectura': 'texto' (150 a 250 palabras, generado por ti) y 'preguntas' (array de sub-preguntas tipo 'Selección múltiple' o 'Desarrollo').\n           - Para 'Desarrollo': no necesita campos adicionales.\n`;
 
     try {
-      logApiCall('Evaluación - Rúbricas (Añadir Dimensión)', null);
-
-      const response = await fetch('/api/generarDimension', {
+      logApiCall('Evaluación - Pruebas', null);
+      const token = await currentUser.getIdToken();
+      const response = await fetch('/api/generarEvaluacion', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, newDimensionName, currentRubrica }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ prompt, formData, uid: currentUser.uid }),
       });
-      if (!response.ok) throw new Error('Error al generar la dimensión con IA');
-      const generatedLevels: NivelDescriptor = await response.json();
+      if (!response.ok) throw new Error('Error al generar la prueba con IA');
+      const generatedData = await response.json();
 
-      setCurrentRubrica((prev) =>
-        prev
-          ? {
-              ...prev,
-              dimensiones: prev.dimensiones.map((d) =>
-                d.id === newDimId
-                  ? ({ ...d, niveles: generatedLevels } as DimensionRubrica)
-                  : d
-              ),
-            }
-          : null
+      let puntajeIdeal = 0;
+      generatedData.actividades.forEach((act: PruebaActividad) => {
+        act.items.forEach((item: any) => {
+          puntajeIdeal += item.puntaje || 0;
+          if (item.tipo === 'Comprensión de lectura' && item.preguntas) {
+            item.preguntas.forEach((subItem: any) => {
+              puntajeIdeal += subItem.puntaje || 0;
+            });
+          }
+        });
+      });
+
+      const newPrueba: Prueba = {
+        id: crypto.randomUUID(),
+        fechaCreacion: new Date().toISOString(),
+        nombre: formData.nombre,
+        asignatura: formData.asignatura,
+        nivel: formData.nivel,
+        contenidoOriginal: formData.contenido,
+        tiposActividadOriginal: formData.tiposActividad,
+        objetivo: generatedData.objetivo,
+        instruccionesGenerales: generatedData.instruccionesGenerales,
+        puntajeIdeal,
+        actividades: generatedData.actividades,
+        dificultad: formData.dificultad,
+        ...(formData.isNee && { adaptacionNEE: formData.selectedNee }),
+      };
+
+      setCurrentPrueba(newPrueba);
+      setShowAnswers(false);
+    } catch (err) {
+      console.error(err);
+      setError(
+        'Error al generar la prueba con IA. Revisa la consola para más detalles.'
       );
-    } catch (error) {
-      console.error('Error generating dimension descriptors:', error);
-      alert('No se pudieron generar los descriptores.');
-      setCurrentRubrica((prev) =>
-        prev ? { ...prev, dimensiones: prev.dimensiones.filter((d) => d.id !== newDimId) } : null
-      );
+    } finally {
+      setIsGenerating(false);
     }
-  };
-
-  const handleSave = () => {
-    if (!currentRubrica) return;
-    const exists = rubricas.some((r) => r.id === currentRubrica.id);
-    if (exists) {
-      onSave(currentRubrica);
-    } else {
-      onCreate(currentRubrica);
-    }
-    setView('list');
-    setCurrentRubrica(null);
-  };
-
-  const handleEdit = (rubrica: RubricaEstatica) => {
-    setCurrentRubrica(rubrica);
-    setView('form');
-  };
-
-  const handleCreateNew = () => {
-    setCurrentRubrica({
-      id: crypto.randomUUID(),
-      titulo: '',
-      descripcion: '',
-      fechaCreacion: new Date().toISOString(),
-      dimensiones: [],
-    });
-    setView('form');
   };
 
   const handleDimensionChange = (

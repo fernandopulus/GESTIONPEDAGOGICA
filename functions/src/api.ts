@@ -17,8 +17,7 @@ const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
-// If you will call *.run.app from the browser directly, allow CORS; otherwise keep this strict or remove.
-// Adjust origin to your hosting domain.
+// CORS global
 app.use(
   cors({
     origin: ["https://plania-clase.web.app"],
@@ -27,6 +26,14 @@ app.use(
     maxAge: 86400,
   })
 );
+
+// ---- API Router ----
+const apiRouter = express.Router();
+
+// Endpoint de salud para monitoreo y pruebas
+apiRouter.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok", timestamp: Date.now() });
+});
 
 // ---- Auth middleware (verify Firebase ID token) ----
 const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
@@ -69,7 +76,9 @@ const respondJsonFromGemini = async (
 };
 
 // ---- Endpoints ----
-app.post("/generarEvaluacion", requireAuth, async (req: Request, res: Response) => {
+
+// Endpoints bajo /api
+apiRouter.post("/generarEvaluacion", requireAuth, async (req: Request, res: Response) => {
   try {
     const { prompt } = req.body || {};
     if (!prompt) return res.status(400).json({ error: "Prompt requerido" });
@@ -80,7 +89,7 @@ app.post("/generarEvaluacion", requireAuth, async (req: Request, res: Response) 
   }
 });
 
-app.post("/generarRubricaEditor", requireAuth, async (req, res) => {
+apiRouter.post("/generarRubricaEditor", requireAuth, async (req, res) => {
   try {
     const { prompt } = req.body || {};
     if (!prompt) return res.status(400).json({ error: "Prompt requerido" });
@@ -92,7 +101,7 @@ app.post("/generarRubricaEditor", requireAuth, async (req, res) => {
 });
 
 // Ejemplo genérico de texto libre (no JSON)
-app.post("/generarTexto", requireAuth, async (req, res) => {
+apiRouter.post("/generarTexto", requireAuth, async (req, res) => {
   try {
     const { prompt } = req.body || {};
     if (!prompt) return res.status(400).json({ error: "Prompt requerido" });
@@ -103,6 +112,9 @@ app.post("/generarTexto", requireAuth, async (req, res) => {
     return res.status(500).json({ error: "IA call failed" });
   }
 });
+
+// Montar el router bajo /api
+app.use("/api", apiRouter);
 
 // Exporta una sola función Express; añade el rewrite en firebase.json:
 // { "hosting": { "rewrites": [ { "source": "/api/**", "function": { "functionId": "api", "region": "us-central1" } } ] } }
