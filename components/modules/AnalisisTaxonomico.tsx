@@ -134,7 +134,21 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
             Tu tarea es:
             1. Identificar cada pregunta o ítem de evaluación en el documento.
             2. Clasificar cada pregunta en uno de los seis niveles de la Taxonomía de Bloom: Recordar, Comprender, Aplicar, Analizar, Evaluar, Crear.
-            3. Devolver un objeto JSON estructurado con los resultados. El JSON debe ser válido.
+            3. Devolver un objeto JSON estructurado con los resultados. El JSON debe ser válido y tener la siguiente estructura:
+               {
+                 "analysisResults": [
+                   { "question": "...", "habilidadBloom": "..." }
+                 ],
+                 "summary": {
+                   "Recordar": 0,
+                   "Comprender": 0,
+                   "Aplicar": 0,
+                   "Analizar": 0,
+                   "Evaluar": 0,
+                   "Crear": 0
+                 }
+               }
+            Donde "summary" contiene el conteo total de preguntas por cada nivel de Bloom.
         `;
 
         const schema = {
