@@ -17,7 +17,7 @@ import {
   debugRespuestasEstudiante,
 } from '../../src/firebaseHelpers/autoaprendizajeHelper';
 import { calcularNota60 } from '../../src/utils/grades';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { auth } from '../../src/firebase';
 
 // —— Tipos defensivos para las variantes que pueden venir del generador —— //
 type PareadoFromTeacher = { id?: number; concepto?: string; definicion?: string };
@@ -44,20 +44,57 @@ const SpinnerIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
  * Función mejorada para generar feedback con reintentos automáticos
  */
 const generateAIFeedbackWithRetry = async (
-  actividad: ActividadRemota, 
-  feedback: DetailedFeedback, 
-  maxRetries = 3
-): Promise<FeedbackAI | null> => {
+    actividad: ActividadRemota,
+    respuestas: RespuestaEstudianteActividad,
+    estudianteId: string,
+    maxRetries = 3
+) => {
   // Lógica Gemini movida al backend. Llama a un endpoint seguro:
   try {
-    const response = await fetch('/api/generarFeedbackAutoaprendizaje', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ actividad, feedback })
-    });
-    if (!response.ok) throw new Error('Error al generar feedback con IA');
-    const data = await response.json();
-    return data as FeedbackAI;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const user = auth.currentUser;
+        if (!user) {
+          throw new Error("Usuario no autenticado.");
+        }
+        const token = await user.getIdToken();
+
+        const response = await fetch('/api/generarFeedbackAutoaprendizaje', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ actividad, respuestas, estudianteId })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `Error del servidor: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const feedbackContent: DetailedFeedback = data.feedback;
+
+        if (feedbackContent && feedbackContent.resumenGeneral) {
+          const respuestaRef = doc(db, "respuestasActividades", respuestas.id);
+          await updateDoc(respuestaRef, {
+            retroalimentacion: feedbackContent.resumenGeneral,
+            retroalimentacionDetallada: feedbackContent,
+          });
+          setFeedbackLoading(false);
+          return;
+        } else {
+          throw new Error("La respuesta de la IA no tiene el formato esperado.");
+        }
+      } catch (error) {
+        console.error(`Error en intento ${attempt} de generar feedback:`, error);
+        if (attempt === maxRetries) {
+          setFeedbackLoading(false);
+          alert("No se pudo generar el feedback. Por favor, intenta nuevamente más tarde.");
+        }
+      }
+    }
   } catch (error) {
     console.error('Error al generar feedback con IA:', error);
     return null;

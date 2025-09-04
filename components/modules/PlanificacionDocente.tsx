@@ -198,6 +198,7 @@ const usePlanificaciones = (userId: string | null, currentUser?: User | null) =>
 };
 
 import React, { useState, useEffect, useCallback, ChangeEvent, FormEvent } from 'react';
+import { auth } from '../../src/firebase';
 import type { PlanificacionUnidad, PlanificacionClase, DetalleLeccion, ActividadPlanificada, TareaActividad, User, NivelPlanificacion, ActividadFocalizadaEvent, MomentosClase, PlanificacionDocente } from '../../types';
 import { useMemo } from 'react';
 import { EventType } from '../../types';
@@ -869,24 +870,35 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
     
     try {
       logApiCall('Planificación - Actividad Calendario');
-      
+      const user = auth.currentUser;
+      const token = user ? await user.getIdToken() : null;
+      if (!token) throw new Error('No se pudo obtener el token de autenticación');
 
-      // Lógica Gemini movida al backend. Llama a un endpoint seguro:
       const response = await fetch('/api/generarObjetivoActividad', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ prompt, formData })
       });
-      if (!response.ok) throw new Error('Error al generar el objetivo con IA');
-      const { objetivo } = await response.json();
+
+      let objetivo = 'No generado';
+      if (response.ok) {
+        const data = await response.json();
+        objetivo = data.objetivo || objetivo;
+      } else {
+        console.error('Error al generar objetivo con IA:', await response.text());
+        alert("Hubo un error al generar el objetivo. La actividad se guardará sin él.");
+      }
+
       const newActividad: Omit<ActividadPlanificada, 'id'> = {
         ...formData,
-        objetivo: objetivo || 'No generado',
+        objetivo,
       };
 
       const actividadId = await saveActividad(newActividad);
       
-      // Crear el objeto con ID para mostrar en summary
       const actividadCompleta: ActividadPlanificada = {
         ...newActividad,
         id: actividadId,
@@ -895,73 +907,29 @@ const ActividadesCalendarioSubmodule: React.FC<ActividadesCalendarioProps> = ({ 
       setCurrentActividad(actividadCompleta);
       setView('summary');
     } catch (error) {
-      console.error("Error al generar objetivo con IA:", error);
-      alert("Hubo un error al generar el objetivo. La actividad se guardará sin él.");
-      
-      try {
-        const newActividad: Omit<ActividadPlanificada, 'id'> = { 
-          ...formData, 
-          objetivo: 'No generado' 
-        };
-        const actividadId = await saveActividad(newActividad);
-        
-        const actividadCompleta: ActividadPlanificada = {
-          ...newActividad,
-          id: actividadId,
-        };
-        
-        setCurrentActividad(actividadCompleta);
-        setView('summary');
-      } catch (saveError) {
-        console.error("Error al guardar actividad:", saveError);
-        alert("Error al guardar la actividad. Por favor, intente nuevamente.");
-      }
+      console.error("Error al guardar actividad:", error);
+      alert("Error al guardar la actividad. Por favor, intente nuevamente.");
     } finally {
       setIsLoading(false);
     }
   };
-  
-  const handleAddToCalendar = async (actividad: ActividadPlanificada) => {
-    if (!actividad) return;
 
-    // const newEvent: Omit<ActividadFocalizadaEvent, 'id'> = {
-    //   date: actividad.fecha,
-    //   type: EventType.ACTIVIDAD_FOCALIZADA,
-    //   responsables: actividad.nombre,
-    //   ubicacion: actividad.ubicacion,
-    //   horario: actividad.hora,
-    // };
-
-    try {
-      // await saveCalendarEvent(newEvent, userId); // Función no disponible
-      // Implementación temporal - solo actualiza el estado
-      setIsAddedToCalendar(true);
-      alert("Actividad marcada como añadida al calendario (funcionalidad en desarrollo).");
-    } catch (error) {
-      console.error("Error adding to calendar:", error);
-      alert("Hubo un error al agregar la actividad al calendario.");
-    }
+  const handleAddToCalendar = (actividad: ActividadPlanificada) => {
+    // Lógica para agregar al calendario
+    console.log("Agregando al calendario:", actividad);
+    // Aquí iría la llamada a saveCalendarEvent si estuviera disponible
+    setIsAddedToCalendar(true);
   };
-  
-  const inputStyles = `
-  w-full px-4 py-2.5 rounded-lg border border-slate-200 
-  bg-white dark:bg-slate-800 
-  text-slate-900 dark:text-slate-100 
-  placeholder:text-slate-400 dark:placeholder:text-slate-500
-  focus:border-indigo-500 dark:focus:border-indigo-600 
-  focus:ring-2 focus:ring-indigo-500/20 dark:focus:ring-indigo-600/20
-  focus:outline-none
-  transition-colors
-  disabled:opacity-50 disabled:cursor-not-allowed
-`;
+
+  const inputStyles = "w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-400";
 
   if (view === 'form') {
     return (
       <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
-        <form onSubmit={handleSaveActivity} className="space-y-8">
-          {/* General Info */}
+        <form onSubmit={handleSaveActivity} className="space-y-6">
+          {/* Formulario de Actividad */}
           <div className="p-4 border rounded-lg dark:border-slate-700">
-            <h3 className="text-lg font-bold mb-4">Información General</h3>
+            <h3 className="text-lg font-bold mb-4">Detalles de la Actividad</h3>
             <div className="space-y-4">
               <input 
                 name="nombre" 
@@ -1257,7 +1225,58 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'unidad' | 'clase' | 'calendario' | 'materiales'>('unidad');
   const [viewingClassPlan, setViewingClassPlan] = useState<PlanificacionClase | null>(null);
-  const [editingLesson, setEditingLesson] = useState<{ planId: string; lessonIndex: number; lessonData: DetalleLeccion } | null>(null);  const assignedAsignaturas = useMemo(() => currentUser.asignaturas || [], [currentUser.asignaturas]);
+  const [editingLesson, setEditingLesson] = useState<{ planId: string; lessonIndex: number; lessonData: DetalleLeccion } | null>(null);
+  
+  const handleOpenEditModal = (lessonIndex: number, lessonData: DetalleLeccion) => {
+    if (editingPlanificacion) {
+      setEditingLesson({
+        planId: editingPlanificacion.id,
+        lessonIndex,
+        lessonData,
+      });
+    }
+  };
+
+  const handleSelectForEdit = (plan: PlanificacionUnidad) => {
+    setEditingPlanificacion(plan);
+    setUnidadFormData({
+      asignatura: plan.asignatura,
+      nivel: plan.nivel,
+      nombreUnidad: plan.nombreUnidad,
+      contenidos: plan.contenidos,
+      cantidadClases: plan.cantidadClases,
+      observaciones: plan.observaciones,
+      ideasParaUnidad: plan.ideasParaUnidad,
+    });
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('¿Estás seguro de que quieres eliminar esta planificación?')) {
+      try {
+        await deletePlan(id);
+        if (editingPlanificacion?.id === id) {
+          setEditingPlanificacion(null);
+        }
+      } catch (error) {
+        console.error("Error al eliminar planificación:", error);
+        alert("No se pudo eliminar la planificación.");
+      }
+    }
+  };
+
+  const handleDeleteClassPlan = async (id: string) => {
+    if (window.confirm('¿Estás seguro de que quieres eliminar este plan de clase?')) {
+      try {
+        await deletePlan(id);
+        setViewingClassPlan(null);
+      } catch (error) {
+        console.error("Error al eliminar plan de clase:", error);
+        alert("No se pudo eliminar el plan de clase.");
+      }
+    }
+  };
+  
+  const assignedAsignaturas = useMemo(() => currentUser.asignaturas || [], [currentUser.asignaturas]);
   const assignedNiveles = useMemo(() => {
     const assignedCursos = currentUser.cursos || [];
     const nivelesSet = new Set<NivelPlanificacion>();
@@ -1325,25 +1344,28 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     e.preventDefault();
     setLoading(true);
     setError(null);
-
-    if(!unidadFormData.contenidos || !unidadFormData.nombreUnidad){
-      setError("Los campos 'Nombre de Unidad' y 'Contenidos Clave' son obligatorios.");
-      setLoading(false);
-      return;
-    }
-
     try {
       logApiCall('Planificación - Unidad');
-      
-
-      // Lógica Gemini movida al backend. Llama a un endpoint seguro:
       const prompt = buildUnidadPrompt();
+      const user = auth.currentUser;
+      const token = user ? await user.getIdToken() : null;
+      if (!token) throw new Error('No se pudo obtener el token de autenticación');
+      
       const response = await fetch('/api/generarUnidadPlanificacion', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ prompt, unidadFormData })
       });
-      if (!response.ok) throw new Error('Error al generar la unidad con IA');
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Error response from backend:", errorBody);
+        throw new Error(`Error al generar la unidad con IA: ${response.statusText}`);
+      }
+
       const generatedData = await response.json();
 
       const newPlan: Omit<PlanificacionUnidad, 'id'> = {
@@ -1361,17 +1383,13 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         indicadoresEvaluacion: generatedData.indicadoresEvaluacion,
         detallesLeccion: generatedData.detallesLeccion,
       };
-      
       if (editingPlanificacion) {
-        // Actualizar planificación existente
         await updatePlan(editingPlanificacion.id, newPlan);
         setEditingPlanificacion({ ...newPlan, id: editingPlanificacion.id });
       } else {
-        // Crear nueva planificación
         const planId = await savePlan(newPlan);
         setEditingPlanificacion({ ...newPlan, id: planId });
       }
-
     } catch (e) {
       console.error("Error al generar planificación con IA", e);
       setError("Ocurrió un error al contactar con la IA. Verifique la configuración y reintente.");
@@ -1384,7 +1402,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     setLoading(true);
     setError(null);
     
-    const prompt = `Eres un experto pedagogo chileno especialista en diseño de planes de clase alineados con el currículum nacional. A partir de la siguiente información de una clase dentro de una unidad, genera un plan de clase detallado con momentos de inicio, desarrollo y cierre. La clase debe durar 80 minutos.
+    const buildClasePrompt = () => `Eres un experto pedagogo chileno especialista en diseño de planes de clase alineados con el currículum nacional. A partir de la siguiente información de una clase dentro de una unidad, genera un plan de clase detallado con momentos de inicio, desarrollo y cierre. La clase debe durar 80 minutos.
     
     - Asignatura: ${unitPlan.asignatura}
     - Nivel: ${unitPlan.nivel}
@@ -1402,16 +1420,26 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
 
     try {
       logApiCall('Planificación - Utilizar Clase');
-      
-
-      // Lógica Gemini movida al backend. Llama a un endpoint seguro:
       const prompt = buildClasePrompt();
+      const user = auth.currentUser;
+      const token = user ? await user.getIdToken() : null;
+      if (!token) throw new Error('No se pudo obtener el token de autenticación');
+
       const response = await fetch('/api/generarClasePlanificacion', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ prompt, unitPlan, lessonDetail, currentUser })
       });
-      if (!response.ok) throw new Error('Error al generar el plan de clase con IA');
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Error response from backend:", errorBody);
+        throw new Error(`Error al generar el plan de clase con IA: ${response.statusText}`);
+      }
+      
       const generatedData = await response.json();
 
       const newClassPlan: Omit<PlanificacionClase, 'id'> = {
@@ -1427,73 +1455,15 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         momentosClase: generatedData,
         detalleLeccionOrigen: lessonDetail,
       };
-
       await savePlan(newClassPlan);
       alert('¡Plan de clase generado y guardado en la pestaña "Clase"!');
       setActiveTab('clase');
-
     } catch (e) {
       console.error("Error al generar plan de clase con IA", e);
       setError("No se pudo generar el plan de clase. Inténtelo de nuevo.");
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleSelectForEdit = (plan: PlanificacionDocente) => {
-    if (plan.tipo === 'Unidad') {
-      setUnidadFormData({
-        asignatura: plan.asignatura,
-        nivel: plan.nivel,
-        nombreUnidad: plan.nombreUnidad,
-        contenidos: plan.contenidos,
-        cantidadClases: plan.cantidadClases,
-        observaciones: plan.observaciones,
-        ideasParaUnidad: plan.ideasParaUnidad || '',
-      });
-      setEditingPlanificacion(plan);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-  
-  const handleDelete = async (id: string) => {
-    if (window.confirm("¿Está seguro de que desea eliminar esta planificación?")) {
-      try {
-        await deletePlan(id);
-        if (editingPlanificacion?.id === id) {
-          setEditingPlanificacion(null);
-          setUnidadFormData(initialUnidadFormState);
-        }
-      } catch (error) {
-        console.error('Error al eliminar planificación:', error);
-        alert('Error al eliminar la planificación. Por favor, intente nuevamente.');
-      }
-    }
-  };
-
-  const handleDeleteClassPlan = async (id: string) => {
-    if (window.confirm("¿Está seguro de que desea eliminar este plan de clase?")) {
-      try {
-        await deletePlan(id);
-        // Si estamos viendo el plan que se eliminó, volver a la lista
-        if (viewingClassPlan?.id === id) {
-          setViewingClassPlan(null);
-        }
-        console.log('✅ Plan de clase eliminado exitosamente');
-      } catch (error) {
-        console.error('Error al eliminar plan de clase:', error);
-        alert('Error al eliminar el plan de clase. Por favor, intente nuevamente.');
-      }
-    }
-  };
-
-  const handleOpenEditModal = (lessonIndex: number, lessonData: DetalleLeccion) => {
-    if (!editingPlanificacion) return;
-    setEditingLesson({
-      planId: editingPlanificacion.id,
-      lessonIndex,
-      lessonData,
-    });
   };
 
   const handleSaveEditedLesson = async (updatedLesson: DetalleLeccion) => {
@@ -1645,13 +1615,10 @@ const renderUnidadTab = () => (
                   value={unidadFormData.asignatura} 
                   onChange={handleUnidadFieldChange} 
                   className={inputStyles}
+                  required
                   disabled={loading}
                 >
-                  {assignedAsignaturas.length > 0 ? (
-                    assignedAsignaturas.map(a => <option key={a} value={a}>{a}</option>)
-                  ) : (
-                    <option disabled>No tiene asignaturas asignadas</option>
-                  )}
+                  {assignedAsignaturas.map(asig => <option key={asig} value={asig}>{asig}</option>)}
                 </select>
               </div>
               <div>
@@ -1661,40 +1628,35 @@ const renderUnidadTab = () => (
                   value={unidadFormData.nivel} 
                   onChange={handleUnidadFieldChange} 
                   className={inputStyles}
+                  required
                   disabled={loading}
                 >
-                  {assignedNiveles.length > 0 ? (
-                    assignedNiveles.map(n => <option key={n} value={n}>{n}</option>)
-                  ) : (
-                    <option disabled>No tiene cursos/niveles asignados</option>
-                  )}
+                  {assignedNiveles.map(nivel => <option key={nivel} value={nivel}>{nivel}</option>)}
                 </select>
               </div>
-              <div>
-                <label htmlFor="nombreUnidad" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                  Nombre de Unidad <span className="text-red-500">*</span>
-                </label>
+              <div className="md:col-span-2 lg:col-span-1">
+                <label htmlFor="nombreUnidad" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Nombre de la Unidad</label>
                 <input 
                   type="text" 
                   name="nombreUnidad" 
                   value={unidadFormData.nombreUnidad} 
                   onChange={handleUnidadFieldChange} 
                   className={inputStyles} 
-                  placeholder="Ej: La Célula y sus procesos"
+                  placeholder="Ej: Introducción a la Programación"
+                  required
                   disabled={loading}
                 />
               </div>
               <div className="md:col-span-2 lg:col-span-3">
-                <label htmlFor="contenidos" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
-                  Contenidos Clave <span className="text-red-500">*</span>
-                </label>
+                <label htmlFor="contenidos" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Contenidos Clave</label>
                 <textarea 
                   name="contenidos" 
                   value={unidadFormData.contenidos} 
                   onChange={handleUnidadFieldChange} 
                   rows={3} 
-                  placeholder="Ingrese los temas, conceptos clave o unidades que la planificación debe abordar." 
+                  placeholder="Describe los temas, conceptos y habilidades principales que se deben abordar en la unidad. Sé lo más específico posible." 
                   className={inputStyles}
+                  required
                   disabled={loading}
                 />
               </div>

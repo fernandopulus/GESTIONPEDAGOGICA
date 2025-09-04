@@ -32,6 +32,7 @@ import {
   saveActividadFromPreview,
   calcularNota60,
 } from '../../src/firebaseHelpers/actividadesRemotasHelper';
+import { auth } from '../../src/firebase';
 
 
 
@@ -635,9 +636,13 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
 
       // Lógica Gemini movida al backend. Llama a un endpoint seguro:
       const prompt = buildPrompt();
+      const token = await auth.currentUser.getIdToken();
       const response = await fetch('/api/generarActividadRemota', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ prompt, formData, selectedFiles })
       });
       if (!response.ok) throw new Error('Error al generar la actividad con IA');
@@ -689,9 +694,13 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
 
       // Lógica Gemini movida al backend. Llama a un endpoint seguro:
       const prompt = buildPruebaPrompt();
+      const token = await auth.currentUser.getIdToken();
       const response = await fetch('/api/generarPruebaRemota', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ prompt, pruebaFormData })
       });
       if (!response.ok) throw new Error('Error al generar la prueba con IA');

@@ -46,6 +46,7 @@ import {
   getStandaloneCiclosOPR,
 } from '../../src/firebaseHelpers/acompanamientos';
 import { getAllUsers as getAllUsersFromFirebase } from '../../src/firebaseHelpers/users';
+import { auth } from '../../src/firebase';
 
 const getAllUsers = async (): Promise<any[]> => {
   return await getAllUsersFromFirebase();
@@ -502,7 +503,7 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
 
   const improveText = async (model: any, label: string, text: string): Promise<string> => {
     if (!text || !text.trim()) return text;
-    const prompt = `Mejora la redacción del siguiente texto con un tono técnico-pedagógico propio de informes educativos. Mantén el sentido original y NO agregues información nueva ni ejemplos inventados. Devuélvelo como un texto breve, claro y directo. Texto (${label}):\n\n"""${text}"""`;
+    const prompt = `Mejora la redacción del siguiente texto con un tono técnico-pedagógico propio de informes educativos. Mantén el sentido original y NO agregues información nueva ni ejemplos inventados. Texto (${label}):\n\n"""${text}"""`;
     try {
       const result = await model.generateContent(prompt);
       return result.response.text();
@@ -515,26 +516,41 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
   const handleImproveOPRText = async () => {
     setIaImproving(true);
     try {
-      // Lógica Gemini movida al backend. Llama a un endpoint seguro:
-      setIaImproving(true);
-      try {
-        const response = await fetch('/api/mejorarTextoOPR', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ formData })
-        });
-        if (!response.ok) throw new Error('Error al mejorar el texto con IA');
-        const improved = await response.json();
-        setFormData((prev) => ({ ...prev, ...improved }));
-      } catch (error) {
-        setError('Error al mejorar el texto con IA');
-      } finally {
+      const user = auth.currentUser;
+      if (!user) {
+        alert('No se pudo obtener el token de autenticación. Inicia sesión nuevamente.');
         setIaImproving(false);
+        return;
       }
+      const token = await user.getIdToken();
+
+      const response = await fetch('/api/mejorarTextoOPR', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ formData })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Error al mejorar el texto con IA');
+      }
+
+      const { retroalimentacion: improvedRetro } = await response.json();
+      setFormData((prev) => ({
+        ...prev,
+        retroalimentacion: {
+          ...prev.retroalimentacion,
+          ...improvedRetro,
+        }
+      }));
+
       alert('Textos mejorados exitosamente con IA');
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert('No se pudo mejorar la redacción. Intenta nuevamente.');
+      alert(e.message || 'No se pudo mejorar la redacción. Intenta nuevamente.');
     } finally {
       setIaImproving(false);
     }
@@ -1462,28 +1478,29 @@ const AcompanamientoDocente: React.FC = () => {
     setError(null);
 
     try {
-      // Lógica Gemini movida al backend. Llama a un endpoint seguro:
-      try {
-        const response = await fetch('/api/generarFeedbackDocente', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ formData })
-        });
-        if (!response.ok) throw new Error('Error al generar la retroalimentación con IA');
-        const { feedback } = await response.json();
-        setFormData((prev: any) => ({ ...prev, retroalimentacionConsolidada: feedback }));
-        alert('Retroalimentación generada exitosamente con IA.');
-      } catch (error: any) {
-        setError('No se pudo generar la retroalimentación automática.');
-        alert('Error: No se pudo generar la retroalimentación automática.');
-      } finally {
+      const user = auth.currentUser;
+      if (!user) {
+        alert('No se pudo obtener el token de autenticación. Inicia sesión nuevamente.');
         setIaLoadingGeneral(false);
+        return;
       }
+      const token = await user.getIdToken();
+
+      const response = await fetch('/api/generarFeedbackAcompanamientoDocente', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ formData })
+      });
+      if (!response.ok) throw new Error('Error al generar la retroalimentación con IA');
+      const { feedback } = await response.json();
+      setFormData((prev: any) => ({ ...prev, retroalimentacionConsolidada: feedback }));
+      alert('Retroalimentación generada exitosamente con IA.');
     } catch (error: any) {
-      console.error('❌ Error al generar retroalimentación:', error);
-      const errorMessage = error.message || 'No se pudo generar la retroalimentación automática.';
-      setError(errorMessage);
-      alert(`Error: ${errorMessage}`);
+      setError('No se pudo generar la retroalimentación automática.');
+      alert('Error: No se pudo generar la retroalimentación automática.');
     } finally {
       setIaLoadingGeneral(false);
     }
@@ -2379,7 +2396,7 @@ const AcompanamientoDocente: React.FC = () => {
                                     {levelText}
                                   </div>
                                 </td>
-                              );
+                            );
                             })}
                           </tr>
                         ))}
@@ -2535,4 +2552,3 @@ const AcompanamientoDocente: React.FC = () => {
 };
 
 export default AcompanamientoDocente;
-     
