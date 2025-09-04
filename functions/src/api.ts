@@ -343,6 +343,51 @@ apiRouter.post("/generarObjetivoActividad", requireAuth, async (req, res) => {
   }
 });
 
+// --- Analisis Taxonomico ---
+apiRouter.post("/analisisTaxonomico", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { prompt, fileData } = req.body || {};
+      if (!prompt || !fileData) {
+        return res.status(400).json({ error: "Prompt y fileData son requeridos" });
+      }
+  
+      // Llama a Gemini con el archivo
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error("No se ha configurado la API Key de Gemini");
+      
+      const ai = new GoogleGenerativeAI(apiKey);
+      const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
+  
+      const result = await model.generateContent([
+        prompt,
+        {
+          inlineData: {
+            mimeType: fileData.mimeType,
+            data: fileData.data,
+          },
+        },
+      ]);
+      
+      let text = result.response.text();
+  
+      // Limpia el resultado para obtener solo el JSON
+      const match = text.match(/```(json)?\n([\s\S]*?)\n```/);
+      if (match && match[2]) {
+        text = match[2].trim();
+      }
+  
+      const json = JSON.parse(text);
+      return res.status(200).json(json);
+  
+    } catch (error) {
+      console.error("analisisTaxonomico error:", error);
+      if (error instanceof Error) {
+          return res.status(500).json({ error: "Llamada a IA falló", details: error.message });
+      }
+      return res.status(500).json({ error: "Llamada a IA falló con un error desconocido" });
+    }
+  });
+
 // Montar el router bajo /api
 app.use("/api", apiRouter);
 

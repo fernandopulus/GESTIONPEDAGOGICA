@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback, ChangeEvent } from 'react';
 import { User, AnalisisTaxonomico as AnalisisTaxonomicoType, BloomLevel } from '../../types';
 
+import { auth } from '../../src/firebase';
 import { logApiCall } from '../utils/apiLogger';
 import { ASIGNATURAS } from '../../constants';
 import {
@@ -161,13 +162,24 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
         try {
             logApiCall('Análisis Taxonómico', currentUser);
 
+            const user = auth.currentUser;
+            if (!user) throw new Error("Usuario no autenticado.");
+            const token = await user.getIdToken();
+
             // Lógica Gemini movida al backend. Llama a un endpoint seguro:
             const response = await fetch('/api/analisisTaxonomico', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ prompt, fileData, documentName, nivelForm, asignaturaForm, userId: currentUser.id })
             });
-            if (!response.ok) throw new Error('Error al analizar el documento con IA');
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("Error response from backend:", errorBody);
+                throw new Error(`Error al analizar el documento con IA: ${response.statusText}`);
+            }
             const parsedResult = await response.json();
 
             const newAnalysis: Omit<AnalisisTaxonomicoExt, 'id'> = {
