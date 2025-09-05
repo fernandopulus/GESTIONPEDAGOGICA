@@ -705,9 +705,16 @@ const PlanificacionForm: React.FC<{
     }
   );
 
+  // State for adding/editing items
   const [newActivity, setNewActivity] = useState<Omit<ActividadWithResource, 'id'>>({ nombre: '', fechaInicio: '', fechaFin: '', responsables: '', asignaturaPrincipal: '', recursoUrl: '' });
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+
   const [newFechaClave, setNewFechaClave] = useState<Omit<FechaClaveWithResource, 'id'>>({ nombre: '', fecha: '', recursoUrl: '' });
+  const [editingFechaClaveId, setEditingFechaClaveId] = useState<string | null>(null);
+
   const [newTarea, setNewTarea] = useState({ instrucciones: '', fechaEntrega: '', recursoUrl: '' });
+  const [editingTareaId, setEditingTareaId] = useState<string | null>(null);
+
 
   useEffect(() => {
     setFormData(initialPlan || {
@@ -746,21 +753,69 @@ const PlanificacionForm: React.FC<{
   const handleHabilidadToggle = (asig: string, habilidad: string) =>
     setFormData(prev => ({ ...prev, contenidosPorAsignatura: prev.contenidosPorAsignatura.map(c => c.asignatura===asig ? { ...c, habilidades: c.habilidades.includes(habilidad) ? c.habilidades.filter(h=>h!==habilidad) : [...c.habilidades, habilidad] } : c) }));
 
-  const handleAddActivity = () => {
-    if (!newActivity.nombre || !newActivity.fechaInicio || !newActivity.fechaFin) { alert('Nombre y fechas son obligatorios.'); return; }
-    setFormData(prev => ({ ...prev, actividades: [...(prev.actividades || []), { ...newActivity, id: crypto.randomUUID() }] }));
+  // --- Actividades Handlers ---
+  const handleAddOrUpdateActivity = () => {
+    if (!newActivity.nombre || !newActivity.fechaInicio || !newActivity.fechaFin) { alert('Nombre y fechas son obligatorios para la actividad.'); return; }
+    if (editingActivityId) {
+      setFormData(prev => ({ ...prev, actividades: prev.actividades.map(a => a.id === editingActivityId ? { ...newActivity, id: editingActivityId } : a) }));
+      setEditingActivityId(null);
+    } else {
+      setFormData(prev => ({ ...prev, actividades: [...(prev.actividades || []), { ...newActivity, id: crypto.randomUUID() }] }));
+    }
     setNewActivity({ nombre: '', fechaInicio: '', fechaFin: '', responsables: '', asignaturaPrincipal: '', recursoUrl: '' });
   };
-  const handleAddFechaClave = () => {
-    if (!newFechaClave.nombre || !newFechaClave.fecha) return;
-    setFormData(prev => ({ ...prev, fechasClave: [...(prev.fechasClave || []), { ...newFechaClave, id: crypto.randomUUID() }] }));
+  const handleEditActivity = (activity: ActividadWithResource) => {
+    setEditingActivityId(activity.id);
+    setNewActivity(activity);
+  };
+  const handleDeleteActivity = (id: string) => {
+    if (window.confirm('¿Eliminar esta actividad?')) {
+      setFormData(prev => ({ ...prev, actividades: prev.actividades.filter(a => a.id !== id) }));
+    }
+  };
+
+  // --- Fechas Clave Handlers ---
+  const handleAddOrUpdateFechaClave = () => {
+    if (!newFechaClave.nombre || !newFechaClave.fecha) { alert('Nombre y fecha son obligatorios para el hito.'); return; }
+    if (editingFechaClaveId) {
+      setFormData(prev => ({ ...prev, fechasClave: prev.fechasClave.map(f => f.id === editingFechaClaveId ? { ...newFechaClave, id: editingFechaClaveId } : f) }));
+      setEditingFechaClaveId(null);
+    } else {
+      setFormData(prev => ({ ...prev, fechasClave: [...(prev.fechasClave || []), { ...newFechaClave, id: crypto.randomUUID() }] }));
+    }
     setNewFechaClave({ nombre: '', fecha: '', recursoUrl: '' });
   };
-  const handleAddTarea = () => {
-    if (!newTarea.instrucciones || !newTarea.fechaEntrega) { alert('Instrucciones y fecha son obligatorios.'); return; }
-    const tarea = { id: crypto.randomUUID(), numero: (formData.tareas?.length || 0) + 1, ...newTarea } as any;
-    setFormData(prev => ({ ...prev, tareas: [...(prev.tareas || []), tarea] }));
+  const handleEditFechaClave = (fechaClave: FechaClaveWithResource) => {
+    setEditingFechaClaveId(fechaClave.id);
+    setNewFechaClave(fechaClave);
+  };
+  const handleDeleteFechaClave = (id: string) => {
+    if (window.confirm('¿Eliminar este hito?')) {
+      setFormData(prev => ({ ...prev, fechasClave: prev.fechasClave.filter(f => f.id !== id) }));
+    }
+  };
+
+  // --- Tareas Handlers ---
+  const handleAddOrUpdateTarea = () => {
+    if (!newTarea.instrucciones || !newTarea.fechaEntrega) { alert('Instrucciones y fecha son obligatorios para la tarea.'); return; }
+    if (editingTareaId) {
+      const updatedTarea = { ...newTarea, id: editingTareaId, numero: formData.tareas.find(t => t.id === editingTareaId)?.numero || 0 };
+      setFormData(prev => ({ ...prev, tareas: prev.tareas.map(t => t.id === editingTareaId ? updatedTarea : t) as any }));
+      setEditingTareaId(null);
+    } else {
+      const tarea = { id: crypto.randomUUID(), numero: (formData.tareas?.length || 0) + 1, ...newTarea } as any;
+      setFormData(prev => ({ ...prev, tareas: [...(prev.tareas || []), tarea] }));
+    }
     setNewTarea({ instrucciones: '', fechaEntrega: '', recursoUrl: '' });
+  };
+  const handleEditTarea = (tarea: TareaInterdisciplinaria) => {
+    setEditingTareaId(tarea.id);
+    setNewTarea({ instrucciones: tarea.instrucciones, fechaEntrega: tarea.fechaEntrega, recursoUrl: (tarea as any).recursoUrl || '' });
+  };
+  const handleDeleteTarea = (id: string) => {
+    if (window.confirm('¿Eliminar esta tarea?')) {
+      setFormData(prev => ({ ...prev, tareas: prev.tareas.filter(t => t.id !== id) }));
+    }
   };
 
   return (
@@ -806,14 +861,7 @@ const PlanificacionForm: React.FC<{
             <div className="space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto">
                 {availableTeachers.map(t => (
-                  <button key={t.id} type="button" onClick={()=>{
-                    setFormData(prev => ({
-                      ...prev,
-                      docentesResponsables: prev.docentesResponsables.includes(t.id)
-                        ? prev.docentesResponsables.filter(x=>x!==t.id)
-                        : [...prev.docentesResponsables, t.id]
-                    }));
-                  }} className={`p-3 rounded-lg text-left transition-all duration-200 ${formData.docentesResponsables.includes(t.id) ? 'bg-blue-100 border-2 border-blue-500 text-blue-800 dark:bg-blue-900/50 dark:border-blue-400 dark:text-blue-300' : 'bg-slate-50 border-2 border-slate-200 hover:border-slate-300 dark:bg-slate-700 dark:border-slate-600 dark:hover:border-slate-500'}`}>
+                  <button key={t.id} type="button" onClick={()=> handleTeacherToggle(t.id)} className={`p-3 rounded-lg text-left transition-all duration-200 ${formData.docentesResponsables.includes(t.id) ? 'bg-blue-100 border-2 border-blue-500 text-blue-800 dark:bg-blue-900/50 dark:border-blue-400 dark:text-blue-300' : 'bg-slate-50 border-2 border-slate-200 hover:border-slate-300 dark:bg-slate-700 dark:border-slate-600 dark:hover:border-slate-500'}`}>
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm ${formData.docentesResponsables.includes(t.id) ? 'bg-blue-500 text-white' : 'bg-slate-300 text-slate-700 dark:bg-slate-600 dark:text-slate-300'}`}>
                         <UserIcon className="w-5 h-5" />
@@ -832,12 +880,7 @@ const PlanificacionForm: React.FC<{
           <FormCard icon={<Building2 className="w-6 h-6 text-slate-600" />} label="Cursos Participantes">
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
               {CURSOS.map(curso => (
-                <button type="button" key={curso} onClick={()=>{
-                  setFormData(prev => ({
-                    ...prev,
-                    cursos: prev.cursos.includes(curso) ? prev.cursos.filter(c=>c!==curso) : [...prev.cursos, curso]
-                  }));
-                }} className={`p-3 rounded-lg text-center text-sm font-semibold transition-all duration-200 ${formData.cursos.includes(curso) ? 'bg-amber-500 text-white shadow-lg scale-105' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300'}`}>
+                <button type="button" key={curso} onClick={()=> handleCursoToggle(curso)} className={`p-3 rounded-lg text-center text-sm font-semibold transition-all duration-200 ${formData.cursos.includes(curso) ? 'bg-amber-500 text-white shadow-lg scale-105' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300'}`}>
                   {curso}
                 </button>
               ))}
@@ -852,16 +895,7 @@ const PlanificacionForm: React.FC<{
                 <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Seleccionar Asignaturas:</h4>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {ASIGNATURAS.map(asignatura => (
-                    <button type="button" key={asignatura} onClick={()=>{
-                      setFormData(prev => {
-                        const current = prev.asignaturas;
-                        const next = current.includes(asignatura) ? current.filter(a=>a!==asignatura) : [...current, asignatura];
-                        let contenidos = prev.contenidosPorAsignatura;
-                        if (next.includes(asignatura) && !current.includes(asignatura)) contenidos = [...contenidos, { asignatura, contenidos: '', habilidades: [] }];
-                        if (!next.includes(asignatura) && current.includes(asignatura)) contenidos = contenidos.filter(c=>c.asignatura!==asignatura);
-                        return { ...prev, asignaturas: next, contenidosPorAsignatura: contenidos };
-                      });
-                    }} className={`p-2 rounded-lg text-left text-sm font-medium transition-all duration-200 ${formData.asignaturas.includes(asignatura) ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300'}`}>
+                    <button type="button" key={asignatura} onClick={()=> handleAsignaturaToggle(asignatura)} className={`p-2 rounded-lg text-left text-sm font-medium transition-all duration-200 ${formData.asignaturas.includes(asignatura) ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300'}`}>
                       {asignatura}
                     </button>
                   ))}
@@ -922,131 +956,89 @@ const PlanificacionForm: React.FC<{
 
           <FormCard icon={<Calendar className="w-6 h-6 text-slate-600" />} label="Planificación y Cronograma">
             <div className="space-y-6">
+              {/* --- Actividades --- */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 mb-3"><Clock className="w-5 h-5 text-slate-600 dark:text-slate-400" /><h4 className="text-lg font-bold text-slate-800 dark:text-slate-200">Actividades del Proyecto</h4></div>
                 <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
-                    <div className="lg:col-span-3">
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nombre</label>
-                      <input value={newActivity.nombre} onChange={e=>setNewActivity({...newActivity, nombre: e.target.value})} placeholder="Nombre de la actividad" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" />
-                    </div>
-                    <div className="lg:col-span-2">
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Inicio</label>
-                      <input type="date" value={newActivity.fechaInicio} onChange={e=>setNewActivity({...newActivity, fechaInicio: e.target.value})} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" />
-                    </div>
-                    <div className="lg:col-span-2">
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Fin</label>
-                      <input type="date" value={newActivity.fechaFin} onChange={e=>setNewActivity({...newActivity, fechaFin: e.target.value})} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" />
-                    </div>
-                    <div className="lg:col-span-3">
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Recurso (enlace)</label>
-                      <input value={newActivity.recursoUrl || ''} onChange={e=>setNewActivity({...newActivity, recursoUrl: e.target.value})} placeholder="https://..." className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" />
-                    </div>
-                    <div className="lg:col-span-2">
-                      <button type="button" onClick={handleAddActivity} className="w-full bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-1">
-                        <Plus className="w-4 h-4" /> Agregar
-                      </button>
-                    </div>
+                    <div className="lg:col-span-3"><label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nombre</label><input value={newActivity.nombre} onChange={e=>setNewActivity({...newActivity, nombre: e.target.value})} placeholder="Nombre de la actividad" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" /></div>
+                    <div className="lg:col-span-2"><label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Inicio</label><input type="date" value={newActivity.fechaInicio} onChange={e=>setNewActivity({...newActivity, fechaInicio: e.target.value})} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" /></div>
+                    <div className="lg:col-span-2"><label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Fin</label><input type="date" value={newActivity.fechaFin} onChange={e=>setNewActivity({...newActivity, fechaFin: e.target.value})} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" /></div>
+                    <div className="lg:col-span-3"><label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Recurso (enlace)</label><input value={newActivity.recursoUrl || ''} onChange={e=>setNewActivity({...newActivity, recursoUrl: e.target.value})} placeholder="https://..." className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" /></div>
+                    <div className="lg:col-span-2"><button type="button" onClick={handleAddOrUpdateActivity} className="w-full bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-1">{editingActivityId ? 'Actualizar' : <><Plus className="w-4 h-4" /> Agregar</>}</button></div>
                   </div>
                   {!!formData.actividades.length && (
-                    <div className="mt-4">
-                      <h5 className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Actividades Agregadas:</h5>
-                      <div className="space-y-2">
-                        {formData.actividades.map(a => (
-                          <div key={a.id} className="p-2 bg-white dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-600 text-sm">
-                            <div className="flex justify-between items-center gap-2">
-                              <span className="font-medium text-slate-800 dark:text-slate-200">{a.nombre}</span>
-                              <span className="text-slate-500 dark:text-slate-400 text-xs">{a.fechaInicio} - {a.fechaFin}</span>
-                              <ExternalLink href={a.recursoUrl} />
-                            </div>
+                    <div className="mt-4 space-y-2">
+                      {formData.actividades.map(a => (
+                        <div key={a.id} className="p-2 bg-white dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-600 text-sm flex justify-between items-center gap-2">
+                          <div><span className="font-medium text-slate-800 dark:text-slate-200">{a.nombre}</span> <span className="text-slate-500 dark:text-slate-400 text-xs">({a.fechaInicio} - {a.fechaFin})</span></div>
+                          <div className="flex items-center gap-2">
+                            <ExternalLink href={a.recursoUrl} />
+                            <button onClick={() => handleEditActivity(a)} className="p-1 text-blue-600 hover:bg-blue-100 rounded-md"><Edit className="w-3 h-3" /></button>
+                            <button onClick={() => handleDeleteActivity(a.id)} className="p-1 text-red-600 hover:bg-red-100 rounded-md"><Trash2 className="w-3 h-3" /></button>
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
               </div>
 
+              {/* --- Fechas Clave --- */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 mb-3"><CheckCircle className="w-5 h-5 text-slate-600 dark:text-slate-400" /><h4 className="text-lg font-bold text-slate-800 dark:text-slate-200">Fechas Clave (Hitos)</h4></div>
                 <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
                   <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nombre del Hito</label>
-                      <input value={newFechaClave.nombre} onChange={e=>setNewFechaClave({...newFechaClave, nombre: e.target.value})} placeholder="Nombre del hito" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Fecha</label>
-                      <input type="date" value={newFechaClave.fecha} onChange={e=>setNewFechaClave({...newFechaClave, fecha: e.target.value})} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" />
-                    </div>
-                    <div className="sm:col-span-1">
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Recurso (enlace)</label>
-                      <input value={newFechaClave.recursoUrl || ''} onChange={e=>setNewFechaClave({...newFechaClave, recursoUrl: e.target.value})} placeholder="https://..." className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" />
-                    </div>
-                    <button type="button" onClick={handleAddFechaClave} className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-1">
-                      <Plus className="w-4 h-4" /> Agregar
-                    </button>
+                    <div className="sm:col-span-2"><label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nombre del Hito</label><input value={newFechaClave.nombre} onChange={e=>setNewFechaClave({...newFechaClave, nombre: e.target.value})} placeholder="Nombre del hito" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" /></div>
+                    <div><label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Fecha</label><input type="date" value={newFechaClave.fecha} onChange={e=>setNewFechaClave({...newFechaClave, fecha: e.target.value})} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" /></div>
+                    <div className="sm:col-span-1"><label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Recurso (enlace)</label><input value={newFechaClave.recursoUrl || ''} onChange={e=>setNewFechaClave({...newFechaClave, recursoUrl: e.target.value})} placeholder="https://..." className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" /></div>
+                    <button type="button" onClick={handleAddOrUpdateFechaClave} className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-1">{editingFechaClaveId ? 'Actualizar' : <><Plus className="w-4 h-4" /> Agregar</>}</button>
                   </div>
                   {!!formData.fechasClave.length && (
-                    <div className="mt-4">
-                      <h5 className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Fechas Clave Agregadas:</h5>
-                      <div className="space-y-2">
-                        {formData.fechasClave.map(f => (
-                          <div key={f.id} className="p-2 bg-white dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-600 text-sm">
-                            <div className="flex justify-between items-center gap-2">
-                              <span className="font-medium text-slate-800 dark:text-slate-200">{f.nombre}</span>
-                              <span className="text-slate-500 dark:text-slate-400 text-xs">{f.fecha}</span>
-                              <ExternalLink href={f.recursoUrl} />
-                            </div>
+                    <div className="mt-4 space-y-2">
+                      {formData.fechasClave.map(f => (
+                        <div key={f.id} className="p-2 bg-white dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-600 text-sm flex justify-between items-center gap-2">
+                          <div><span className="font-medium text-slate-800 dark:text-slate-200">{f.nombre}</span> <span className="text-slate-500 dark:text-slate-400 text-xs">({f.fecha})</span></div>
+                          <div className="flex items-center gap-2">
+                            <ExternalLink href={f.recursoUrl} />
+                            <button onClick={() => handleEditFechaClave(f)} className="p-1 text-blue-600 hover:bg-blue-100 rounded-md"><Edit className="w-3 h-3" /></button>
+                            <button onClick={() => handleDeleteFechaClave(f.id)} className="p-1 text-red-600 hover:bg-red-100 rounded-md"><Trash2 className="w-3 h-3" /></button>
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
               </div>
 
+              {/* --- Tareas --- */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 mb-3"><Brain className="w-5 h-5 text-slate-600 dark:text-slate-400" /><h4 className="text-lg font-bold text-slate-800 dark:text-slate-200">Tareas para Estudiantes</h4></div>
                 <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
-                    <div className="lg:col-span-5">
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Instrucciones de la Tarea</label>
-                      <input value={newTarea.instrucciones} onChange={e=>setNewTarea({...newTarea, instrucciones: e.target.value})} placeholder="Descripción detallada de la tarea" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" />
-                    </div>
-                    <div className="lg:col-span-3">
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Fecha de Entrega</label>
-                      <input type="date" value={newTarea.fechaEntrega} onChange={e=>setNewTarea({...newTarea, fechaEntrega: e.target.value})} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" />
-                    </div>
-                    <div className="lg:col-span-3">
-                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Recurso (enlace)</label>
-                      <input value={newTarea.recursoUrl || ''} onChange={e=>setNewTarea({...newTarea, recursoUrl: e.target.value})} placeholder="https://..." className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" />
-                    </div>
-                    <div className="lg:col-span-1">
-                      <button type="button" onClick={handleAddTarea} className="w-full bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-1">
-                        <Plus className="w-4 h-4" /> Agregar
-                      </button>
-                    </div>
+                    <div className="lg:col-span-5"><label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Instrucciones</label><input value={newTarea.instrucciones} onChange={e=>setNewTarea({...newTarea, instrucciones: e.target.value})} placeholder="Descripción de la tarea" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" /></div>
+                    <div className="lg:col-span-3"><label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Fecha de Entrega</label><input type="date" value={newTarea.fechaEntrega} onChange={e=>setNewTarea({...newTarea, fechaEntrega: e.target.value})} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" /></div>
+                    <div className="lg:col-span-3"><label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Recurso (enlace)</label><input value={newTarea.recursoUrl || ''} onChange={e=>setNewTarea({...newTarea, recursoUrl: e.target.value})} placeholder="https://..." className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-sm" /></div>
+                    <div className="lg:col-span-1"><button type="button" onClick={handleAddOrUpdateTarea} className="w-full bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-1">{editingTareaId ? <Edit className="w-4 h-4" /> : <Plus className="w-4 h-4" />}</button></div>
                   </div>
                   {!!formData.tareas.length && (
-                    <div className="mt-4">
-                      <h5 className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Tareas Agregadas:</h5>
-                      <div className="space-y-2">
-                        {formData.tareas.map(t => (
-                          <div key={t.id} className="p-3 bg-white dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-600">
-                            <div className="flex justify-between items-start gap-2">
-                              <div className="flex-1">
-                                <span className="inline-block bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300 text-xs font-bold px-2 py-1 rounded mb-1">Tarea #{t.numero}</span>
-                                <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{t.instrucciones}</p>
-                              </div>
-                              <div className="text-right space-y-1">
-                                <span className="block text-slate-500 dark:text-slate-400 text-xs">{t.fechaEntrega}</span>
-                                {'recursoUrl' in t ? <ExternalLink href={(t as any).recursoUrl} /> : <span className="text-slate-400 text-xs">—</span>}
-                              </div>
-                            </div>
+                    <div className="mt-4 space-y-2">
+                      {formData.tareas.map(t => (
+                        <div key={t.id} className="p-3 bg-white dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-600 flex justify-between items-start gap-2">
+                          <div className="flex-1">
+                            <span className="inline-block bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300 text-xs font-bold px-2 py-1 rounded mb-1">Tarea #{t.numero}</span>
+                            <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{t.instrucciones}</p>
                           </div>
-                        ))}
-                      </div>
+                          <div className="text-right space-y-1">
+                            <span className="block text-slate-500 dark:text-slate-400 text-xs">{t.fechaEntrega}</span>
+                            {'recursoUrl' in t ? <ExternalLink href={(t as any).recursoUrl} /> : <span className="text-slate-400 text-xs">—</span>}
+                          </div>
+                          <div className="flex flex-col items-center gap-2 pl-2 border-l ml-2">
+                            <button onClick={() => handleEditTarea(t)} className="p-1 text-blue-600 hover:bg-blue-100 rounded-md"><Edit className="w-3 h-3" /></button>
+                            <button onClick={() => handleDeleteTarea(t.id)} className="p-1 text-red-600 hover:bg-red-100 rounded-md"><Trash2 className="w-3 h-3" /></button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1143,76 +1135,196 @@ const Interdisciplinario: React.FC = () => {
 
   const handleExportProjectPDF = async (plan: PlanificacionExtendida) => {
     setIsExportingId(plan.id);
-    const doc = new jsPDF('p', 'mm', 'a4');
-    const margin = 15;
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const contentWidth = pageWidth - margin * 2;
-    let y = margin + 20;
+    try {
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 15;
+      const contentWidth = pageWidth - margin * 2;
+      let y = margin;
+      let pageNumber = 1;
 
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(0);
-    const titleLines = doc.splitTextToSize(plan.nombreProyecto, contentWidth); doc.text(titleLines, margin, y);
-    y += titleLines.length * 8 + 10;
-
-    const getTeacherNames = (ids: string[]) => ids.map(id => (availableTeachers.find(t=>t.id===id)?.nombreCompleto || id)).join(', ');
-    autoTable(doc, {
-      startY: y,
-      body: [
-        [{ content: 'Docentes Responsables:', styles: { fontStyle: 'bold' } }, getTeacherNames(plan.docentesResponsables)],
-        [{ content: 'Cursos Involucrados:', styles: { fontStyle: 'bold' } }, plan.cursos.join(', ')],
-        [{ content: 'Asignaturas:', styles: { fontStyle: 'bold' } }, plan.asignaturas.join(', ')]
-      ],
-      theme: 'grid',
-      styles: { fontSize: 11, cellPadding: 3, lineColor: [220, 220, 220] },
-      columnStyles: { 0: { cellWidth: 50, fontStyle: 'bold' } }
-    });
-    // @ts-ignore
-    y = (doc as any).lastAutoTable.finalY + 15;
-
-    const addSection = (title: string, content?: string | string[]) => {
-      if (!content || (Array.isArray(content) && !content.length) || (typeof content === 'string' && !content.trim())) return;
-      const text = Array.isArray(content) ? content.join(', ') : String(content);
-      const lines = doc.splitTextToSize(text, contentWidth);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(40); doc.text(title, margin, y); y += 8;
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(80); doc.text(lines, margin, y); y += lines.length * 5 + 10;
-    };
-
-    addSection('Descripción del Proyecto', plan.descripcionProyecto);
-    addSection('Objetivos de Aprendizaje', plan.objetivos);
-    addSection('Indicadores de Logro', plan.indicadoresLogro);
-
-    if (plan.contenidosPorAsignatura && plan.contenidosPorAsignatura.length > 0) {
-      doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('Contenidos por Asignatura', margin, y); y += 10;
-      plan.contenidosPorAsignatura.forEach(c => {
-        doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(`${c.asignatura}:`, margin, y); y += 6;
-        doc.setFont('helvetica','normal'); doc.setFontSize(11);
-        if (c.contenidos) { const lines = doc.splitTextToSize(`Contenidos: ${c.contenidos}`, contentWidth - 10); doc.text(lines, margin + 5, y); y += lines.length * 5 + 3; }
-        if (c.habilidades?.length) { const text = `Habilidades: ${c.habilidades.join(', ')}`; const lines = doc.splitTextToSize(text, contentWidth - 10); doc.text(lines, margin + 5, y); y += lines.length * 5 + 8; }
+      // Cargar la imagen de la cabecera
+      const imageUrl = 'https://res.cloudinary.com/dwncmu1wu/image/upload/v1756260600/Captura_de_pantalla_2025-08-26_a_la_s_10.09.17_p._m._aakgkt.png';
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const imageBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
       });
-      y += 10;
-    }
+      
+      const addHeader = () => {
+        // La imagen de cabecera se extiende a lo ancho con una altura fija
+        doc.addImage(imageBase64, 'PNG', margin, y, contentWidth, 20);
+        y += 25; // Espacio después de la cabecera
+      };
 
-    if (plan.actividades && plan.actividades.length > 0) {
-      doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('Actividades', margin, y); y += 10;
-      autoTable(doc, { startY: y, head: [['Actividad','Inicio','Fin','Recurso']], body: plan.actividades.map(a => [a.nombre, a.fechaInicio, a.fechaFin, a.recursoUrl || '—']), theme: 'striped' });
-      // @ts-ignore
+      const addFooter = () => {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(149, 165, 166);
+        const footerText = `Página ${pageNumber}`;
+        const textWidth = doc.getStringUnitWidth(footerText) * doc.getFontSize() / doc.internal.scaleFactor;
+        doc.text(footerText, (pageWidth - textWidth) / 2, pageHeight - 10);
+      };
+
+      const checkPageBreak = (heightNeeded: number) => {
+        if (y + heightNeeded > pageHeight - margin) {
+          addFooter();
+          doc.addPage();
+          pageNumber++;
+          y = margin;
+          addHeader();
+          return true;
+        }
+        return false;
+      };
+
+      const addSectionTitle = (title: string) => {
+        checkPageBreak(15);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.setTextColor(44, 62, 80); // Color azul oscuro
+        doc.text(title, margin, y);
+        y += 8;
+      };
+
+      const addBodyText = (text: string) => {
+        if (!text || !text.trim()) return;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.setTextColor(86, 101, 115); // Color gris
+        const lines = doc.splitTextToSize(text, contentWidth);
+        checkPageBreak(lines.length * 5 + 5);
+        doc.text(lines, margin, y);
+        y += lines.length * 5 + 8;
+      };
+
+      // Iniciar el documento
+      addHeader();
+
+      // --- Título del Proyecto ---
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.setTextColor(41, 128, 185); // Color azul
+      const titleLines = doc.splitTextToSize(plan.nombreProyecto, contentWidth);
+      checkPageBreak(titleLines.length * 10 + 10);
+      doc.text(titleLines, margin, y);
+      y += titleLines.length * 9 + 10;
+
+      // --- Tabla de Información General ---
+      const getTeacherNames = (ids: string[]) => ids.map(id => (availableTeachers.find(t => t.id === id)?.nombreCompleto || id)).join(', ');
+      autoTable(doc, {
+        startY: y,
+        body: [
+          [{ content: 'Docentes Responsables:', styles: { fontStyle: 'bold' } }, getTeacherNames(plan.docentesResponsables)],
+          [{ content: 'Cursos Involucrados:', styles: { fontStyle: 'bold' } }, plan.cursos.join(', ')],
+          [{ content: 'Asignaturas:', styles: { fontStyle: 'bold' } }, plan.asignaturas.join(', ')]
+        ],
+        theme: 'grid',
+        styles: { fontSize: 11, cellPadding: 3, lineColor: [220, 220, 220] },
+        columnStyles: { 0: { cellWidth: 50, fontStyle: 'bold', fillColor: [245, 245, 245] } },
+        didDrawPage: (data) => {
+          if (data.pageNumber > 1) {
+            y = margin;
+            addHeader();
+          }
+        },
+      });
       y = (doc as any).lastAutoTable.finalY + 10;
-    }
 
-    if (plan.fechasClave && plan.fechasClave.length > 0) {
-      doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('Fechas Clave', margin, y); y += 10;
-      autoTable(doc, { startY: y, head: [['Hito','Fecha','Recurso']], body: plan.fechasClave.map(f => [f.nombre, f.fecha, f.recursoUrl || '—']), theme: 'striped' });
-      // @ts-ignore
-      y = (doc as any).lastAutoTable.finalY + 10;
-    }
+      // --- Secciones de Texto ---
+      addSectionTitle('Descripción del Proyecto');
+      addBodyText(plan.descripcionProyecto);
 
-    if (plan.tareas && plan.tareas.length > 0) {
-      const tasksBody = plan.tareas.map((t: any) => [String(t.numero || ''), t.instrucciones, t.fechaEntrega, t.recursoUrl || '—']);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.text('Tareas para Estudiantes', margin, y); y += 10;
-      autoTable(doc, { startY: y, head: [['#', 'Instrucciones', 'Entrega', 'Recurso']], body: tasksBody, theme: 'striped', headStyles: { fillColor: [52,73,94] } });
-    }
+      addSectionTitle('Objetivos de Aprendizaje');
+      addBodyText(plan.objetivos);
 
-    doc.save(`Proyecto_${plan.nombreProyecto.replace(/\s/g,'_')}.pdf`);
-    setIsExportingId(null);
+      addSectionTitle('Indicadores de Logro');
+      addBodyText(plan.indicadoresLogro);
+
+      // --- Contenidos por Asignatura ---
+      if (plan.contenidosPorAsignatura && plan.contenidosPorAsignatura.length > 0) {
+        addSectionTitle('Contenidos y Habilidades por Asignatura');
+        plan.contenidosPorAsignatura.forEach(c => {
+          checkPageBreak(15);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(12);
+          doc.setTextColor(52, 73, 94);
+          doc.text(`${c.asignatura}:`, margin, y);
+          y += 7;
+
+          if (c.contenidos) {
+            addBodyText(`Contenidos: ${c.contenidos}`);
+          }
+          if (c.habilidades?.length) {
+            addBodyText(`Habilidades: ${c.habilidades.join(', ')}`);
+          }
+        });
+      }
+
+      // --- Tablas de Actividades, Hitos y Tareas ---
+      const tableConfig = {
+        theme: 'striped',
+        headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+        styles: { fontSize: 10, cellPadding: 2.5, halign: 'left' },
+        didDrawPage: (data: any) => {
+          if (data.pageNumber > pageNumber) {
+            pageNumber = data.pageNumber;
+            addFooter();
+          }
+          if (data.pageNumber > 1) {
+            y = margin;
+            addHeader();
+          }
+        }
+      };
+
+      if (plan.actividades && plan.actividades.length > 0) {
+        addSectionTitle('Cronograma de Actividades');
+        autoTable(doc, {
+          ...tableConfig,
+          startY: y,
+          head: [['Actividad', 'Inicio', 'Fin', 'Recurso']],
+          body: plan.actividades.map(a => [a.nombre, a.fechaInicio, a.fechaFin, a.recursoUrl || '—']),
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+
+      if (plan.fechasClave && plan.fechasClave.length > 0) {
+        addSectionTitle('Hitos y Fechas Clave');
+        autoTable(doc, {
+          ...tableConfig,
+          startY: y,
+          head: [['Hito', 'Fecha', 'Recurso']],
+          body: plan.fechasClave.map(f => [f.nombre, f.fecha, f.recursoUrl || '—']),
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+
+      if (plan.tareas && plan.tareas.length > 0) {
+        addSectionTitle('Tareas para Estudiantes');
+        const tasksBody = plan.tareas.map((t: any) => [String(t.numero || ''), t.instrucciones, t.fechaEntrega, t.recursoUrl || '—']);
+        autoTable(doc, {
+          ...tableConfig,
+          startY: y,
+          head: [['#', 'Instrucciones', 'Entrega', 'Recurso']],
+          body: tasksBody,
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+
+      addFooter();
+
+      doc.save(`Proyecto_${plan.nombreProyecto.replace(/\s/g, '_')}.pdf`);
+    } catch (error) {
+      console.error("Error al generar PDF:", error);
+      alert("No se pudo generar el PDF. Verifique la consola para más detalles.");
+    } finally {
+      setIsExportingId(null);
+    }
   };
 
   const getTeacherNames = (ids: string[]) => ids.map(id => (availableTeachers.find(t=>t.id===id)?.nombreCompleto || id)).join(', ');

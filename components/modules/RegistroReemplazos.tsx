@@ -1,4 +1,3 @@
-
 import React, {
   useState,
   useEffect,
@@ -9,18 +8,13 @@ import React, {
 } from "react";
 import { Reemplazo, User } from "../../types";
 import { ASIGNATURAS, CURSOS } from "../../constants";
-
-// Firebase helpers
 import {
   saveReemplazo,
   deleteReemplazo,
   subscribeToReemplazos,
   subscribeToProfesores,
   searchReemplazos,
-  getReemplazosStats,
 } from "../../src/firebaseHelpers/reemplazosHelper";
-
-// Íconos Lucide
 import {
   BellRing,
   CheckCircle2,
@@ -37,8 +31,11 @@ import {
   Clock,
   UserMinus,
   UserPlus,
-  BarChart3
+  BarChart3,
+  FileDown,
+  ArrowUpDown,
 } from "lucide-react";
+import { exportToExcel } from "../../utils/excel/export";
 
 const BLOQUES = Array.from({ length: 12 }, (_, i) => i + 1);
 
@@ -160,7 +157,7 @@ const chipOn =
 const chipOff =
   "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-700";
 
-// =================== STATS ===================
+// =================== STATS COMPONENTS ===================
 
 const StatTile: React.FC<{
   title: string;
@@ -182,39 +179,15 @@ const StatTile: React.FC<{
   </div>
 );
 
-type MiniBarDatum = { label: string; value: number };
-
-const MiniBars: React.FC<{ data: MiniBarDatum[] }> = ({ data }) => {
-  const max = Math.max(1, ...data.map((d) => d.value));
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-      <div className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-        Distribución (graficable)
-      </div>
-      <div className="grid gap-3">
-        {data.map((d) => (
-          <div key={d.label}>
-            <div className="mb-1 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-              <span>{d.label}</span>
-              <span>{d.value}</span>
-            </div>
-            <div className="h-2 w-full rounded bg-slate-200/60 dark:bg-slate-700">
-              <div
-                className="h-2 rounded bg-slate-900 dark:bg-amber-500"
-                style={{ width: `${(d.value / max) * 100}%` }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// ===== NUEVO: BARRAS POR CURSO (PALETA MODERNA) =====
 type CourseDatum = { label: string; value: number };
 
-const CourseBars: React.FC<{ data: CourseDatum[] }> = ({ data }) => {
+type CourseBarsProps = {
+  data: CourseDatum[];
+  title?: string;
+  period?: "month" | "total";
+};
+
+const CourseBars: React.FC<CourseBarsProps> = ({ data, title, period }) => {
   const max = Math.max(1, ...data.map((d) => d.value));
   const palette = [
     "from-indigo-500 to-sky-500",
@@ -230,12 +203,12 @@ const CourseBars: React.FC<{ data: CourseDatum[] }> = ({ data }) => {
       <div className="mb-4 flex items-center gap-2">
         <BarChart3 className="h-5 w-5 text-slate-400" />
         <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
-          Reemplazos / Inasistencias por curso (mes actual)
+          {title || `Reemplazos / Inasistencias por curso (${period === 'month' ? 'mes' : 'total'})`}
         </h3>
       </div>
       {data.length === 0 ? (
         <div className="text-sm text-slate-500 dark:text-slate-400">
-          No hay registros este mes.
+          No hay registros {period === 'month' ? 'este mes' : 'en el período seleccionado'}.
         </div>
       ) : (
         <div className="grid gap-3">
@@ -259,63 +232,110 @@ const CourseBars: React.FC<{ data: CourseDatum[] }> = ({ data }) => {
   );
 };
 
-const StatsCard: React.FC<{ userId: string; reemplazos: Reemplazo[] }> = ({
-  userId,
-  reemplazos,
-}) => {
-  const [stats, setStats] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-
-  const loadStats = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await getReemplazosStats(userId);
-      setStats(data);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    if (userId) loadStats();
-  }, [userId, loadStats]);
-
-  // Agregados graficables (únicos del mes)
-  const now = new Date();
-  const month = now.getMonth();
-  const year = now.getFullYear();
-
-  const delMes = useMemo(
-    () =>
-      (reemplazos || []).filter((r) => {
-        const d = new Date(r.diaAusencia + "T00:00:00");
-        return d.getMonth() === month && d.getFullYear() === year;
-      }),
-    [reemplazos, month, year]
-  );
-
-  const setAusentes = new Set(delMes.map((r) => r.docenteAusente).filter(Boolean));
-  const setReemplazan = new Set(
-    delMes.map((r) => r.docenteReemplazante).filter(Boolean)
-  );
-  const setCursos = new Set(delMes.map((r) => r.curso).filter(Boolean));
-  const setAsigAusentes = new Set(
-    delMes.map((r) => r.asignaturaAusente).filter(Boolean)
-  );
-
-  const grafData: MiniBarDatum[] = [
-    { label: "Prof. ausentes", value: setAusentes.size },
-    { label: "Prof. que reemplazan", value: setReemplazan.size },
-    { label: "Cursos", value: setCursos.size },
-    { label: "Asignaturas ausentes", value: setAsigAusentes.size },
+const TeacherRankingBars: React.FC<{ title: string; data: { label: string; value: number }[], icon: React.ReactNode }> = ({ title, data, icon }) => {
+  const max = Math.max(1, ...data.map((d) => d.value));
+  const palette = [
+    "from-indigo-500 to-sky-500",
+    "from-emerald-500 to-lime-500",
+    "from-amber-500 to-orange-600",
+    "from-fuchsia-500 to-pink-500",
   ];
 
-  if (loading || !stats) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+      <div className="mb-4 flex items-center gap-2">
+        {icon}
+        <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+          {title}
+        </h3>
+      </div>
+      {data.length === 0 ? (
+        <div className="text-sm text-slate-500 dark:text-slate-400">
+          No hay registros para mostrar.
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          {data.slice(0, 5).map((d, i) => (
+            <div key={d.label} className="w-full">
+              <div className="mb-1 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span className="font-medium">{d.label}</span>
+                <span>{d.value}</span>
+              </div>
+              <div className="h-3 w-full rounded-lg bg-slate-100 dark:bg-slate-700">
+                <div
+                  className={`h-3 rounded-lg bg-gradient-to-r ${palette[i % palette.length]}`}
+                  style={{ width: `${(d.value / max) * 100}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const StatsCard: React.FC<{
+  reemplazos: Reemplazo[];
+  period: "month" | "total";
+}> = ({ reemplazos, period }) => {
+  const dataForPeriod = useMemo(() => {
+    if (period === "month") {
+      const now = new Date();
+      const month = now.getMonth();
+      const year = now.getFullYear();
+      return (reemplazos || []).filter((r) => {
+        if (!r.diaAusencia) return false;
+        const d = new Date(r.diaAusencia + "T00:00:00");
+        return d.getMonth() === month && d.getFullYear() === year;
+      });
+    }
+    return reemplazos;
+  }, [reemplazos, period]);
+
+  const stats = useMemo(() => {
+    const totalReemplazos = dataForPeriod.length;
+    const horasRealizadas = dataForPeriod.filter(
+      (r) => r.resultado === "Hora realizada"
+    ).length;
+    const horasCubiertas = totalReemplazos - horasRealizadas;
+    const porcentajeRealizadas =
+      totalReemplazos > 0 ? (horasRealizadas / totalReemplazos) * 100 : 0;
+
+    const countReducer = (key: 'docenteAusente' | 'docenteReemplazante' | 'asignaturaAusente') => 
+      Object.entries(
+        dataForPeriod.reduce((acc, r) => {
+          const value = r[key];
+          if (value) {
+            acc[value] = (acc[value] || 0) + 1;
+          }
+          return acc;
+        }, {} as Record<string, number>)
+      )
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value);
+
+    return {
+      totalReemplazos,
+      horasRealizadas,
+      horasCubiertas,
+      porcentajeRealizadas,
+      setAusentes: new Set(dataForPeriod.map((r) => r.docenteAusente).filter(Boolean)),
+      setReemplazan: new Set(dataForPeriod.map((r) => r.docenteReemplazante).filter(Boolean)),
+      setCursos: new Set(dataForPeriod.map((r) => r.curso).filter(Boolean)),
+      setAsigAusentes: new Set(dataForPeriod.map((r) => r.asignaturaAusente).filter(Boolean)),
+      ausenciasPorProfesor: countReducer('docenteAusente'),
+      reemplazosPorProfesor: countReducer('docenteReemplazante'),
+      ausenciasPorAsignatura: countReducer('asignaturaAusente'),
+    };
+  }, [dataForPeriod]);
+
+  if (!stats) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <div className="flex items-center justify-center gap-2 text-slate-500">
           <Loader2 className="h-5 w-5 animate-spin" />
-          Cargando estadísticas…
+          Calculando estadísticas…
         </div>
       </div>
     );
@@ -323,20 +343,19 @@ const StatsCard: React.FC<{ userId: string; reemplazos: Reemplazo[] }> = ({
 
   return (
     <div className="grid gap-4">
-      {/* KPIs principales */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
-          title="Total"
+          title="Total Reemplazos"
           value={stats.totalReemplazos}
           icon={<BellRing className="h-6 w-6" />}
         />
         <StatTile
-          title="Realizadas"
+          title="Horas Realizadas"
           value={stats.horasRealizadas}
           icon={<CheckCircle2 className="h-6 w-6" />}
         />
         <StatTile
-          title="Cubiertas"
+          title="Horas Cubiertas"
           value={stats.horasCubiertas}
           icon={<ClipboardCheck className="h-6 w-6" />}
         />
@@ -347,37 +366,53 @@ const StatsCard: React.FC<{ userId: string; reemplazos: Reemplazo[] }> = ({
         />
       </div>
 
-      {/* Nuevos KPIs graficables */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
-          title="Profesores ausentes"
-          value={setAusentes.size}
+          title="Profesores ausentes (únicos)"
+          value={stats.setAusentes.size}
           icon={<UserMinus className="h-6 w-6" />}
         />
         <StatTile
-          title="Profesores que reemplazan"
-          value={setReemplazan.size}
+          title="Reemplazantes (únicos)"
+          value={stats.setReemplazan.size}
           icon={<UserPlus className="h-6 w-6" />}
         />
         <StatTile
           title="Cursos (únicos)"
-          value={setCursos.size}
+          value={stats.setCursos.size}
           icon={<Users className="h-6 w-6" />}
         />
         <StatTile
-          title="Asignaturas ausentes"
-          value={setAsigAusentes.size}
+          title="Asignaturas ausentes (únicas)"
+          value={stats.setAsigAusentes.size}
           icon={<BookOpen className="h-6 w-6" />}
         />
       </div>
 
-      {/* Mini gráfico de barras */}
-      <MiniBars data={grafData} />
+      <div className="grid gap-4 md:grid-cols-2">
+        <TeacherRankingBars 
+          title={`Profesores con más ausencias (${period === 'month' ? 'mes' : 'total'})`}
+          data={stats.ausenciasPorProfesor}
+          icon={<UserMinus className="h-5 w-5 text-slate-400" />}
+        />
+        <TeacherRankingBars 
+          title={`Profesores que más reemplazan (${period === 'month' ? 'mes' : 'total'})`}
+          data={stats.reemplazosPorProfesor}
+          icon={<UserPlus className="h-5 w-5 text-slate-400" />}
+        />
+      </div>
+      <div className="grid gap-4">
+        <TeacherRankingBars 
+          title={`Asignaturas con más ausencias (${period === 'month' ? 'mes' : 'total'})`}
+          data={stats.ausenciasPorAsignatura}
+          icon={<BookOpen className="h-5 w-5 text-slate-400" />}
+        />
+      </div>
     </div>
   );
 };
 
-// =================== PRINCIPAL ===================
+// =================== MAIN COMPONENT ===================
 
 interface RegistroReemplazosProps {
   currentUser: User;
@@ -404,10 +439,15 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [statsPeriod, setStatsPeriod] = useState<"month" | "total">("month");
+  const [sortConfig, setSortConfig] = useState<{ key: keyof Reemplazo; direction: 'ascending' | 'descending' } | null>(null);
 
   useEffect(() => {
-    const run = async () => {
-      if (!filter.trim()) return setFilteredReemplazos(reemplazos);
+    const runSearch = async () => {
+      if (!filter.trim()) {
+        setFilteredReemplazos(reemplazos);
+        return;
+      }
       setSearchLoading(true);
       try {
         const results = await search(filter);
@@ -416,8 +456,48 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
         setSearchLoading(false);
       }
     };
-    run();
+    runSearch();
   }, [reemplazos, filter, search]);
+
+  const sortedReemplazos = useMemo(() => {
+    let sortableItems = [...filteredReemplazos];
+    if (sortConfig !== null) {
+      sortableItems.sort((a, b) => {
+        const key = sortConfig.key;
+        const valA = a[key];
+        const valB = b[key];
+
+        if (valA === null || valA === undefined) return 1;
+        if (valB === null || valB === undefined) return -1;
+
+        let comparison = 0;
+        if (key === 'bloquesAfectados') {
+            const arrA = valA as number[];
+            const arrB = valB as number[];
+            if (arrA.length < arrB.length) {
+                comparison = -1;
+            } else if (arrA.length > arrB.length) {
+                comparison = 1;
+            }
+        } else {
+            const strA = String(valA);
+            const strB = String(valB);
+            comparison = strA.localeCompare(strB, 'es', { numeric: true });
+        }
+
+        return sortConfig.direction === 'ascending' ? comparison : -comparison;
+      });
+    }
+    return sortableItems;
+  }, [filteredReemplazos, sortConfig]);
+
+  const requestSort = (key: keyof Reemplazo) => {
+    let direction: 'ascending' | 'descending' = 'ascending';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfig({ key, direction });
+  };
 
   const handleFieldChange = useCallback(
     (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -454,33 +534,23 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
       } = formData;
 
       if (
-        !docenteAusente ||
-        !asignaturaAusente ||
-        !curso ||
-        !diaAusencia ||
-        !docenteReemplazante ||
-        !asignaturaReemplazante ||
-        bloquesAfectados.length === 0
+        !docenteAusente || !asignaturaAusente || !curso || !diaAusencia ||
+        !docenteReemplazante || !asignaturaReemplazante || bloquesAfectados.length === 0
       ) {
-        setError(
-          "Todos los campos son obligatorios y debe seleccionar al menos un bloque."
-        );
+        setError("Todos los campos son obligatorios y debe seleccionar al menos un bloque.");
         setIsSubmitting(false);
         return;
       }
 
       if (docenteAusente === docenteReemplazante) {
-        setError(
-          "El docente ausente y el reemplazante no pueden ser la misma persona."
-        );
+        setError("El docente ausente y el reemplazante no pueden ser la misma persona.");
         setIsSubmitting(false);
         return;
       }
 
       try {
         const resultado =
-          asignaturaAusente.trim().toLowerCase() ===
-          asignaturaReemplazante.trim().toLowerCase()
+          asignaturaAusente.trim().toLowerCase() === asignaturaReemplazante.trim().toLowerCase()
             ? "Hora realizada"
             : "Hora cubierta, no realizada";
 
@@ -488,12 +558,9 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
         await saveReemplazoData(newReemplazo);
         setFormData(initialState);
 
-        // Toast simple
         const n = document.createElement("div");
-        n.className =
-          "fixed top-4 right-4 z-50 rounded-lg bg-emerald-600 px-4 py-2 text-white shadow-lg";
-        n.textContent =
-          resultado === "Hora realizada"
+        n.className = "fixed top-4 right-4 z-50 rounded-lg bg-emerald-600 px-4 py-2 text-white shadow-lg";
+        n.textContent = resultado === "Hora realizada"
             ? "✅ Reemplazo registrado — Hora realizada"
             : "⚠️ Reemplazo registrado — Hora cubierta, no realizada";
         document.body.appendChild(n);
@@ -523,10 +590,30 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
     [deleteReemplazoData]
   );
 
-  const inputBase =
-    "w-full rounded-lg border bg-white px-10 py-2.5 text-slate-700 placeholder-slate-400 shadow-sm outline-none transition focus:ring-2 focus:ring-amber-400 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
+  const courseData = useMemo(() => {
+    const data = statsPeriod === 'month' 
+      ? reemplazos.filter(r => {
+          if (!r.diaAusencia) return false;
+          const d = new Date(r.diaAusencia + "T00:00:00");
+          const now = new Date();
+          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        })
+      : reemplazos;
 
-  if (!currentUser || (!currentUser.email && !currentUser.id)) {
+    const acc: { [k: string]: number } = {};
+    for (const r of data) {
+      const key = r.curso || "Sin curso";
+      acc[key] = (acc[key] || 0) + 1;
+    }
+    return Object.entries(acc)
+      .sort(([a], [b]) => a.localeCompare(b, "es"))
+      .map(([label, value]) => ({ label, value }));
+  }, [reemplazos, statsPeriod]);
+
+  const inputBase =
+    "w-full rounded-lg border bg-white pl-10 pr-4 py-2.5 text-slate-700 placeholder-slate-400 shadow-sm outline-none transition focus:ring-2 focus:ring-amber-400 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
+
+  if (!currentUser?.id && !currentUser?.email) {
     return (
       <div className="grid place-items-center rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <p className="text-slate-500 dark:text-slate-400">
@@ -536,51 +623,53 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
     );
   }
 
-  // ===== NUEVO: datos para gráfico por curso (mes actual) =====
-  const now = new Date();
-  const month = now.getMonth();
-  const year = now.getFullYear();
-  const reemplazosMes = useMemo(
-    () =>
-      (reemplazos || []).filter((r) => {
-        if (!r.diaAusencia) return false;
-        const d = new Date(r.diaAusencia + "T00:00:00");
-        return d.getMonth() === month && d.getFullYear() === year;
-      }),
-    [reemplazos, month, year]
-  );
-
-  const dataPorCurso: { [curso: string]: number } = useMemo(() => {
-    const acc: { [k: string]: number } = {};
-    for (const r of reemplazosMes) {
-      const key = r.curso || "Sin curso";
-      acc[key] = (acc[key] || 0) + 1;
-    }
-    return acc;
-  }, [reemplazosMes]);
-
-  const courseData = useMemo(
-    () =>
-      Object.entries(dataPorCurso)
-        .sort(([a], [b]) => a.localeCompare(b, "es"))
-        .map(([label, value]) => ({ label, value })),
-    [dataPorCurso]
-  );
-
   return (
     <div className="space-y-8">
-      {/* ====== HEADER STATS ====== */}
+      {/* ====== STATS SECTION ====== */}
       <div>
-        <h1 className="mb-1 text-2xl font-bold text-slate-900 dark:text-slate-100">
-          Estadísticas del Mes
-        </h1>
-        <StatsCard userId={userId} reemplazos={reemplazos} />
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              Estadísticas
+            </h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Mostrando datos para: {statsPeriod === 'month' ? 'Mes Actual' : 'Total'}
+            </p>
+          </div>
+          <div className="flex items-center rounded-lg bg-slate-100 p-1 dark:bg-slate-700">
+            <button
+              onClick={() => setStatsPeriod("month")}
+              className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${
+                statsPeriod === "month"
+                  ? "bg-white text-slate-800 shadow-sm dark:bg-slate-600 dark:text-white"
+                  : "text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-white"
+              }`}
+            >
+              Mes
+            </button>
+            <button
+              onClick={() => setStatsPeriod("total")}
+              className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${
+                statsPeriod === "total"
+                  ? "bg-white text-slate-800 shadow-sm dark:bg-slate-600 dark:text-white"
+                  : "text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-white"
+              }`}
+            >
+              Total
+            </button>
+          </div>
+        </div>
+        <StatsCard reemplazos={reemplazos} period={statsPeriod} />
       </div>
 
-      {/* ====== NUEVO: GRÁFICO POR CURSO ====== */}
-      <CourseBars data={courseData} />
+      {/* ====== COURSE CHART SECTION ====== */}
+      <CourseBars
+        data={courseData}
+        title={`Reemplazos / Inasistencias por curso (${statsPeriod === 'month' ? 'mes' : 'total'})`}
+        period={statsPeriod}
+      />
 
-      {/* ====== FORM ====== */}
+      {/* ====== FORM SECTION ====== */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <div className="mb-6">
           <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
@@ -606,98 +695,37 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
                     Docente Ausente
                   </h3>
                 </div>
-
-                <InputShell
-                  label="Nombre"
-                  icon={<GraduationCap className="h-5 w-5" />}
-                >
-                  <select
-                    name="docenteAusente"
-                    value={formData.docenteAusente}
-                    onChange={handleFieldChange}
-                    className={inputBase}
-                    required
-                    disabled={isSubmitting}
-                  >
+                <InputShell label="Nombre" icon={<GraduationCap className="h-5 w-5" />}>
+                  <select name="docenteAusente" value={formData.docenteAusente} onChange={handleFieldChange} className={inputBase} required disabled={isSubmitting}>
                     <option value="">Seleccione un docente</option>
-                    {profesorNames.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
+                    {profesorNames.map((p) => (<option key={p} value={p}>{p}</option>))}
                   </select>
                 </InputShell>
-
                 <InputShell label="Asignatura" icon={<BookOpen className="h-5 w-5" />}>
-                  <select
-                    name="asignaturaAusente"
-                    value={formData.asignaturaAusente}
-                    onChange={handleFieldChange}
-                    className={inputBase}
-                    required
-                    disabled={isSubmitting}
-                  >
+                  <select name="asignaturaAusente" value={formData.asignaturaAusente} onChange={handleFieldChange} className={inputBase} required disabled={isSubmitting}>
                     <option value="">Seleccione una asignatura</option>
-                    {ASIGNATURAS.map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
+                    {ASIGNATURAS.map((a) => (<option key={a} value={a}>{a}</option>))}
                   </select>
                 </InputShell>
-
                 <InputShell label="Curso" icon={<Users className="h-5 w-5" />}>
-                  <select
-                    name="curso"
-                    value={formData.curso}
-                    onChange={handleFieldChange}
-                    className={inputBase}
-                    required
-                    disabled={isSubmitting}
-                  >
+                  <select name="curso" value={formData.curso} onChange={handleFieldChange} className={inputBase} required disabled={isSubmitting}>
                     <option value="">Seleccione un curso</option>
-                    {CURSOS.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
+                    {CURSOS.map((c) => (<option key={c} value={c}>{c}</option>))}
                   </select>
                 </InputShell>
-
-                <InputShell
-                  label="Día de ausencia"
-                  icon={<CalendarIcon className="h-5 w-5" />}
-                >
-                  <input
-                    type="date"
-                    name="diaAusencia"
-                    value={formData.diaAusencia}
-                    onChange={handleFieldChange}
-                    className={inputBase}
-                    required
-                    disabled={isSubmitting}
-                  />
+                <InputShell label="Día de ausencia" icon={<CalendarIcon className="h-5 w-5" />}>
+                  <input type="date" name="diaAusencia" value={formData.diaAusencia} onChange={handleFieldChange} className={inputBase} required disabled={isSubmitting} />
                 </InputShell>
-
                 <div>
                   <div className="mb-2 flex items-center gap-2">
                     <Clock className="h-5 w-5 text-slate-400" />
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Bloques afectados
-                    </span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Bloques afectados</span>
                   </div>
                   <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
                     {BLOQUES.map((b) => {
                       const on = formData.bloquesAfectados.includes(b);
                       return (
-                        <button
-                          key={b}
-                          type="button"
-                          onClick={() => handleChipToggle(b)}
-                          disabled={isSubmitting}
-                          className={`${chipBase} ${on ? chipOn : chipOff}`}
-                          aria-pressed={on}
-                        >
+                        <button key={b} type="button" onClick={() => handleChipToggle(b)} disabled={isSubmitting} className={`${chipBase} ${on ? chipOn : chipOff}`} aria-pressed={on}>
                           {b}
                         </button>
                       );
@@ -714,70 +742,27 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
                     Docente Reemplazante
                   </h3>
                 </div>
-
-                <InputShell
-                  label="Nombre"
-                  icon={<GraduationCap className="h-5 w-5" />}
-                >
-                  <select
-                    name="docenteReemplazante"
-                    value={formData.docenteReemplazante}
-                    onChange={handleFieldChange}
-                    className={inputBase}
-                    required
-                    disabled={isSubmitting}
-                  >
+                <InputShell label="Nombre" icon={<GraduationCap className="h-5 w-5" />}>
+                  <select name="docenteReemplazante" value={formData.docenteReemplazante} onChange={handleFieldChange} className={inputBase} required disabled={isSubmitting}>
                     <option value="">Seleccione un docente</option>
-                    {profesorNames.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
+                    {profesorNames.map((p) => (<option key={p} value={p}>{p}</option>))}
                   </select>
                 </InputShell>
-
                 <InputShell label="Asignatura" icon={<BookOpen className="h-5 w-5" />}>
-                  <select
-                    name="asignaturaReemplazante"
-                    value={formData.asignaturaReemplazante}
-                    onChange={handleFieldChange}
-                    className={inputBase}
-                    required
-                    disabled={isSubmitting}
-                  >
+                  <select name="asignaturaReemplazante" value={formData.asignaturaReemplazante} onChange={handleFieldChange} className={inputBase} required disabled={isSubmitting}>
                     <option value="">Seleccione una asignatura</option>
-                    {ASIGNATURAS.map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
+                    {ASIGNATURAS.map((a) => (<option key={a} value={a}>{a}</option>))}
                   </select>
                 </InputShell>
-
                 {formData.asignaturaAusente && formData.asignaturaReemplazante && (
                   <div className="mt-4 rounded-xl border-2 border-dashed border-slate-200 p-4 dark:border-slate-700">
-                    <div className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                      Vista previa del resultado
-                    </div>
-                    <span
-                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
-                        formData.asignaturaAusente.toLowerCase() ===
-                        formData.asignaturaReemplazante.toLowerCase()
-                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
-                          : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
-                      }`}
-                    >
+                    <div className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Vista previa del resultado</div>
+                    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${formData.asignaturaAusente.toLowerCase() === formData.asignaturaReemplazante.toLowerCase() ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200" : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"}`}>
                       <CheckCircle2 className="h-4 w-4" />
-                      {formData.asignaturaAusente.toLowerCase() ===
-                      formData.asignaturaReemplazante.toLowerCase()
-                        ? "Hora realizada"
-                        : "Hora cubierta, no realizada"}
+                      {formData.asignaturaAusente.toLowerCase() === formData.asignaturaReemplazante.toLowerCase() ? "Hora realizada" : "Hora cubierta, no realizada"}
                     </span>
                     <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                      {formData.asignaturaAusente.toLowerCase() ===
-                      formData.asignaturaReemplazante.toLowerCase()
-                        ? "Las asignaturas coinciden."
-                        : "Las asignaturas no coinciden."}
+                      {formData.asignaturaAusente.toLowerCase() === formData.asignaturaReemplazante.toLowerCase() ? "Las asignaturas coinciden." : "Las asignaturas no coinciden."}
                     </p>
                   </div>
                 )}
@@ -791,48 +776,61 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
             )}
 
             <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={isSubmitting || profesoresLoading}
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 font-semibold text-white shadow hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-50 dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Registrando…
-                  </>
-                ) : (
-                  <>
-                    <SaveIcon className="h-4 w-4" /> Registrar Reemplazo
-                  </>
-                )}
+              <button type="submit" disabled={isSubmitting || profesoresLoading} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 font-semibold text-white shadow hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-50 dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600">
+                {isSubmitting ? (<><Loader2 className="h-4 w-4 animate-spin" /> Registrando…</>) : (<><SaveIcon className="h-4 w-4" /> Registrar Reemplazo</>)}
               </button>
             </div>
           </form>
         )}
       </div>
 
-      {/* ====== HISTORIAL ====== */}
+      {/* ====== HISTORY TABLE SECTION ====== */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-            Historial de Reemplazos
-          </h2>
-          <div className="relative w-full max-w-md">
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-              {searchLoading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <Search className="h-5 w-5" />
-              )}
+        <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+              Historial de Reemplazos
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Mostrando {sortedReemplazos.length} de {reemplazos.length} registros.
+            </p>
+          </div>
+          <div className="flex w-full sm:w-auto items-center gap-2">
+            <div className="relative w-full max-w-md">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                {searchLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
+              </div>
+              <input
+                type="text"
+                placeholder="Buscar por docente, curso o fecha (YYYY-MM-DD)…"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className={inputBase + " pl-10"}
+                disabled={searchLoading}
+              />
             </div>
-            <input
-              type="text"
-              placeholder="Buscar por docente, curso o fecha (YYYY-MM-DD)…"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className={inputBase}
-              disabled={searchLoading}
-            />
+            <button
+              onClick={() => exportToExcel({
+                data: sortedReemplazos.map(r => ({
+                  Fecha: r.diaAusencia,
+                  Curso: r.curso,
+                  'Docente Ausente': r.docenteAusente,
+                  'Asignatura Ausente': r.asignaturaAusente,
+                  'Docente Reemplazante': r.docenteReemplazante,
+                  'Asignatura Reemplazante': r.asignaturaReemplazante,
+                  'Bloques Afectados': r.bloquesAfectados.join(', '),
+                  Resultado: r.resultado,
+                })),
+                fileName: `Historial_Reemplazos_${new Date().toISOString().split('T')[0]}`,
+                sheetName: 'Reemplazos'
+              })}
+              disabled={sortedReemplazos.length === 0}
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+              title="Descargar datos filtrados a Excel"
+            >
+              <FileDown className="h-4 w-4" />
+              <span>Excel</span>
+            </button>
           </div>
         </div>
 
@@ -846,34 +844,35 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
               <thead className="bg-slate-50 dark:bg-slate-700/50">
                 <tr>
                   {[
-                    "Fecha",
-                    "Curso",
-                    "Docente Ausente",
-                    "Docente Reemplazante",
-                    "Bloques",
-                    "Resultado",
-                    "Acciones",
+                    { label: "Fecha", key: "diaAusencia" },
+                    { label: "Curso", key: "curso" },
+                    { label: "Docente Ausente", key: "docenteAusente" },
+                    { label: "Docente Reemplazante", key: "docenteReemplazante" },
+                    { label: "Bloques", key: "bloquesAfectados" },
+                    { label: "Resultado", key: "resultado" },
                   ].map((h) => (
                     <th
-                      key={h}
+                      key={h.key}
                       className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400"
                     >
-                      {h}
+                      <button onClick={() => requestSort(h.key as keyof Reemplazo)} className="flex items-center gap-1 hover:text-slate-700 dark:hover:text-slate-200">
+                        {h.label}
+                        <ArrowUpDown className="h-3 w-3" />
+                      </button>
                     </th>
                   ))}
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                {filteredReemplazos.length > 0 ? (
-                  filteredReemplazos.map((r) => (
+                {sortedReemplazos.length > 0 ? (
+                  sortedReemplazos.map((r) => (
                     <tr
                       key={r.id}
                       className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/40"
                     >
                       <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700 dark:text-slate-200">
-                        {new Date(r.diaAusencia + "T12:00:00").toLocaleDateString(
-                          "es-CL"
-                        )}
+                        {new Date(r.diaAusencia + "T12:00:00").toLocaleDateString("es-CL")}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-700 dark:text-slate-300">
                         {r.curso}
@@ -932,9 +931,9 @@ const RegistroReemplazos: React.FC<RegistroReemplazosProps> = ({
               </tbody>
             </table>
 
-            {filteredReemplazos.length > 0 && !filter && (
+            {sortedReemplazos.length > 0 && !filter && (
               <div className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
-                Mostrando los últimos {filteredReemplazos.length} registros
+                Mostrando los últimos {sortedReemplazos.length} registros
               </div>
             )}
           </div>

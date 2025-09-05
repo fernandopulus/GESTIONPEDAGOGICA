@@ -22,6 +22,7 @@
     "@types/d3": "^7.4.3",
     "@types/d3-cloud": "^1.2.9",
     "@types/recharts": "^2.0.1",
+    "@types/xlsx": "^0.0.36",
     "d3": "^7.9.0",
     "d3-cloud": "^1.2.7",
     "firebase": "^12.1.0",
