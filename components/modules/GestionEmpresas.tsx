@@ -23,6 +23,10 @@ const useGoogleMapsScript = (apiKey: string) => {
     const [error, setError] = useState<Error | null>(null);
 
     useEffect(() => {
+        if (!apiKey) {
+            setError(new Error('No se ha proporcionado una API Key de Google Maps.'));
+            return;
+        }
         const scriptId = 'google-maps-script';
 
         if (document.getElementById(scriptId) || window.google) {
@@ -306,7 +310,7 @@ const GestionEmpresas: React.FC = () => {
     const [savedRoutes, setSavedRoutes] = useState<RutaSupervision[]>([]);
 
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
-    const { isLoaded: isMapScriptLoaded } = useGoogleMapsScript(apiKey);
+    const { isLoaded: isMapScriptLoaded, error: mapScriptError } = useGoogleMapsScript(apiKey);
 
     useEffect(() => {
         setLoading(true);
@@ -519,6 +523,24 @@ const GestionEmpresas: React.FC = () => {
 
     if (loading) {
         return <div className="text-center p-8">Cargando...</div>;
+    }
+
+    if (mapScriptError) {
+        return (
+            <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-6 rounded-xl shadow-md" role="alert">
+                <p className="font-bold text-lg">Error de Configuración de Google Maps</p>
+                <p className="mt-2">{mapScriptError.message}</p>
+                <p className="mt-4 text-sm">
+                    Para solucionar este problema, por favor crea un archivo llamado <code>.env.local</code> en la raíz del proyecto y añade la siguiente línea:
+                </p>
+                <pre className="bg-gray-800 text-white p-3 rounded-md mt-2 text-sm">
+                    VITE_GOOGLE_MAPS_API_KEY=TU_API_KEY_DE_GOOGLE_MAPS
+                </pre>
+                <p className="mt-2 text-sm">
+                    Reemplaza <code>TU_API_KEY_DE_GOOGLE_MAPS</code> con tu clave real. Asegúrate de que la clave tenga habilitada la "Maps JavaScript API" y la "Places API" en tu consola de Google Cloud.
+                </p>
+            </div>
+        );
     }
 
     return (
