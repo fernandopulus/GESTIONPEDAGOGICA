@@ -321,6 +321,7 @@ export const generarPreguntasSimce = onCall({
   enforceAppCheck: false, // Cambiar a true en producción
   timeoutSeconds: 120, // Timeout de 2 minutos
   memory: "1GiB", // Aumentar memoria para Gemini
+  secrets: ["GEMINI_API_KEY"],
 }, async (request) => {
   try {
     // Validar que sea una solicitud autenticada
@@ -332,7 +333,7 @@ export const generarPreguntasSimce = onCall({
     }
     
     // Extraer y validar los parámetros
-    const options: GeneracionSimceOptions = request.data.options;
+  const options: GeneracionSimceOptions = request.data.options;
     
     if (!options) {
       throw new HttpsError(
@@ -341,6 +342,16 @@ export const generarPreguntasSimce = onCall({
       );
     }
     
+    // Normalizar/mapeo de asignatura desde el frontend (puede venir como 'competencia lectora' o 'pensamiento logico')
+    if (options?.asignatura) {
+      const asignaturaLower = (options.asignatura as unknown as string).toString().toLowerCase();
+      if (asignaturaLower.includes('lectora') || asignaturaLower.includes('lectura')) {
+        options.asignatura = 'Lectura' as any;
+      } else if (asignaturaLower.includes('logico') || asignaturaLower.includes('lógico') || asignaturaLower.includes('matemat')) {
+        options.asignatura = 'Matemática' as any;
+      }
+    }
+
     if (!options.asignatura || !["Lectura", "Matemática"].includes(options.asignatura)) {
       throw new HttpsError(
         "invalid-argument",

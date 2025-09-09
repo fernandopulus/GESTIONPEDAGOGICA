@@ -1,4 +1,7 @@
 import {onCall, CallableRequest, HttpsError} from "firebase-functions/v2/https";
+import {defineString} from "firebase-functions/params";
+
+const geminiApiKey = defineString("GEMINI_API_KEY");
 
 /**
  * Obtiene la API Key de Gemini desde variables de entorno.
@@ -6,10 +9,11 @@ import {onCall, CallableRequest, HttpsError} from "firebase-functions/v2/https";
  * @throws Error si no está definida la variable de entorno.
  */
 const getGeminiApiKey = (): string => {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("Falta la clave de Gemini en variables de entorno.");
+  const key = geminiApiKey.value();
+  if (!key) {
+    throw new Error("Falta la clave de Gemini en las variables de entorno (GEMINI_API_KEY).");
   }
-  return process.env.GEMINI_API_KEY;
+  return key;
 };
 
 /**
@@ -18,7 +22,7 @@ const getGeminiApiKey = (): string => {
  * @throws HttpsError si el usuario no está autenticado.
  * @return {void}
  */
-const isAuthenticated = (request: CallableRequest): void => {
+export const isAuthenticated = (request: CallableRequest): void => {
   if (!request.auth) {
     throw new HttpsError(
       "unauthenticated",
@@ -34,7 +38,7 @@ const isAuthenticated = (request: CallableRequest): void => {
  * @param {Record<string, unknown>=} params.config - Config extra (opcional).
  * @return {Promise<string>} Respuesta generada por Gemini.
  */
-async function callGemini({
+export async function callGemini({
   prompt,
   config,
 }: {

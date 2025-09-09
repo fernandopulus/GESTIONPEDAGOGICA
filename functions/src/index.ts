@@ -20,6 +20,7 @@ const geminiApiKey = defineString("GEMINI_API_KEY");
 
 // Definición de tu función en la nube 'callGeminiAI'
 export const callGeminiAI = onCall({
+  secrets: ["GEMINI_API_KEY"], // Declara el secreto aquí
   enforceAppCheck: true, // Habilita la seguridad de App Check
   timeoutSeconds: 120, // Aumenta el tiempo de espera a 2 minutos
 }, async (request: CallableRequest) => {
@@ -398,5 +399,12 @@ export {testGemini} from "./testGemini";
 
 // Función para generar preguntas SIMCE
 export {generarPreguntasSimce} from "./simceGenerator";
+
+// Funciones para generar evaluaciones con IA
+export {
+  generarRubricaConGemini,
+  generarDescriptorDimensionConGemini,
+  generarPruebaConGemini,
+} from "./evaluacionAprendizajes";
 
 export { api } from "./api";
