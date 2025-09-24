@@ -39,7 +39,7 @@ import EvaluacionCompetencias from './modules/EvaluacionCompetencias';
 import SimceFixed from './modules/SimceFixed';
 
 // UI
-import { Menu, ChevronLeft, ChevronRight, GraduationCap } from 'lucide-react';
+import { Menu, ChevronLeft, ChevronRight, GraduationCap, ChevronDown } from 'lucide-react';
 
 interface DashboardProps {
   currentUser: User;
@@ -90,6 +90,16 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [activeModule, setActiveModule] = useState<Module | null>(null);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [expandedSidebarGroups, setExpandedSidebarGroups] = useState<Record<string, boolean>>({
+    planificacion: true,
+    evaluacion: true,
+    reflexion: true,
+    herramientas: true,
+  sd_gestion: true,
+  sd_planificacion: true,
+  sd_reflexion: true,
+  sd_herramientas: true,
+  });
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
@@ -141,50 +151,272 @@ const Dashboard: React.FC<DashboardProps> = ({
         </button>
       </div>
 
-      {/* Lista plana de módulos */}
-      <nav
-        className="flex-1 overflow-y-auto p-3 bg-[#1B2433]"
-        onKeyDown={(e) => {
-          const idx = itemRefs.current.findIndex((el) => el === document.activeElement);
-          if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            const next = Math.min((idx === -1 ? 0 : idx + 1), itemRefs.current.length - 1);
-            itemRefs.current[next]?.focus();
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            const prev = Math.max((idx === -1 ? 0 : idx - 1), 0);
-            itemRefs.current[prev]?.focus();
-          } else if (e.key === 'Enter' && idx >= 0) {
-            itemRefs.current[idx]?.click();
-          }
-        }}
-      >
-        <div className="space-y-1">
-          {modules.map((mod, i) => {
-            const isActive = activeModule?.name === mod.name;
-            return (
-              <button
-                key={mod.name}
-                ref={(el) => (itemRefs.current[i] = el)}
-                onClick={() => handleModuleSelect(mod)}
-                className={`w-full group flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'justify-start px-4'} gap-3 py-3 rounded-2xl transition-all
-                  ${isActive
-                    ? 'bg-amber-400 text-slate-900 font-bold shadow-md'
-                    : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
-                title={isSidebarCollapsed ? mod.name : undefined}
-              >
-                <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>
-                  {mod.icon}
-                </span>
-                {!isSidebarCollapsed && (
-                  <span className="text-[1.05rem] leading-tight whitespace-normal break-words text-left">
-                    {mod.name}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+      {/* Navegación: agrupada para PROFESORADO, plana para otros perfiles */}
+      <nav className="flex-1 overflow-y-auto p-3 bg-[#1B2433]">
+        {profile === Profile.PROFESORADO && !isSidebarCollapsed ? (
+          <div className="space-y-3">
+            {[
+              {
+                id: 'planificacion',
+                title: 'Planificación',
+                items: ['Planificación', 'Recursos de Aprendizaje', 'Interdisciplinario', 'Inclusión'],
+              },
+              {
+                id: 'evaluacion',
+                title: 'Evaluación',
+                items: ['Evaluación de Aprendizajes', 'Evaluaciones Formativas', 'Evaluación de Competencias', 'Actividades Remotas', 'SIMCE'],
+              },
+              {
+                id: 'reflexion',
+                title: 'Reflexión',
+                items: ['Análisis Taxonómico', 'Mis Acompañamientos', 'Desarrollo Profesional'],
+              },
+              {
+                id: 'herramientas',
+                title: 'Herramientas',
+                items: ['Muro de Anuncios', 'Mensajería Interna', 'Generador de Actas'],
+              },
+            ].map((grp) => {
+              const isOpen = !!expandedSidebarGroups[grp.id];
+              // map Module objects by name for this group
+              const groupModules = grp.items
+                .map((name) => modules.find((m) => m.name === name))
+                .filter(Boolean) as Module[];
+
+              if (groupModules.length === 0) return null;
+
+              return (
+                <div key={grp.id} className="rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/10 transition"
+                    onClick={() => setExpandedSidebarGroups((p) => ({ ...p, [grp.id]: !p[grp.id] }))}
+                    aria-expanded={isOpen}
+                  >
+                    <span className="text-sm font-semibold text-white/90">{grp.title}</span>
+                    <ChevronDown className={`w-4 h-4 text-white/70 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isOpen && (
+                    <div className="px-2 pb-2">
+                      {groupModules.map((mod) => {
+                        const isActive = activeModule?.name === mod.name;
+                        return (
+                          <button
+                            key={mod.name}
+                            onClick={() => handleModuleSelect(mod)}
+                            className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-xl transition-all mt-1
+                              ${isActive ? 'bg-amber-400 text-slate-900 font-bold shadow' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                            title={mod.name}
+                          >
+                            <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>{mod.icon}</span>
+                            <span className="text-[0.98rem] leading-tight text-left">{mod.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {/* Otros módulos que no estén en los grupos definidos */}
+            {modules.filter((m) => ![
+              'Planificación','Recursos de Aprendizaje','Interdisciplinario','Inclusión',
+              'Evaluación de Aprendizajes','Evaluaciones Formativas','Evaluación de Competencias','Actividades Remotas','SIMCE',
+              'Análisis Taxonómico','Mis Acompañamientos','Desarrollo Profesional',
+              'Muro de Anuncios','Mensajería Interna','Generador de Actas'
+            ].includes(m.name)).length > 0 && (
+              <div className="rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+                <div className="px-4 py-3 text-sm font-semibold text-white/90">Otros</div>
+                <div className="px-2 pb-2">
+                  {modules
+                    .filter((m) => ![
+                      'Planificación','Recursos de Aprendizaje','Interdisciplinario','Inclusión',
+                      'Evaluación de Aprendizajes','Evaluaciones Formativas','Evaluación de Competencias','Actividades Remotas','SIMCE',
+                      'Análisis Taxonómico','Mis Acompañamientos','Desarrollo Profesional',
+                      'Muro de Anuncios','Mensajería Interna','Generador de Actas'
+                    ].includes(m.name))
+                    .map((mod) => {
+                      const isActive = activeModule?.name === mod.name;
+                      return (
+                        <button
+                          key={mod.name}
+                          onClick={() => handleModuleSelect(mod)}
+                          className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-xl transition-all mt-1
+                            ${isActive ? 'bg-amber-400 text-slate-900 font-bold shadow' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                          title={mod.name}
+                        >
+                          <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>{mod.icon}</span>
+                          <span className="text-[0.98rem] leading-tight text-left">{mod.name}</span>
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : profile === Profile.SUBDIRECCION && !isSidebarCollapsed ? (
+          <div className="space-y-3">
+            {[
+              {
+                id: 'sd_gestion',
+                title: 'Gestión',
+                items: [
+                  'Administración',
+                  'Registro de inasistencias y reemplazos docentes',
+                  'Crear horarios',
+                  'Seguimiento de acciones pedagógicas',
+                ],
+              },
+              {
+                id: 'sd_planificacion',
+                title: 'Planificación',
+                items: ['Seguimiento Curricular', 'Interdisciplinario', 'Inclusión'],
+              },
+              {
+                id: 'sd_reflexion',
+                title: 'Reflexión',
+                items: ['Acompañamiento docente', 'Análisis Taxonómico', 'Dashboard'],
+              },
+              {
+                id: 'sd_herramientas',
+                title: 'Herramientas',
+                items: ['Calendario Académico', 'Muro de Anuncios', 'Mensajería Interna', 'Generador de Actas'],
+              },
+            ].map((grp) => {
+              const isOpen = !!expandedSidebarGroups[grp.id];
+              const groupModules = grp.items
+                .map((name) => modules.find((m) => m.name === name))
+                .filter(Boolean) as Module[];
+              if (groupModules.length === 0) return null;
+              return (
+                <div key={grp.id} className="rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/10 transition"
+                    onClick={() => setExpandedSidebarGroups((p) => ({ ...p, [grp.id]: !p[grp.id] }))}
+                    aria-expanded={isOpen}
+                  >
+                    <span className="text-sm font-semibold text-white/90">{grp.title}</span>
+                    <ChevronDown className={`w-4 h-4 text-white/70 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isOpen && (
+                    <div className="px-2 pb-2">
+                      {groupModules.map((mod) => {
+                        const isActive = activeModule?.name === mod.name;
+                        return (
+                          <button
+                            key={mod.name}
+                            onClick={() => handleModuleSelect(mod)}
+                            className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-xl transition-all mt-1
+                              ${isActive ? 'bg-amber-400 text-slate-900 font-bold shadow' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                            title={mod.name}
+                          >
+                            <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>{mod.icon}</span>
+                            <span className="text-[0.98rem] leading-tight text-left">{mod.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Otros no agrupados (p. ej., SIMCE) */}
+            {modules.filter((m) => ![
+              'Administración',
+              'Registro de inasistencias y reemplazos docentes',
+              'Crear horarios',
+              'Seguimiento de acciones pedagógicas',
+              'Seguimiento Curricular',
+              'Interdisciplinario',
+              'Inclusión',
+              'Acompañamiento docente',
+              'Análisis Taxonómico',
+              'Dashboard',
+              'Calendario Académico',
+              'Muro de Anuncios',
+              'Mensajería Interna',
+              'Generador de Actas',
+            ].includes(m.name)).length > 0 && (
+              <div className="rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+                <div className="px-4 py-3 text-sm font-semibold text-white/90">Otros</div>
+                <div className="px-2 pb-2">
+                  {modules
+                    .filter((m) => ![
+                      'Administración',
+                      'Registro de inasistencias y reemplazos docentes',
+                      'Crear horarios',
+                      'Seguimiento de acciones pedagógicas',
+                      'Seguimiento Curricular',
+                      'Interdisciplinario',
+                      'Inclusión',
+                      'Acompañamiento docente',
+                      'Análisis Taxonómico',
+                      'Dashboard',
+                      'Calendario Académico',
+                      'Muro de Anuncios',
+                      'Mensajería Interna',
+                      'Generador de Actas',
+                    ].includes(m.name))
+                    .map((mod) => {
+                      const isActive = activeModule?.name === mod.name;
+                      return (
+                        <button
+                          key={mod.name}
+                          onClick={() => handleModuleSelect(mod)}
+                          className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-xl transition-all mt-1
+                            ${isActive ? 'bg-amber-400 text-slate-900 font-bold shadow' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                          title={mod.name}
+                        >
+                          <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>{mod.icon}</span>
+                          <span className="text-[0.98rem] leading-tight text-left">{mod.name}</span>
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          // Lista plana (colapsado o no PROFESORADO)
+          <div
+            className="space-y-1"
+            onKeyDown={(e) => {
+              const idx = itemRefs.current.findIndex((el) => el === document.activeElement);
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const next = Math.min((idx === -1 ? 0 : idx + 1), itemRefs.current.length - 1);
+                itemRefs.current[next]?.focus();
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prev = Math.max((idx === -1 ? 0 : idx - 1), 0);
+                itemRefs.current[prev]?.focus();
+              } else if (e.key === 'Enter' && idx >= 0) {
+                itemRefs.current[idx]?.click();
+              }
+            }}
+          >
+            {modules.map((mod, i) => {
+              const isActive = activeModule?.name === mod.name;
+              return (
+                <button
+                  key={mod.name}
+                  ref={(el) => (itemRefs.current[i] = el)}
+                  onClick={() => handleModuleSelect(mod)}
+                  className={`w-full group flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'justify-start px-4'} gap-3 py-3 rounded-2xl transition-all
+                    ${isActive ? 'bg-amber-400 text-slate-900 font-bold shadow-md' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                  title={isSidebarCollapsed ? mod.name : undefined}
+                >
+                  <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>{mod.icon}</span>
+                  {!isSidebarCollapsed && (
+                    <span className="text-[1.05rem] leading-tight whitespace-normal break-words text-left">{mod.name}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </nav>
     </>
   );

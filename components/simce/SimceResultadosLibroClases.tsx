@@ -131,21 +131,12 @@ export const SimceResultadosLibroClases: React.FC<SimceResultadosLibroClasesProp
         setCargando(true);
         setError(null);
         
-        // Cargar cursos del profesor
-        if (currentUser.cursos && Array.isArray(currentUser.cursos) && currentUser.cursos.length > 0) {
-          const cursosNormalizados = currentUser.cursos.map(normalizeCurso);
-          setCursosDisponibles(cursosNormalizados);
-          setCursoSeleccionado(cursosNormalizados[0]);
-        } else {
-          throw new Error('No hay cursos asignados al profesor');
-        }
-        
-        // Cargar evaluaciones del profesor
-        if (!currentUser.uid) {
+        // Cargar evaluaciones del profesor (usar id, no uid)
+        if (!currentUser.id) {
           throw new Error('ID de usuario no válido');
         }
 
-        const evaluacionesProfesor = await obtenerEvaluacionesPorProfesor(currentUser.uid);
+        const evaluacionesProfesor = await obtenerEvaluacionesPorProfesor(currentUser.id);
         const evaluacionesInfo = evaluacionesProfesor.map(ev => ({
           id: ev.id,
           titulo: ev.titulo,
@@ -154,6 +145,30 @@ export const SimceResultadosLibroClases: React.FC<SimceResultadosLibroClasesProp
         }));
         
         setEvaluaciones(evaluacionesInfo);
+        
+        // Derivar cursos desde las evaluaciones asignadas (preferente)
+        const cursosDesdeEvals = Array.from(
+          new Set(
+            evaluacionesProfesor
+              .flatMap((ev: any) => Array.isArray(ev.cursosAsignados) ? ev.cursosAsignados : [])
+              .filter(Boolean)
+              .map((c: string) => normalizeCurso(c))
+          )
+        );
+
+        if (cursosDesdeEvals.length > 0) {
+          setCursosDisponibles(cursosDesdeEvals);
+          setCursoSeleccionado(prev => cursosDesdeEvals.includes(prev) ? prev : cursosDesdeEvals[0]);
+        } else if (currentUser.cursos && Array.isArray(currentUser.cursos) && currentUser.cursos.length > 0) {
+          // Fallback: cursos del profesor
+          const cursosNormalizados = currentUser.cursos.map(normalizeCurso);
+          setCursosDisponibles(cursosNormalizados);
+          setCursoSeleccionado(prev => cursosNormalizados.includes(prev) ? prev : cursosNormalizados[0]);
+        } else {
+          // Si no hay cursos detectados en ninguna fuente
+          setCursosDisponibles([]);
+          setCursoSeleccionado('');
+        }
         
         // Seleccionar las primeras 5 evaluaciones por defecto
         if (evaluacionesInfo.length > 0) {
@@ -651,7 +666,55 @@ export const SimceResultadosLibroClases: React.FC<SimceResultadosLibroClasesProp
   // Componente principal
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
-      {/* ...contenido del componente... */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Libro de Clases SIMCE</h2>
+          <p className="text-slate-600 dark:text-slate-400">Resultados por curso y evaluación</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              // simple refresh: re-disparar efectos cambiando un estado temporal
+              setCargando(true);
+              setTimeout(() => setCargando(false), 300);
+            }}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+            title="Refrescar"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refrescar
+          </button>
+        </div>
+      </div>
+
+      {/* Panel de controles */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {renderControles()}
+        <div className="md:col-span-2">
+          <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900">
+            {/* Mensajes de ayuda vacíos */}
+            {cursosDisponibles.length === 0 && !cargando && !error && (
+              <div className="text-center py-10">
+                <AlertCircle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+                <p className="text-slate-700 dark:text-slate-300 font-medium">No hay cursos asignados a tus evaluaciones.</p>
+                <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">Asigna cursos desde "Crear Evaluaciones" para ver resultados aquí.</p>
+              </div>
+            )}
+            {cursosDisponibles.length > 0 && evaluaciones.length === 0 && !cargando && !error && (
+              <div className="text-center py-10">
+                <AlertCircle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+                <p className="text-slate-700 dark:text-slate-300 font-medium">Aún no tienes evaluaciones SIMCE creadas.</p>
+                <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">Crea una evaluación y asígnala a tus cursos.</p>
+              </div>
+            )}
+            {/* Tabla */}
+            {cursosDisponibles.length > 0 && evaluaciones.length > 0 && renderTablaResultados()}
+          </div>
+          {renderLeyenda()}
+        </div>
+      </div>
     </div>
   );
 }
+
+export default SimceResultadosLibroClases;

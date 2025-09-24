@@ -307,6 +307,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
   canChangeProfile,
 }) => {
   const [query, setQuery] = useState('');
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const allModules = useMemo(() => getModulesForProfile(currentUser.profile), [currentUser.profile]);
 
@@ -318,6 +319,78 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
       return hay.includes(q);
     });
   }, [query, allModules]);
+
+  // Grupos para PROFESORADO
+  const profGroups = useMemo(() => {
+    if (currentUser.profile !== Profile.PROFESORADO) return [] as Array<{ id: string; title: string; icon: React.ReactNode; modules: Module[] }>;
+
+    // Mapa por id para acceder a los módulos originales
+    const map: Record<string, Module | undefined> = Object.fromEntries(allModules.map((m) => [m.id, m] as const));
+
+    // Helper: clonar módulo con nombre opcional sobrescrito
+    const pick = (id: string, nameOverride?: string): Module | null => {
+      const base = map[id];
+      if (!base) return null;
+      return { ...base, name: nameOverride ?? base.name };
+    };
+
+    const groups = [
+      {
+        id: 'grp_planificacion',
+        title: 'Planificación',
+        icon: ICONS.planificacion,
+        modules: [
+          pick('planificacion', 'Planificación Curricular'),
+          pick('recursos'),
+          pick('interdisciplinario'),
+          pick('inclusion'),
+        ].filter(Boolean) as Module[],
+      },
+      {
+        id: 'grp_evaluacion',
+        title: 'Evaluación',
+        icon: ICONS.evaluacion_aprendizajes,
+        modules: [
+          pick('evaluacion_aprendizajes', 'Evaluación de Aprendizajes'),
+          pick('evaluaciones_formativas', 'Evaluaciones Formativas'),
+          pick('evaluacion_competencias', 'Evaluación de Competencias'),
+          pick('actividades_remotas', 'Actividades Remotas'),
+          pick('simce', 'SIMCE'),
+        ].filter(Boolean) as Module[],
+      },
+      {
+        id: 'grp_reflexion',
+        title: 'Reflexión',
+        icon: ICONS.taxonomico,
+        modules: [
+          pick('taxonomico', 'Análisis Taxonómico'),
+          pick('acompañamientos', 'Mis Acompañamientos'),
+          pick('desarrollo_profesional', 'Desarrollo Profesional'),
+        ].filter(Boolean) as Module[],
+      },
+      {
+        id: 'grp_herramientas',
+        title: 'Herramientas',
+        icon: ICONS.mensajeria,
+        modules: [
+          pick('muro', 'Muro de Anuncios'),
+          pick('mensajeria', 'Mensajería Interna'),
+          pick('actas', 'Generador de Actas'),
+        ].filter(Boolean) as Module[],
+      },
+    ];
+
+    // Filtro por búsqueda: si hay query, mantener solo grupos con coincidencias; dentro, filtrar módulos coincidentes
+    const q = query.trim().toLowerCase();
+    if (!q) return groups;
+    return groups
+      .map((g) => {
+        const titleMatch = g.title.toLowerCase().includes(q);
+        const mods = g.modules.filter((m) => (m.name + ' ' + (m.description ?? '') + ' ' + m.id).toLowerCase().includes(q));
+        return { ...g, modules: titleMatch ? g.modules : mods };
+      })
+      .filter((g) => g.modules.length > 0);
+  }, [currentUser.profile, allModules, query]);
 
   const onKeyShortcuts = useCallback((e: KeyboardEvent) => {
     // Ctrl/Cmd+K para buscar
@@ -380,22 +453,77 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
           </div>
         </div>
 
-        {filtered.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="text-6xl mb-4">🚫</div>
-            <h3 className="text-xl font-semibold text-slate-600 dark:text-slate-300 mb-2">
-              Sin módulos disponibles
-            </h3>
-            <p className="text-slate-500 dark:text-slate-400">
-              Ajusta tu búsqueda o cambia de perfil para ver más opciones.
-            </p>
-          </div>
+        {currentUser.profile === Profile.PROFESORADO ? (
+          profGroups.length === 0 ? (
+            <div className="text-center py-16">
+              <div className="text-6xl mb-4">🚫</div>
+              <h3 className="text-xl font-semibold text-slate-600 dark:text-slate-300 mb-2">Sin módulos disponibles</h3>
+              <p className="text-slate-500 dark:text-slate-400">Ajusta tu búsqueda.</p>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {profGroups.map((group, gidx) => {
+                const isOpen = !!expandedGroups[group.id];
+                return (
+                  <div key={group.id} className="rounded-2xl border border-slate-200/70 dark:border-slate-700/60 bg-white/70 dark:bg-slate-800/60 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.id]: !prev[group.id] }))}
+                      className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50/70 dark:hover:bg-slate-800/70 transition"
+                      aria-expanded={isOpen}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="inline-flex items-center justify-center rounded-xl bg-white/80 dark:bg-slate-900/50 ring-1 ring-slate-200 dark:ring-slate-700 w-10 h-10">
+                          {group.icon}
+                        </div>
+                        <div className="text-left">
+                          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{group.title}</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{group.modules.length} módulos</p>
+                        </div>
+                      </div>
+                      <ArrowRight className={`w-5 h-5 text-slate-500 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                    </button>
+
+                    {isOpen && (
+                      <div className="px-5 pb-5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                          {group.modules.map((m, midx) => (
+                            <ModuleCard key={m.id} module={m} index={midx} onClick={() => onModuleSelect(m.id)} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Acceso a vista completa/otros (opcional) */}
+              {filtered.some((m) => ![
+                'planificacion','recursos','interdisciplinario','inclusion',
+                'evaluacion_aprendizajes','evaluaciones_formativas','evaluacion_competencias','actividades_remotas','simce',
+                'taxonomico','acompañamientos','desarrollo_profesional',
+                'muro','mensajeria','actas',
+              ].includes(m.id)) && (
+                <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-4 text-sm text-slate-600 dark:text-slate-300">
+                  ¿No encuentras algo? Prueba la <button className="underline hover:no-underline" onClick={() => onModuleSelect('selector_completo')}>Vista completa</button>.
+                </div>
+              )}
+            </div>
+          )
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {filtered.map((m, idx) => (
-              <ModuleCard key={m.id} module={m} index={idx} onClick={() => onModuleSelect(m.id)} />
-            ))}
-          </div>
+          filtered.length === 0 ? (
+            <div className="text-center py-16">
+              <div className="text-6xl mb-4">🚫</div>
+              <h3 className="text-xl font-semibold text-slate-600 dark:text-slate-300 mb-2">Sin módulos disponibles</h3>
+              <p className="text-slate-500 dark:text-slate-400">Ajusta tu búsqueda o cambia de perfil para ver más opciones.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {filtered.map((m, idx) => (
+                <ModuleCard key={m.id} module={m} index={idx} onClick={() => onModuleSelect(m.id)} />
+              ))}
+            </div>
+          )
         )}
 
         <div className="mt-10 text-xs text-slate-500 dark:text-slate-400">

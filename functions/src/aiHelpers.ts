@@ -48,9 +48,9 @@ export async function callGemini({
   const apiKey = getGeminiApiKey();
   const url =
     "https://generativelanguage.googleapis.com/v1beta/models/" +
-    "gemini-1.5-flash-latest:generateContent?key=" + apiKey;
+    "gemini-1.5-pro-latest:generateContent?key=" + apiKey;
 
-  const response = await fetch(
+  const fetchResponse = await fetch(
     url,
     {
       method: "POST",
@@ -67,14 +67,36 @@ export async function callGemini({
     },
   );
 
-  if (!response.ok) {
-    throw new Error("API Error: " + response.status);
+  if (!fetchResponse.ok) {
+    throw new Error("API Error: " + fetchResponse.status);
   }
-  const data = await response.json();
-  return (
-  (data as any).candidates?.[0]?.content?.parts?.[0]?.text ||
-    "Lo siento, no pude generar una respuesta."
-  );
+  const data = await fetchResponse.json();
+  // Log de depuración: mostrar el objeto completo de la respuesta
+  console.log("[DEBUG] Respuesta completa de Gemini:", data);
+  // Obtener el texto completo de la respuesta
+  let responseText = "";
+  if (typeof data === "string") {
+    responseText = data;
+  } else if (
+    typeof data === "object" &&
+    data !== null &&
+    "candidates" in data &&
+    Array.isArray((data as any).candidates) &&
+    (data as any).candidates.length > 0 &&
+    (data as any).candidates[0].content &&
+    Array.isArray((data as any).candidates[0].content.parts) &&
+    (data as any).candidates[0].content.parts.length > 0
+  ) {
+    // Gemini puede devolver candidates
+    responseText = (data as any).candidates[0].content.parts[0].text || "";
+  }
+  // Log de depuración: mostrar el texto extraído
+  console.log("[DEBUG] Texto extraído de Gemini:", responseText);
+  if (!responseText || responseText.length < 10) {
+    console.error("[ERROR] La respuesta de la IA está vacía o truncada:", responseText);
+    throw new Error("La respuesta de la IA no contiene texto o está incompleta.");
+  }
+  return responseText;
 }
 
 /**

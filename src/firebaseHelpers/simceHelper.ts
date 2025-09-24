@@ -11,7 +11,8 @@ import {
   orderBy 
 } from 'firebase/firestore';
 import { db } from './config';
-import { Pregunta, SetPreguntas, ResultadoIntento } from '../../types/simce';
+import { getAllUsers } from './users';
+import { Pregunta, SetPreguntas, ResultadoIntento, AsignaturaSimce } from '../../types/simce';
 
 // Colecciones
 const SETS_COLLECTION = 'simce_sets';
@@ -81,14 +82,25 @@ export async function obtenerSetPreguntas(id: string): Promise<SetPreguntas> {
 
 export async function obtenerSetsPreguntasPorProfesor(profesorId: string): Promise<SetPreguntas[]> {
   try {
-    const q = query(
+    // Buscar en la colección principal de sets
+    const qSets = query(
       collection(db, SETS_COLLECTION),
       where('creadorId', '==', profesorId),
       orderBy('fechaCreacion', 'desc')
     );
-    
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SetPreguntas));
+    const querySnapshot = await getDocs(qSets);
+    const setsA = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as SetPreguntas));
+
+    // Buscar también en la colección de evaluaciones (compatibilidad)
+    const qEvals = query(
+      collection(db, 'simce_evaluaciones'),
+      where('creadorId', '==', profesorId),
+      orderBy('fechaCreacion', 'desc')
+    );
+    const evalsSnapshot = await getDocs(qEvals);
+    const setsB = evalsSnapshot.docs.map(d => ({ id: d.id, ...d.data(), preguntas: (d.data() as any).preguntas || [] } as SetPreguntas));
+
+    return [...setsA, ...setsB];
   } catch (error) {
     console.error('Error al obtener sets de preguntas:', error);
     throw new Error('No se pudieron obtener los sets de preguntas');
@@ -129,7 +141,7 @@ export async function obtenerSetsPreguntasPorCurso(cursoId: string): Promise<Set
     console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Resultados encontrados en simce_evaluaciones: ${evalsSnapshot.docs.length}`);
     
     // Combinamos los resultados de ambas colecciones
-    const sets = [
+    let sets = [
       ...querySnapshot.docs.map(doc => {
         const data = doc.data();
         console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Set encontrado en ${SETS_COLLECTION}: ${doc.id}, cursosAsignados:`, data.cursosAsignados);
@@ -147,10 +159,58 @@ export async function obtenerSetsPreguntasPorCurso(cursoId: string): Promise<Set
     ];
     
     console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Total sets combinados: ${sets.length}`);
+
+    // Fallback: si no hay resultados (o por seguridad), traer todo y filtrar en cliente
+    if (!sets.length) {
+      console.warn('[DEBUG] obtenerSetsPreguntasPorCurso - Sin resultados por query; aplicando fallback (getDocs + filtro cliente)');
+      const [allA, allB] = await Promise.all([
+        getDocs(collection(db, SETS_COLLECTION)),
+        getDocs(collection(db, 'simce_evaluaciones'))
+      ]);
+      const cursoNorm = cursoId;
+      sets = [
+        ...allA.docs
+          .map(d => ({ id: d.id, ...d.data() } as any))
+          .filter(s => Array.isArray(s.cursosAsignados) && s.cursosAsignados.includes(cursoNorm)) as SetPreguntas[],
+        ...allB.docs
+          .map(d => ({ id: d.id, ...d.data(), preguntas: ((d.data() as any).preguntas || []) } as any))
+          .filter(s => Array.isArray(s.cursosAsignados) && s.cursosAsignados.includes(cursoNorm)) as SetPreguntas[]
+      ];
+      console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Fallback aplicó ${sets.length} sets`);
+    }
     return sets;
   } catch (error) {
     console.error('Error al obtener sets de preguntas por curso:', error);
     throw new Error('No se pudieron obtener los sets de preguntas');
+  }
+}
+
+// Nuevo: obtener sets asignados a un estudiante explícitamente (si el set guarda estudiantesAsignados)
+export async function obtenerSetsPreguntasPorEstudiante(estudianteId: string): Promise<SetPreguntas[]> {
+  try {
+    if (!estudianteId) return [];
+    // Buscar en colección principal
+    const qA = query(
+      collection(db, SETS_COLLECTION),
+      where('estudiantesAsignados', 'array-contains', estudianteId),
+      orderBy('fechaCreacion', 'desc')
+    );
+    const snapA = await getDocs(qA);
+    // Buscar en colección de compatibilidad
+    const qB = query(
+      collection(db, 'simce_evaluaciones'),
+      where('estudiantesAsignados', 'array-contains', estudianteId),
+      orderBy('fechaCreacion', 'desc')
+    );
+    const snapB = await getDocs(qB);
+
+    return [
+      ...snapA.docs.map(d => ({ id: d.id, ...d.data() } as SetPreguntas)),
+      ...snapB.docs.map(d => ({ id: d.id, ...d.data(), preguntas: (d.data() as any).preguntas || [] } as SetPreguntas))
+    ];
+  } catch (error) {
+    console.error('Error al obtener sets por estudiante:', error);
+    return [];
   }
 }
 
@@ -192,14 +252,33 @@ export async function obtenerResultadosPorSet(setId: string): Promise<ResultadoI
 
 export async function obtenerResultadosPorCurso(setId: string, estudiantesIds: string[]): Promise<ResultadoIntento[]> {
   try {
-    const q = query(
-      collection(db, RESULTADOS_COLLECTION),
-      where('setId', '==', setId),
-      where('estudianteId', 'in', estudiantesIds)
-    );
-    
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ResultadoIntento));
+    if (!estudiantesIds || estudiantesIds.length === 0) return [];
+
+    // Firestore limita el operador 'in' a un número máximo de elementos.
+    // Usamos lotes pequeños (10) para máxima compatibilidad.
+    const MAX_IN = 10;
+    const chunks: string[][] = [];
+    for (let i = 0; i < estudiantesIds.length; i += MAX_IN) {
+      chunks.push(estudiantesIds.slice(i, i + MAX_IN));
+    }
+
+    const resultados: ResultadoIntento[] = [];
+    for (const ids of chunks) {
+      const q = query(
+        collection(db, RESULTADOS_COLLECTION),
+        where('setId', '==', setId),
+        where('estudianteId', 'in', ids)
+      );
+      const snapshot = await getDocs(q);
+      resultados.push(
+        ...snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ResultadoIntento))
+      );
+    }
+
+    // Eliminar duplicados por id por seguridad
+    const dedup = new Map<string, ResultadoIntento>();
+    for (const r of resultados) dedup.set(r.id as string, r);
+    return Array.from(dedup.values());
   } catch (error) {
     console.error('Error al obtener resultados por curso:', error);
     throw new Error('No se pudieron obtener los resultados del curso');
@@ -243,9 +322,28 @@ export async function eliminarResultado(id: string): Promise<void> {
 export async function obtenerEvaluacionesEstudiante(estudianteId: string, cursoId: string): Promise<any[]> {
   try {
     console.log(`[DEBUG] obtenerEvaluacionesEstudiante - Buscando evaluaciones para estudiante ${estudianteId} en curso ${cursoId}`);
+    // Normalizar cursoId a formato consistente (p.e. 1ºA)
+    const normalizeCurso = (curso: string): string => {
+      if (!curso) return '';
+      let normalized = curso.trim().toLowerCase();
+      normalized = normalized.replace(/°/g, 'º');
+      normalized = normalized.replace(/\s+(medio|básico|basico)/g, '');
+      normalized = normalized.replace(/(\d)(st|nd|rd|th|ro|do|to|er)/, '$1º');
+      normalized = normalized.replace(/^(\d)(?![º])/, '$1º');
+      normalized = normalized.replace(/\s+/g, '').toUpperCase();
+      return normalized;
+    };
+    const cursoNorm = normalizeCurso(cursoId);
     
-    // Reutilizamos obtenerSetsPreguntasPorCurso para listar sets asignados al curso
-    const sets = await obtenerSetsPreguntasPorCurso(cursoId);
+    // Reutilizamos obtenerSetsPreguntasPorCurso y combinamos con sets por estudiante
+    const [setsPorCurso, setsPorEstudiante] = await Promise.all([
+      obtenerSetsPreguntasPorCurso(cursoNorm),
+      obtenerSetsPreguntasPorEstudiante(estudianteId)
+    ]);
+    // Deduplicar por id
+    const map = new Map<string, SetPreguntas>();
+    [...setsPorCurso, ...setsPorEstudiante].forEach(s => map.set(s.id, s));
+    const sets = Array.from(map.values());
     console.log(`[DEBUG] obtenerEvaluacionesEstudiante - Encontradas ${sets.length} evaluaciones asignadas al curso ${cursoId}`);
     
     // Mapear a una estructura de evaluación esperada por la UI y asegurar que el texto base esté presente
@@ -255,14 +353,16 @@ export async function obtenerEvaluacionesEstudiante(estudianteId: string, cursoI
         id: set.id,
         titulo: set.titulo,
         descripcion: set.descripcion || '',
-        asignatura: set.asignatura,
+        // Normalizar etiqueta de asignatura para la UI del estudiante
+        asignatura: ((set.asignatura as unknown) as string) as AsignaturaSimce,
         preguntas: [...set.preguntas], // Copia las preguntas para no modificar el original
         fechaAsignacion: set.fechaCreacion || new Date().toISOString(),
         textoBase: '' // Campo adicional para almacenar el texto base a nivel de evaluación
       };
       
   // Si es una evaluación de Competencia Lectora, buscar y asegurar que el texto base esté disponible
-  if (set.asignatura === 'Competencia Lectora') {
+  const asignaturaStr = String((set as any).asignatura || '');
+  if (asignaturaStr === 'Competencia Lectora' || asignaturaStr === 'Lectura') {
         // Buscar texto base en cualquiera de las preguntas
         let textoBase = '';
         for (const pregunta of set.preguntas) {
@@ -366,7 +466,25 @@ export async function verificarIntentoExistente(estudianteId: string, setId: str
 // Compatibilidad: obtener evaluaciones creadas por un profesor
 export async function obtenerEvaluacionesPorProfesor(profesorId: string): Promise<any[]> {
   try {
-    const sets = await obtenerSetsPreguntasPorProfesor(profesorId);
+    let sets: SetPreguntas[] = [];
+    try {
+      sets = await obtenerSetsPreguntasPorProfesor(profesorId);
+    } catch (e) {
+      console.warn('[DEBUG] obtenerEvaluacionesPorProfesor - Falla query directa, intento fallback:', e);
+    }
+    // Fallback: si está vacío, traer todo y filtrar en cliente
+    if (!sets.length) {
+      console.warn('[DEBUG] obtenerEvaluacionesPorProfesor - Sin resultados, aplicando fallback (getDocs + filtro por creadorId)');
+      const [allA, allB] = await Promise.all([
+        getDocs(collection(db, SETS_COLLECTION)),
+        getDocs(collection(db, 'simce_evaluaciones'))
+      ]);
+      sets = [
+        ...allA.docs.map(d => ({ id: d.id, ...d.data() } as SetPreguntas)),
+        ...allB.docs.map(d => ({ id: d.id, ...d.data(), preguntas: (d.data() as any).preguntas || [] } as SetPreguntas))
+      ].filter(s => (s as any).creadorId === profesorId);
+      console.log(`[DEBUG] obtenerEvaluacionesPorProfesor - Fallback encontró ${sets.length} sets`);
+    }
     return sets.map(set => ({
       id: set.id,
       titulo: set.titulo,
@@ -395,10 +513,41 @@ export async function obtenerIntentosPorEvaluacion(evaluacionId: string): Promis
 // Compatibilidad: calcular estadísticas por curso a partir de los resultados
 export async function obtenerEstadisticasPorCurso(evaluacionId: string, cursoId: string): Promise<any> {
   try {
-    const resultados = await obtenerResultadosPorSet(evaluacionId);
-    const resultadosCurso = resultados.filter(r => (r as any).estudianteId && (r as any).curso === cursoId);
+    // Normalizar cursoId
+    const normalizeCurso = (curso: string): string => {
+      if (!curso) return '';
+      let normalized = curso.trim().toLowerCase();
+      normalized = normalized.replace(/°/g, 'º');
+      normalized = normalized.replace(/\s+(medio|básico|basico)/g, '');
+      normalized = normalized.replace(/(\d)(st|nd|rd|th|ro|do|to|er)/, '$1º');
+      normalized = normalized.replace(/^(\d)(?![º])/, '$1º');
+      normalized = normalized.replace(/\s+/g, '').toUpperCase();
+      return normalized;
+    };
+    const cursoNorm = normalizeCurso(cursoId);
 
-    const totalEstudiantes = resultadosCurso.length;
+    // Obtener estudiantes del curso
+    const usuarios = await getAllUsers();
+    const estudiantesIds = usuarios
+      .filter((u: any) => u.profile === 'ESTUDIANTE' && normalizeCurso(u.curso || '') === cursoNorm)
+      .map((u: any) => u.id);
+
+    if (estudiantesIds.length === 0) {
+      return {
+        totalEstudiantes: 0,
+        promedioLogro: 0,
+        nivelPredominante: 'Insuficiente',
+        porcentajeAdecuado: 0,
+        porcentajeElemental: 0,
+        porcentajeInsuficiente: 0,
+        porEjeTematico: [],
+        porPregunta: []
+      };
+    }
+
+    // Obtener resultados filtrados por set y estudiantes del curso
+    const resultados = await obtenerResultadosPorCurso(evaluacionId, estudiantesIds);
+    const totalEstudiantes = resultados.length;
     if (totalEstudiantes === 0) {
       return {
         totalEstudiantes: 0,
@@ -412,14 +561,13 @@ export async function obtenerEstadisticasPorCurso(evaluacionId: string, cursoId:
       };
     }
 
-    const promedioLogro = resultadosCurso.reduce((acc, r) => acc + ((r as any).porcentajeAciertos || (r as any).porcentajeLogro || 0), 0) / totalEstudiantes;
+    const porcentajeList = resultados.map((r: any) => r.porcentajeAciertos || r.porcentajeLogro || 0);
+    const promedioLogro = porcentajeList.reduce((a: number, b: number) => a + b, 0) / totalEstudiantes;
 
-    // Niveles
     let cntAdecuado = 0; let cntElemental = 0; let cntInsuficiente = 0;
-    resultadosCurso.forEach(r => {
-      const porcentaje = (r as any).porcentajeAciertos || (r as any).porcentajeLogro || 0;
-      if (porcentaje >= 80) cntAdecuado++;
-      else if (porcentaje >= 50) cntElemental++;
+    porcentajeList.forEach((p: number) => {
+      if (p >= 80) cntAdecuado++;
+      else if (p >= 50) cntElemental++;
       else cntInsuficiente++;
     });
 
@@ -427,7 +575,6 @@ export async function obtenerEstadisticasPorCurso(evaluacionId: string, cursoId:
     const porcentajeElemental = (cntElemental / totalEstudiantes) * 100;
     const porcentajeInsuficiente = (cntInsuficiente / totalEstudiantes) * 100;
 
-    // Simplificado: no calculamos por eje temático ni por pregunta detallado aquí
     return {
       totalEstudiantes,
       promedioLogro,

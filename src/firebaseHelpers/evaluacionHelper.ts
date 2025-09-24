@@ -118,6 +118,14 @@ export const createRubricaInteractiva = async (
   return ref.id;
 };
 
+export const updateRubricaInteractiva = async (
+  id: string,
+  patch: Partial<RubricaInteractiva>
+): Promise<void> => {
+  const ref = doc(db, RUBRICAS_INTERACTIVAS_COLLECTION, id);
+  await setDoc(ref, patch as any, { merge: true });
+};
+
 // --- USUARIOS ---
 export const subscribeToAllUsers = (cb: (rows: User[]) => void) => {
   const qRef = query(collection(db, USERS_COLLECTION), orderBy("nombreCompleto", "asc"));

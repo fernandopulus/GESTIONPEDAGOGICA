@@ -15,9 +15,8 @@ import {
   School
 } from 'lucide-react';
 import { 
-  SimceEvaluacion, 
-  SimceIntento,
-  SimceResultadosPorCurso
+  SetPreguntas as SimceEvaluacion, 
+  ResultadoIntento as SimceIntento
 } from '../../../types/simce';
 import { 
   obtenerEvaluacionesPorProfesor,
@@ -34,7 +33,17 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
   const [evaluaciones, setEvaluaciones] = useState<SimceEvaluacion[]>([]);
   const [evaluacionSeleccionada, setEvaluacionSeleccionada] = useState<SimceEvaluacion | null>(null);
   const [intentos, setIntentos] = useState<SimceIntento[]>([]);
-  const [estadisticasCurso, setEstadisticasCurso] = useState<SimceResultadosPorCurso | null>(null);
+  // Interfaz local para estadísticas retornadas por helper
+  const [estadisticasCurso, setEstadisticasCurso] = useState<{
+    totalEstudiantes: number;
+    promedioLogro: number;
+    nivelPredominante: string;
+    porcentajeAdecuado: number;
+    porcentajeElemental: number;
+    porcentajeInsuficiente: number;
+    porEjeTematico: any[];
+    porPregunta: any[];
+  } | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [vistaActual, setVistaActual] = useState<'general' | 'porEstudiante' | 'porPregunta'>('general');
@@ -46,7 +55,7 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
         setCargando(true);
         
         // Obtener evaluaciones creadas por el profesor
-        const evaluacionesData = await obtenerEvaluacionesPorProfesor(currentUser.uid || '');
+  const evaluacionesData = await obtenerEvaluacionesPorProfesor(currentUser.id || '');
         
         setEvaluaciones(evaluacionesData);
       } catch (error) {
@@ -74,18 +83,15 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
         const intentosData = await obtenerIntentosPorEvaluacion(evaluacionId);
         setIntentos(intentosData);
         
-        // Obtener estadísticas por curso
-        if (intentosData.length > 0) {
-          const cursos = [...new Set(intentosData.map(i => i.estudiante?.curso).filter(Boolean))];
-          
-          const resultadosPorCurso = await Promise.all(
-            cursos.map(curso => obtenerEstadisticasPorCurso(evaluacionId, curso || ''))
-          );
-          
-          // Por ahora solo usamos el primer curso
-          if (resultadosPorCurso.length > 0) {
-            setEstadisticasCurso(resultadosPorCurso[0]);
-          }
+        // Obtener estadísticas por curso basadas en cursos asignados a la evaluación
+        const cursosEval = Array.isArray((evaluacion as any).cursosAsignados)
+          ? (evaluacion as any).cursosAsignados as string[]
+          : [];
+        if (cursosEval.length > 0) {
+          const stats = await obtenerEstadisticasPorCurso(evaluacionId, cursosEval[0]);
+          if (stats) setEstadisticasCurso(stats as any);
+        } else {
+          setEstadisticasCurso(null);
         }
       }
     } catch (error) {
@@ -507,11 +513,11 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
                 >
                   <div className="flex items-start">
                     <div className={`p-2 rounded-md mr-4 ${
-                      evaluacion.asignatura === 'Lectura' 
+                      (evaluacion.asignatura === 'Lectura' || evaluacion.asignatura === 'Competencia Lectora')
                         ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' 
                         : 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
                     }`}>
-                      {evaluacion.asignatura === 'Lectura' ? (
+                      {(evaluacion.asignatura === 'Lectura' || evaluacion.asignatura === 'Competencia Lectora') ? (
                         <BookOpen className="w-6 h-6" />
                       ) : (
                         <Calculator className="w-6 h-6" />
@@ -549,8 +555,19 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
                 {evaluacionSeleccionada.titulo}
               </h2>
               <p className="text-slate-600 dark:text-slate-400">
-                {evaluacionSeleccionada.asignatura} • {evaluacionSeleccionada.cursoObjetivo} • {intentos.length} estudiantes evaluados
+                {evaluacionSeleccionada.asignatura} • {intentos.length} estudiantes evaluados
               </p>
+              {/* Mostrar cursos asignados si existen */}
+              {Array.isArray(evaluacionSeleccionada.cursosAsignados) && evaluacionSeleccionada.cursosAsignados.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className="font-semibold text-xs text-indigo-700 dark:text-indigo-300">Cursos asignados:</span>
+                  {evaluacionSeleccionada.cursosAsignados.map((cursoId, idx) => (
+                    <span key={cursoId+idx} className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-300 py-0.5 px-2 rounded-full text-xs">
+                      {cursoId}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             
             <div className="flex gap-3">

@@ -8,7 +8,7 @@ interface EvaluacionSimceProps {
 }
 
 const EvaluacionSimce: React.FC<EvaluacionSimceProps> = ({ currentUser }) => {
-  const [asignatura, setAsignatura] = useState<AsignaturaSimce>('matematica');
+  const [asignatura, setAsignatura] = useState<AsignaturaSimce>('Lectura');
   const [nivel, setNivel] = useState<string>('4° básico');
   const [sets, setSets] = useState<SetPreguntas[]>([]);
   const [selectedSetId, setSelectedSetId] = useState<string>('');
@@ -40,7 +40,7 @@ const EvaluacionSimce: React.FC<EvaluacionSimceProps> = ({ currentUser }) => {
     setError(null);
     try {
       // Usaremos obtenerSetsPreguntasPorProfesor y filtraremos manualmente por asignatura
-      const setsData = await obtenerSetsPreguntasPorProfesor(currentUser.uid);
+  const setsData = await obtenerSetsPreguntasPorProfesor(currentUser.id);
       // Filtramos por asignatura ya que el nivel puede no estar definido en SetPreguntas
       const setsFiltrados = setsData.filter(
         set => set.asignatura === asignatura
@@ -87,10 +87,10 @@ const EvaluacionSimce: React.FC<EvaluacionSimceProps> = ({ currentUser }) => {
 
   const getNombreAsignatura = (codigo: string): string => {
     const asignaturas: Record<string, string> = {
-      matematica: 'Matemática',
-      lectura: 'Lectura',
-      ciencias: 'Ciencias Naturales',
-      historia: 'Historia y Geografía'
+  matematica: 'Matemática',
+  lectura: 'Lectura',
+  ciencias: 'Ciencias Naturales',
+  historia: 'Historia y Geografía'
     };
     return asignaturas[codigo] || codigo;
   };
@@ -324,10 +324,10 @@ const EvaluacionSimce: React.FC<EvaluacionSimceProps> = ({ currentUser }) => {
             onChange={(e) => setAsignatura(e.target.value as AsignaturaSimce)}
             className="w-full p-2 border rounded"
           >
-            <option value="matematica">Matemática</option>
-            <option value="lectura">Lectura</option>
-            <option value="ciencias">Ciencias Naturales</option>
-            <option value="historia">Historia y Geografía</option>
+              <option value="lectura">Lectura</option>
+              <option value="matematica">Matemática</option>
+              <option value="ciencias">Ciencias Naturales</option>
+              <option value="historia">Historia y Geografía</option>
           </select>
         </div>
         

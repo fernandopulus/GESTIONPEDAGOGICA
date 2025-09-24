@@ -1,6 +1,11 @@
 // Tipos para el módulo SIMCE
 
-export type AsignaturaSimce = 'Lectura' | 'Matemática';
+// Ampliamos para cubrir sinónimos usados en la UI: 'Competencia Lectora' y 'Pensamiento Lógico'
+export type AsignaturaSimce =
+  | 'Lectura'
+  | 'Matemática'
+  | 'Competencia Lectora'
+  | 'Pensamiento Lógico';
 
 export type NivelLogro = 'Adecuado' | 'Elemental' | 'Insuficiente';
 
@@ -46,6 +51,8 @@ export interface SetPreguntas {
   creadorNombre: string;
   fechaCreacion: string;
   cursosAsignados: string[]; // IDs de los cursos a los que está asignado
+  // Opcional: lista de IDs de estudiantes asignados (derivados de los cursos reales en Administración)
+  estudiantesAsignados?: string[];
   barajarPreguntas: boolean; // Si se deben barajar las preguntas al mostrar
   barajarAlternativas: boolean; // Si se deben barajar las alternativas al mostrar
 }

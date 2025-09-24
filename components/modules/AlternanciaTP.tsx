@@ -11,6 +11,7 @@ import {
   deleteAlternancia,
   uploadEvidencia,
 } from "../../src/firebaseHelpers/alternanciaHelper";
+import { getSubDocs } from "../../src/firebaseHelpers/alternanciaHelper";
 
 // Íconos Lucide
 import {
@@ -162,6 +163,13 @@ const IconButton: React.FC<{
   );
 };
 
+const EyeIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
 // =========================
 // Componente principal
 // =========================
@@ -169,6 +177,10 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
   const [alternancias, setAlternancias] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [viewerOpen, setViewerOpen] = useState<boolean>(false);
+  const [viewerAlt, setViewerAlt] = useState<any | null>(null);
+  const [viewerEvidencias, setViewerEvidencias] = useState<any[]>([]);
+  const [viewerLoading, setViewerLoading] = useState<boolean>(false);
 
   const {
     register,
@@ -311,6 +323,35 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
     alert("Evidencia subida correctamente");
   };
 
+  // --- Visor detallado ---
+  const openViewer = async (alt: any) => {
+    setViewerLoading(true);
+    // Normaliza campos para visualización coherente
+    const cursoNormalized = Array.isArray(alt.curso) ? alt.curso : alt.curso ? [alt.curso] : [];
+    const modulosNormalized = Array.isArray(alt.modulos) ? alt.modulos : [];
+    const actsNormalized = Array.isArray(alt.actividades)
+      ? alt.actividades.map((a: any) => ({
+          fecha: a?.fecha || "",
+          tipo: a?.tipo || "",
+          actividad: a?.actividad || "",
+          lugar: a?.lugar || "",
+          evidencias: a?.evidencias || "",
+          modulo: a?.modulo || "",
+          oa: a?.oa || "",
+        }))
+      : [];
+    const data = { ...alt, curso: cursoNormalized, modulos: modulosNormalized, actividades: actsNormalized };
+    setViewerAlt(data);
+    try {
+      const evs = await getSubDocs(alt.id, "evidencias");
+      setViewerEvidencias(evs);
+    } catch (e) {
+      setViewerEvidencias([]);
+    }
+    setViewerOpen(true);
+    setViewerLoading(false);
+  };
+
   // Multiselect de curso → array de strings
   const handleCursoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const values = Array.from(e.currentTarget.selectedOptions).map((o) => o.value);
@@ -388,6 +429,9 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
                     </div>
                   </div>
                   <div className="flex gap-2">
+                    <IconButton title="Ver" onClick={() => openViewer(alt)}>
+                      <EyeIcon className="w-4 h-4" /> Ver
+                    </IconButton>
                     <label className="cursor-pointer inline-flex items-center gap-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs px-3 py-2 transition">
                       <Upload className="w-4 h-4" />
                       <input
@@ -410,6 +454,187 @@ const AlternanciaTP: React.FC<AlternanciaTPProps> = ({ currentUser }) => {
           </div>
         )}
       </SectionCard>
+
+      {/* Modal Visor Detallado */}
+      {viewerOpen && viewerAlt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setViewerOpen(false)} />
+          <div className="relative z-10 w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl border border-slate-200">
+            <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b bg-white/90 backdrop-blur">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center">
+                  <Briefcase className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-800">Plan de Alternancia</h3>
+                  <p className="text-xs text-slate-500">Visualización detallada</p>
+                </div>
+              </div>
+              <IconButton title="Cerrar" onClick={() => setViewerOpen(false)}>
+                <X className="w-4 h-4" /> Cerrar
+              </IconButton>
+            </div>
+            <div className="p-5 space-y-5">
+              {/* Encabezado contextual */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                <div className="rounded-xl border border-slate-200 p-3 bg-slate-50/50">
+                  <FieldLabel>Especialidad</FieldLabel>
+                  <div className="flex items-center gap-2 text-slate-800"><School className="w-4 h-4 text-indigo-600" /> {viewerAlt.especialidad || "-"}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-3 bg-slate-50/50">
+                  <FieldLabel>Institución</FieldLabel>
+                  <div className="flex items-center gap-2 text-slate-800"><Building2 className="w-4 h-4 text-sky-600" /> {viewerAlt.institucion || "-"}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-3 bg-slate-50/50">
+                  <FieldLabel>Cursos</FieldLabel>
+                  <div className="flex flex-wrap gap-2">{(viewerAlt.curso || []).map((c: string) => (<Pill key={c} tone="sky">{c}</Pill>))}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-3 bg-slate-50/50">
+                  <FieldLabel>Tipos de Alternancia</FieldLabel>
+                  <div className="flex flex-wrap gap-2">{(viewerAlt.tipoAlternancia || []).map((t: string) => (<Pill key={t} tone="emerald">{t}</Pill>))}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-3 bg-slate-50/50">
+                  <FieldLabel>Módulos</FieldLabel>
+                  <div className="flex flex-wrap gap-2">{(viewerAlt.modulos || []).map((m: string) => (<Pill key={m} tone="indigo">{m}</Pill>))}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-3 bg-slate-50/50">
+                  <FieldLabel>Creado por</FieldLabel>
+                  <div className="text-slate-700 text-sm">{viewerAlt.createdBy || "-"}</div>
+                </div>
+              </div>
+
+              {/* Fundamentación */}
+              <div className="rounded-2xl border border-slate-200 p-4">
+                <h4 className="font-semibold text-slate-800 mb-2">Fundamentación técnico‑pedagógica</h4>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap">{viewerAlt.fundamentacion || "—"}</p>
+              </div>
+
+              {/* Plan de actividades */}
+              <div className="rounded-2xl border border-slate-200">
+                <div className="px-4 py-3 border-b bg-slate-50/50">
+                  <h4 className="font-semibold text-slate-800">Plan de actividades</h4>
+                </div>
+                {viewerAlt.actividades && viewerAlt.actividades.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="p-2 text-left">Fecha</th>
+                          <th className="p-2 text-left">Tipo</th>
+                          <th className="p-2 text-left">Actividad</th>
+                          <th className="p-2 text-left">Lugar</th>
+                          <th className="p-2 text-left">Módulo</th>
+                          <th className="p-2 text-left">OA</th>
+                          <th className="p-2 text-left">Evidencias</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {viewerAlt.actividades.map((a: any, idx: number) => (
+                          <tr key={idx}>
+                            <td className="p-2 text-slate-700">{a.fecha || "—"}</td>
+                            <td className="p-2 text-slate-700">{a.tipo || "—"}</td>
+                            <td className="p-2 text-slate-700">{a.actividad || "—"}</td>
+                            <td className="p-2 text-slate-700">{a.lugar || "—"}</td>
+                            <td className="p-2 text-slate-700">{a.modulo || "—"}</td>
+                            <td className="p-2 text-slate-700">{a.oa || "—"}</td>
+                            <td className="p-2 text-slate-700">{a.evidencias || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-4 text-sm text-slate-500">Sin actividades registradas</div>
+                )}
+              </div>
+
+              {/* Participantes */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <h4 className="font-semibold text-slate-800 mb-2">Equipo</h4>
+                  {(viewerAlt.equipo || []).length > 0 ? (
+                    <ul className="space-y-1 text-sm">
+                      {viewerAlt.equipo.map((p: any, i: number) => (
+                        <li key={i} className="flex items-center justify-between">
+                          <span className="text-slate-700">{p.nombre || "—"}</span>
+                          <span className="text-slate-500">{p.rol || ""}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-slate-500">Sin equipo registrado</p>
+                  )}
+                </div>
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <h4 className="font-semibold text-slate-800 mb-2">Contrapartes</h4>
+                  {(viewerAlt.contrapartes || []).length > 0 ? (
+                    <ul className="space-y-1 text-sm">
+                      {viewerAlt.contrapartes.map((p: any, i: number) => (
+                        <li key={i} className="flex items-center justify-between">
+                          <span className="text-slate-700">{p.nombre || "—"}</span>
+                          <span className="text-slate-500">{p.rol || ""}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-slate-500">Sin contrapartes</p>
+                  )}
+                </div>
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <h4 className="font-semibold text-slate-800 mb-2">Tutores</h4>
+                  {(viewerAlt.tutores || []).length > 0 ? (
+                    <ul className="space-y-1 text-sm">
+                      {viewerAlt.tutores.map((p: any, i: number) => (
+                        <li key={i} className="flex items-center justify-between">
+                          <span className="text-slate-700">{p.nombre || "—"}</span>
+                          <span className="text-slate-500">{p.rol || ""}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-slate-500">Sin tutores</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Análisis Curricular */}
+              <div className="rounded-2xl border border-slate-200 p-4">
+                <h4 className="font-semibold text-slate-800 mb-2">Análisis Curricular</h4>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap">{viewerAlt.analisisCurricular || "—"}</p>
+              </div>
+
+              {/* Evidencias Subidas */}
+              <div className="rounded-2xl border border-slate-200">
+                <div className="px-4 py-3 border-b bg-slate-50/50 flex items-center justify-between">
+                  <h4 className="font-semibold text-slate-800">Evidencias subidas</h4>
+                  {viewerLoading && <span className="text-sm text-slate-500">Cargando…</span>}
+                </div>
+                {(viewerEvidencias || []).length > 0 ? (
+                  <div className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {viewerEvidencias.map((evi) => (
+                      <a
+                        key={evi.id}
+                        href={evi.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group rounded-xl border border-slate-200 p-3 hover:shadow-sm transition bg-white flex items-center gap-3"
+                      >
+                        <FileCheck className="w-5 h-5 text-emerald-600" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-slate-800 truncate group-hover:underline">{evi.nombre || "archivo"}</div>
+                          <div className="text-xs text-slate-500 truncate">{evi.path || ""}</div>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-4 text-sm text-slate-500">No hay evidencias adjuntas</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Formulario */}
       <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-5">

@@ -54,24 +54,41 @@ export const SimceEvaluacionEstudiante: React.FC<SimceEvaluacionEstudianteProps>
   const [intentosExistentes, setIntentosExistentes] = useState<SimceIntento[]>([]);
   const [intentoActual, setIntentoActual] = useState<SimceIntento | null>(null);
   
+  // Importar la función de normalización
+  const normalizeCurso = (curso: string): string => {
+    if (!curso) return '';
+    let normalized = curso.trim().toLowerCase();
+    normalized = normalized.replace(/°/g, 'º');
+    normalized = normalized.replace(/\s+(medio|básico|basico)/g, '');
+    normalized = normalized.replace(/(\d)(st|nd|rd|th|ro|do|to|er)/, '$1º');
+    normalized = normalized.replace(/^(\d)(?![º])/, '$1º');
+    normalized = normalized.replace(/\s+/g, '').toUpperCase();
+    return normalized;
+  };
+
   useEffect(() => {
     const cargarEvaluaciones = async () => {
       if (!currentUser.id) return;
-      
       try {
         setCargando(true);
-        
-        // Obtener evaluaciones asignadas al estudiante
-        console.log(`[DEBUG] SimceEvaluacionEstudiante - Cargando evaluaciones para estudiante: ${currentUser.id}, curso: ${currentUser.curso}`);
-        
-        const evaluacionesData = await obtenerEvaluacionesEstudiante(
-          currentUser.id, 
-          currentUser.curso || ''
-        );
-        
-        console.log(`[DEBUG] SimceEvaluacionEstudiante - Evaluaciones obtenidas: ${evaluacionesData.length}`, evaluacionesData);
-        
+        // Normalizar el curso antes de consultar
+        const cursoNormalizado = normalizeCurso(currentUser.curso || '');
+        console.log(`[DEBUG] SimceEvaluacionEstudiante - Cargando evaluaciones para estudiante: ${currentUser.id}, curso: ${currentUser.curso} (normalizado: ${cursoNormalizado})`);
+        // Obtener por curso y por estudiante para log visual
+        const [porCurso, porEstudiante] = await Promise.all([
+          import('@/firebaseHelpers/simceHelper').then(m => m.obtenerSetsPreguntasPorCurso(cursoNormalizado)),
+          import('@/firebaseHelpers/simceHelper').then(m => m.obtenerSetsPreguntasPorEstudiante(currentUser.id))
+        ]);
+        const dedup = new Map<string, any>();
+        [...porCurso, ...porEstudiante].forEach(s => dedup.set(s.id, s));
+        const evaluacionesData = Array.from(dedup.values());
         setEvaluaciones(evaluacionesData);
+        setLogDebug({
+          porCurso: porCurso.length,
+          porEstudiante: porEstudiante.length,
+          total: evaluacionesData.length
+        });
+        console.log(`[DEBUG] SimceEvaluacionEstudiante - Evaluaciones por curso: ${porCurso.length}, por estudiante: ${porEstudiante.length}, total: ${evaluacionesData.length}`);
       } catch (error) {
         console.error('Error al cargar evaluaciones:', error);
         setError('No se pudieron cargar las evaluaciones disponibles');
@@ -79,9 +96,11 @@ export const SimceEvaluacionEstudiante: React.FC<SimceEvaluacionEstudianteProps>
         setCargando(false);
       }
     };
-
     cargarEvaluaciones();
   }, [currentUser]);
+
+  // Estado para mostrar log visual
+  const [logDebug, setLogDebug] = useState<{porCurso: number, porEstudiante: number, total: number} | null>(null);
 
   const seleccionarEvaluacion = async (evaluacionId: string) => {
     try {
@@ -115,7 +134,7 @@ export const SimceEvaluacionEstudiante: React.FC<SimceEvaluacionEstudianteProps>
       }
       
       // Verificar si ya existe un intento para esta evaluación
-      const intentos = await verificarIntentoExistente(currentUser.id || '', evaluacionId);
+  const intentos = await verificarIntentoExistente(currentUser.id || '', evaluacionId);
       console.log(`[DEBUG] Intentos existentes para esta evaluación: ${intentos.length}`);
       setIntentosExistentes(intentos);
       
@@ -234,7 +253,7 @@ export const SimceEvaluacionEstudiante: React.FC<SimceEvaluacionEstudianteProps>
       
       const nuevoIntento: Omit<SimceIntento, 'id'> = {
         setId: evaluacionSeleccionada.id,
-        estudianteId: currentUser.uid || '',
+  estudianteId: currentUser.id || '',
         estudianteNombre: currentUser.nombreCompleto || '',
         respuestas: Object.entries(respuestas).map(([preguntaId, alternativaSeleccionada]) => {
           const pregunta = evaluacionSeleccionada.preguntas.find(p => p.id === preguntaId);
@@ -306,7 +325,12 @@ export const SimceEvaluacionEstudiante: React.FC<SimceEvaluacionEstudianteProps>
           <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">
             Evaluaciones disponibles
           </h2>
-          
+          {/* Log visual para depuración */}
+          {logDebug && (
+            <div className="mb-4 p-3 rounded-md bg-slate-50 dark:bg-slate-900/20 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300">
+              <strong>Debug:</strong> Detectadas <b>{logDebug.porCurso}</b> por curso, <b>{logDebug.porEstudiante}</b> por asignación directa, <b>{logDebug.total}</b> total.
+            </div>
+          )}
           {evaluaciones.length === 0 ? (
             <div className="text-center py-8">
               <FileCheck className="w-12 h-12 text-slate-400 mx-auto mb-3" />
@@ -524,7 +548,7 @@ export const SimceEvaluacionEstudiante: React.FC<SimceEvaluacionEstudianteProps>
           )}
 
           {/* Mostrar texto base de comprensión si existe y es asignatura Lectura */}
-          {evaluacionSeleccionada.asignatura === 'Lectura' && (() => {
+          {(evaluacionSeleccionada.asignatura === 'Lectura' || (evaluacionSeleccionada as any).asignatura === 'Competencia Lectora') && (() => {
             console.log("[DEBUG] Asignatura de Lectura detectada, buscando texto base");
             
             // Buscar texto base en múltiples ubicaciones posibles

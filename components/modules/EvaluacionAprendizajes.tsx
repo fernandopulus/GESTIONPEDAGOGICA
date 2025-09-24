@@ -1,3 +1,5 @@
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { app } from '../../src/firebase';
 import {
   subscribeToPruebas,
   savePrueba,
@@ -6,8 +8,9 @@ import {
   saveRubricaEstatica,
   deleteRubricaEstatica,
   subscribeToRubricasInteractivas,
+  subscribeToAllUsers,
   createRubricaInteractiva,
-  subscribeToAllUsers
+  updateRubricaInteractiva,
 } from '../../src/firebaseHelpers/evaluacionHelper';
 import { auth } from '../../src/firebase';
 
@@ -36,11 +39,34 @@ import { ASIGNATURAS, NIVELES, PDFIcon, DIFICULTADES_APRENDIZAJE } from '../../c
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logApiCall } from '../utils/apiLogger';
+import { normalizeCurso } from '../simce/SimceGeneradorPreguntas';
+import { TIPOS_ACTIVIDAD_REMOTA as TIPOS_ACTIVIDAD_PRUEBA } from '../../constants';
+// EyeIcon importado desde AlternanciaTP
+const EyeIcon: React.FC<{ className?: string; open?: boolean }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
 import { addGoogleSansCodeFont } from '../../utils/fonts/googleSansCode';
 
 // -------------------------------------------------------------------
+// Tipos de ítem válidos para la prueba
+const TIPOS_PRUEBA_ITEM: PruebaItemTipo[] = [
+  'Selección múltiple',
+  'Verdadero o Falso',
+  'Términos pareados',
+  'Desarrollo',
+  'Comprensión de lectura'
+];
 // Constantes y utilidades
 // -------------------------------------------------------------------
+
+const functions = getFunctions(app);
+const generarRubricaConGeminiFn = httpsCallable(functions, 'generarRubricaConGemini');
+const generarDescriptorDimensionConGeminiFn = httpsCallable(functions, 'generarDescriptorDimensionConGemini');
+const generarPruebaConGeminiFn = httpsCallable(functions, 'generarPruebaConGemini');
+
 
 const ITEM_QUANTITIES: Record<string, number[]> = {
   "Selección múltiple": [5, 10, 15],
@@ -49,243 +75,26 @@ const ITEM_QUANTITIES: Record<string, number[]> = {
   "Desarrollo": [1, 2, 3],
   "Comprensión de lectura": [1, 2, 3]
 };
-
-const TIPOS_ACTIVIDAD_PRUEBA: PruebaItemTipo[] = [
-  'Selección múltiple',
-  'Verdadero o Falso',
-  'Términos pareados',
-  'Comprensión de lectura',
-  'Desarrollo',
-];
-
-const normalizeCurso = (curso: string): string => {
-  if (!curso) return '';
-  let normalized = curso.trim().toLowerCase();
-  normalized = normalized.replace(/°/g, 'º');
-  normalized = normalized.replace(/\s+(medio|básico|basico)/g, '');
-  normalized = normalized.replace(/(\d)(st|nd|rd|th|ro|do|to|er)/, '$1º');
-  normalized = normalized.replace(/^(\d)(?![º])/, '$1º');
-  normalized = normalized.replace(/\s+/g, '').toUpperCase();
-  return normalized;
-};
-
-const EyeIcon: React.FC<{ open?: boolean }> = ({ open }) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    className="h-5 w-5"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    {open ? (
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59"
-      />
-    ) : (
-      <>
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-        />
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-        />
-      </>
-    )}
-  </svg>
-);
-
 // -------------------------------------------------------------------
-// Render de ítems de prueba (visor)
+// Submódulo: PruebaItemViewer
 // -------------------------------------------------------------------
-const PruebaItemViewer: React.FC<{
-  item: PruebaItem;
-  index: number;
-  showAnswers: boolean;
-}> = ({ item, index, showAnswers }) => {
-  const shuffledDefinitions = useMemo(
-    () =>
-      item.tipo === 'Términos pareados'
-        ? [
-            ...(item as TerminosPareadosItem).pares.map((p) => p.definicion),
-          ].sort(() => Math.random() - 0.5)
-        : [],
-    [item]
-  );
-
+export const PruebaItemViewer: React.FC<{ item: PruebaItem; showAnswers?: boolean; shuffledDefinitions?: string[] }> = ({ item, showAnswers = false, shuffledDefinitions = [] }) => {
   return (
-    <div key={item.id}>
-      <div className="flex justify-between items-start">
-        <p className="font-semibold flex-grow pr-4">
-          {index + 1}. {item.pregunta} ({item.puntaje} pts)
-        </p>
-        {item.habilidadBloom && (
-          <span className="flex-shrink-0 text-xs font-semibold bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-2 py-1 rounded-full">
-            {item.habilidadBloom}
-          </span>
-        )}
-      </div>
-
+    <>
       {item.tipo === 'Selección múltiple' && (
         <div className="ml-4 mt-2 space-y-2">
           {(item as SeleccionMultipleItem).opciones.map((op, i) => {
-            const isCorrect =
-              showAnswers &&
-              i === (item as SeleccionMultipleItem).respuestaCorrecta;
+            const isCorrect = showAnswers && i === (item as SeleccionMultipleItem).respuestaCorrecta;
             return (
-              <div
-                key={i}
-                className={`flex items-center gap-2 p-1 rounded ${
-                  isCorrect ? 'bg-green-100 dark:bg-green-900/50' : ''
-                }`}
-              >
+              <div key={i} className={`flex items-center gap-2 p-1 rounded ${isCorrect ? 'bg-green-100 dark:bg-green-900/50' : ''}`}>
                 <div className="w-5 h-5 border rounded-full"></div>
-                <span>
-                  {String.fromCharCode(65 + i)}) {op}
-                </span>
+                <span>{String.fromCharCode(65 + i)}) {op}</span>
               </div>
             );
           })}
         </div>
       )}
-
-      {item.tipo === 'Desarrollo' && (
-        <div className="mt-2 p-2 border rounded-md min-h-[96px] bg-slate-50 dark:bg-slate-700/50"></div>
-      )}
-
-      {item.tipo === 'Verdadero o Falso' && (
-        <div className="mt-2 ml-4 flex items-center gap-4">
-          <span>V ___ F ___</span>
-          {showAnswers && (
-            <span className="font-bold p-1 rounded bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300">
-              Respuesta:{' '}
-              {(item as VerdaderoFalsoItem).respuestaCorrecta
-                ? 'VERDADERO'
-                : 'FALSO'}
-            </span>
-          )}
-        </div>
-      )}
-
-      {item.tipo === 'Términos pareados' && (
-        <div className="mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <h4 className="font-bold text-center mb-2">Columna A: Concepto</h4>
-              <div className="space-y-2">
-                {(item as TerminosPareadosItem).pares.map((par, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-slate-100 dark:bg-slate-700 p-3 rounded-lg min-h-[50px] flex items-center"
-                  >
-                    {idx + 1}. {par.concepto}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <h4 className="font-bold text-center mb-2">
-                Columna B: Definición
-              </h4>
-              <div className="space-y-2">
-                {shuffledDefinitions.map((def, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-sky-100 dark:bg-sky-900/50 p-3 rounded-lg min-h-[50px] flex items-center"
-                  >
-                    {def}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          {showAnswers && (
-            <div className="mt-6 p-4 bg-green-50 dark:bg-green-900/30 rounded-lg border border-green-200 dark:border-green-700">
-              <h4 className="font-bold text-green-800 dark:text-green-200">
-                Respuestas Correctas:
-              </h4>
-              <ul className="list-disc list-inside mt-2 text-sm text-slate-700 dark:text-slate-300">
-                {(item as TerminosPareadosItem).pares.map((par, idx) => (
-                  <li key={idx}>
-                    <strong>{par.concepto}</strong> &rarr; {par.definicion}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-
-      {item.tipo === 'Comprensión de lectura' && (
-        <div className="ml-4 mt-2 space-y-4">
-          <div className="p-4 bg-slate-100 dark:bg-slate-700/50 rounded-md whitespace-pre-wrap">
-            {(item as ComprensionLecturaItem).texto}
-          </div>
-          {(item as ComprensionLecturaItem).preguntas.map((sub, subIndex) => {
-            if (sub.tipo === 'Selección múltiple') {
-              const smSub = sub as SeleccionMultipleItem;
-              return (
-                <div key={sub.id} className="pt-2">
-                  <div className="flex justify-between items-start">
-                    <p className="font-semibold flex-grow pr-4">
-                      {subIndex + 1}. {smSub.pregunta} ({smSub.puntaje} pts)
-                    </p>
-                    {smSub.habilidadBloom && (
-                      <span className="flex-shrink-0 text-xs font-semibold bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-2 py-1 rounded-full">
-                        {smSub.habilidadBloom}
-                      </span>
-                    )}
-                  </div>
-                  <div className="ml-4 mt-2 space-y-2">
-                    {smSub.opciones.map((op, i) => {
-                      const isCorrect = showAnswers && i === smSub.respuestaCorrecta;
-                      return (
-                        <div
-                          key={i}
-                          className={`flex items-center gap-2 p-1 rounded ${
-                            isCorrect ? 'bg-green-100 dark:bg-green-900/50' : ''
-                          }`}
-                        >
-                          <div className="w-5 h-5 border rounded-full"></div>
-                          <span>
-                            {String.fromCharCode(65 + i)}) {op}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            }
-            if (sub.tipo === 'Desarrollo') {
-              const dSub = sub as DesarrolloItem;
-              return (
-                <div key={sub.id} className="pt-2">
-                  <div className="flex justify-between items-start">
-                    <p className="font-semibold flex-grow pr-4">
-                      {subIndex + 1}. {dSub.pregunta} ({dSub.puntaje} pts)
-                    </p>
-                    {dSub.habilidadBloom && (
-                      <span className="flex-shrink-0 text-xs font-semibold bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-2 py-1 rounded-full">
-                        {dSub.habilidadBloom}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-2 p-2 border rounded-md min-h-[96px] bg-slate-50 dark:bg-slate-700/50"></div>
-                </div>
-              );
-            }
-            return null;
-          })}
-        </div>
-      )}
-    </div>
+    </>
   );
 };
 
@@ -293,15 +102,24 @@ const PruebaItemViewer: React.FC<{
 // Submódulo 1: Pruebas
 // -------------------------------------------------------------------
 const PruebasSubmodule: React.FC = () => {
-  const initialFormState = {
+  const initialFormState: {
+    nombre: string;
+    asignatura: string;
+    nivel: string;
+    contenido: string;
+    tiposActividad: Record<PruebaItemTipo, number>;
+    dificultad: 'Fácil' | 'Intermedio' | 'Avanzado';
+    isNee: boolean;
+    selectedNee: DificultadAprendizaje[];
+  } = {
     nombre: '',
     asignatura: ASIGNATURAS[0],
     nivel: NIVELES[0],
     contenido: '',
-    tiposActividad: {} as Record<PruebaItemTipo, number>,
-    dificultad: 'Intermedio' as 'Fácil' | 'Intermedio' | 'Avanzado',
+    tiposActividad: {},
+    dificultad: 'Intermedio',
     isNee: false,
-    selectedNee: [] as DificultadAprendizaje[],
+    selectedNee: [],
   };
 
   const [formData, setFormData] = useState(initialFormState);
@@ -376,109 +194,53 @@ const PruebasSubmodule: React.FC = () => {
     setIsGenerating(true);
     setError(null);
 
-    const promptInstructions = Object.entries(formData.tiposActividad)
-      .map(([tipo, cantidad]) => `- ${cantidad} ítem(s) de tipo '${tipo}'`)
-      .join('\n');
-
-    const neeAdaptationPrompt =
-      formData.isNee && formData.selectedNee.length > 0
-        ? `\n**Adaptación CRÍTICA para Necesidades Educativas Especiales (NEE):**\nAdapta esta prueba para estudiantes con las siguientes características: ${formData.selectedNee.join(
-            ', '
-          )}.\nEsto implica las siguientes modificaciones OBLIGATORIAS:\n- Usa un lenguaje claro, simple y directo en todas las preguntas e instrucciones.\n- Evita preguntas con doble negación o estructuras gramaticales complejas.\n- En preguntas de desarrollo, desglosa la pregunta en partes más pequeñas si es posible.\n- Para 'Comprensión de Lectura', usa textos más cortos (100-150 palabras) y con vocabulario accesible.\n- Para 'Selección Múltiple', asegúrate de que los distractores sean claramente incorrectos y no ambiguos.`
-        : '';
-
-    const prompt = `
-Eres un experto en evaluación educativa para la educación media en Chile.
-Genera una prueba o guía de trabajo completa en formato JSON estructurado.
-
-**Información base:**
-- Nombre de la prueba: ${formData.nombre}
-- Asignatura: ${formData.asignatura}
-- Nivel: ${formData.nivel}
-- Contenido a evaluar: "${formData.contenido}"
-- Tipos y cantidad de ítems solicitados:
-  ${promptInstructions}
-- Nivel de Dificultad General: ${formData.dificultad}. 'Fácil' implica preguntas directas y de recuerdo. 'Intermedio' incluye aplicación y análisis simple. 'Avanzado' requiere síntesis, evaluación y resolución de problemas complejos.
-
-${neeAdaptationPrompt}
-
-**Reglas Estrictas de Generación por Tipo de Ítem:**
-- **Selección Múltiple:**
-  - **Siempre** debe tener 4 alternativas (A, B, C, D).
-  - Las alternativas deben ser presentadas en el campo 'opciones' como un array de 4 strings.
-  - Solo una alternativa es la correcta.
-  - Los distractores (alternativas incorrectas) deben ser plausibles, relevantes al contenido y no ambiguos.
-  - 'respuestaCorrecta' debe ser el índice numérico (0 a 3) de la opción correcta en el array 'opciones'.
-- **Comprensión de Lectura:**
-  - El texto proporcionado en el campo 'texto' debe tener entre 150 y 250 palabras.
-  - **Todas** las preguntas asociadas deben basarse **estrictamente** en la información contenida en el texto. No se debe requerir conocimiento externo.
-- **Términos Pareados:**
-  - Debe entregar exactamente la cantidad de pares solicitada.
-  - Cada par en el array 'pares' debe tener un 'concepto' y una 'definicion'.
-  - Las definiciones deben ser claras, concisas y no circulares (no usar el concepto en su propia definición).
-- **Verdadero o Falso:**
-  - Las afirmaciones en el campo 'pregunta' deben ser claras, inequívocas y declarativas.
-  - 'respuestaCorrecta' debe ser un valor booleano (\`true\` para verdadero, \`false\` para falso).
-- **Desarrollo:**
-  - Las preguntas deben ser abiertas y diseñadas para que el estudiante deba analizar, argumentar, comparar o crear, en lugar de solo recordar información literal.
-
-**Directrices Generales Adicionales:**
-- **Distribución por Defecto:** Si no se especifica una distribución de ítems, asume una que sea coherente con la cantidad total solicitada y el nivel de dificultad 'Intermedio'.
-- **Adecuación Curricular:** El vocabulario, la complejidad y el contexto de toda la prueba deben ser apropiados para el nivel educativo 'Educación Media' en Chile y estar alineados con el contenido a evaluar.
-
-**Formato de Salida OBLIGATORIO:**
-Tu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, explicaciones, ni el bloque \`\`\`json. El objeto debe contener:
-1. 'objetivo': Un objetivo de aprendizaje claro para la evaluación, alineado con el contenido y nivel.
-2. 'instruccionesGenerales': Instrucciones claras para el estudiante.
-3. 'actividades': Un array de objetos, donde cada objeto es una actividad por cada tipo de ítem solicitado. Cada actividad debe tener:
-   - 'id': Un UUID generado por ti.
-   - 'titulo': Un título descriptivo (ej: "Actividad 1: Selección Múltiple").
-   - 'instrucciones': Instrucciones para esa actividad específica.
-   - 'items': Un array de preguntas con la cantidad exacta solicitada. Cada pregunta (item) debe tener:
-       - 'id': Un UUID generado por ti.
-       - 'tipo': El tipo de ítem.
-       - 'pregunta': El enunciado de la pregunta.
-       - 'puntaje': Un puntaje numérico.
-       - 'habilidadBloom': La habilidad principal de la Taxonomía de Bloom que se trabaja (ej: Analizar, Crear, Evaluar).
-       - Campos adicionales según el tipo (respetando las reglas estrictas de arriba):
-           - Para 'Selección múltiple': 'opciones' (array de EXACTAMENTE 4 strings) y 'respuestaCorrecta' (índice numérico 0-3).
-           - Para 'Verdadero o Falso': 'respuestaCorrecta' (booleano).
-           - Para 'Términos pareados': 'pares' (array de objetos con 'concepto' y 'definicion').
-           - Para 'Comprensión de lectura': 'texto' (150-250 palabras) y 'preguntas' (array de sub-preguntas tipo 'Selección múltiple' o 'Desarrollo').
-           - Para 'Desarrollo': no necesita campos adicionales.
-`;
-
     try {
-      const user = auth.currentUser;
-      if (!user) {
-        setError("No se pudo obtener el usuario. Por favor, inicie sesión de nuevo.");
-        setIsGenerating(false);
-        return;
+      logApiCall('Evaluación - Pruebas', currentUser);
+
+      // Nuevo formato: enviar cantidadesPorTipo
+      const cantidadesPorTipo = { ...formData.tiposActividad };
+      const result = await generarPruebaConGeminiFn({
+        objetivo: `Evaluar el siguiente contenido: "${formData.contenido}" para el nivel ${formData.nivel}.`,
+        cantidadesPorTipo,
+        contextoAdicional: `
+          Nombre de la prueba: ${formData.nombre}
+          Asignatura: ${formData.asignatura}
+          Nivel de Dificultad General: ${formData.dificultad}. 'Fácil' implica preguntas directas y de recuerdo. 'Intermedio' incluye aplicación y análisis simple. 'Avanzado' requiere síntesis, evaluación y resolución de problemas complejos.
+          ${formData.isNee && formData.selectedNee.length > 0
+            ? `**Adaptación CRÍTICA para Necesidades Educativas Especiales (NEE):** Adapta esta prueba para estudiantes con las siguientes características: ${formData.selectedNee.join(', ')}. Esto implica usar un lenguaje claro, simple y directo, evitar preguntas complejas, usar textos más cortos y distractores claros.`
+            : ''
+          }
+          Directrices Generales: El vocabulario, la complejidad y el contexto de toda la prueba deben ser apropiados para el nivel educativo 'Educación Media' en Chile.
+          Formato de Salida: Tu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, explicaciones, ni el bloque \`\`\`json.
+        `,
+      });
+
+      const generatedData = (result.data as any).prueba;
+
+      // Calcular puntajeIdeal si las preguntas tienen puntaje
+      let puntajeIdeal = 0;
+      if (generatedData.preguntas && Array.isArray(generatedData.preguntas)) {
+        generatedData.preguntas.forEach((item: any) => {
+          puntajeIdeal += item.puntaje || 1; // Asume 1 si no existe
+        });
       }
 
-      logApiCall('Evaluación - Pruebas', currentUser); // Solo si el usuario está listo
-      const token = await user.getIdToken();
-      const response = await fetch('/api/generarEvaluacion', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ prompt, formData, uid: currentUser.uid }),
-      });
-      if (!response.ok) throw new Error('Error al generar la prueba con IA');
-      const generatedData = await response.json();
+      // Adaptar estructura para compatibilidad con el resto del sistema
+      // Asegurar que cada item tenga un id único
 
-      let puntajeIdeal = 0;
-      generatedData.actividades.forEach((act: PruebaActividad) => {
-        act.items.forEach((item: any) => {
-          puntajeIdeal += item.puntaje || 0;
-          if (item.tipo === 'Comprensión de lectura' && item.preguntas) {
-            item.preguntas.forEach((subItem: any) => {
-              puntajeIdeal += subItem.puntaje || 0;
-            });
-          }
-        });
+      // Asegurar que cada item y subitem tenga un id único
+      const itemsConId = (generatedData.preguntas || []).map((item: any) => {
+        // Si es Comprensión de Lectura, asegurar ids en subpreguntas
+        if (item.tipo === 'Comprensión de lectura' && Array.isArray(item.preguntas)) {
+          item.preguntas = item.preguntas.map((sub: any) => ({
+            ...sub,
+            id: sub.id || crypto.randomUUID(),
+          }));
+        }
+        return {
+          ...item,
+          id: item.id || crypto.randomUUID(),
+        };
       });
 
       const newPrueba: Prueba = {
@@ -489,10 +251,17 @@ Tu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, exp
         nivel: formData.nivel,
         contenidoOriginal: formData.contenido,
         tiposActividadOriginal: formData.tiposActividad,
-        objetivo: generatedData.objetivo,
-        instruccionesGenerales: generatedData.instruccionesGenerales,
+        objetivo: generatedData.objetivo || '',
+        instruccionesGenerales: generatedData.instruccionesGenerales || '',
         puntajeIdeal,
-        actividades: generatedData.actividades,
+        actividades: [
+          {
+            id: crypto.randomUUID(),
+            titulo: formData.nombre,
+            instrucciones: generatedData.instruccionesGenerales || '',
+            items: itemsConId,
+          },
+        ],
         dificultad: formData.dificultad,
         ...(formData.isNee && { adaptacionNEE: formData.selectedNee }),
       };
@@ -1048,13 +817,64 @@ const RubricasSubmodule: React.FC<{
   onSave: (rubrica: RubricaEstatica) => void;
   onDelete: (id: string) => void;
   onCreate: (rubrica: RubricaEstatica) => void;
-}> = ({ rubricas, onSave, onDelete, onCreate }) => {
+  allUsers: User[];
+  onCreatedInteractiva?: (id: string) => void;
+}> = ({ rubricas, onSave, onDelete, onCreate, allUsers, onCreatedInteractiva }) => {
   const [currentRubrica, setCurrentRubrica] = useState<RubricaEstatica | null>(
     null
   );
   const [view, setView] = useState<'list' | 'form'>('list');
   const [isLoading, setIsLoading] = useState(false);
   const [newDimensionName, setNewDimensionName] = useState('');
+  const { currentUser } = useAuth();
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [selectedCourse, setSelectedCourse] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('');
+
+  const availableCourses = useMemo(() => {
+    return Array.from(
+      new Set(
+        allUsers
+          .filter((u) => u.profile === Profile.ESTUDIANTE && u.curso)
+          .map((u) => normalizeCurso(u.curso!))
+      )
+    ).sort();
+  }, [allUsers]);
+
+  const createInteractiveFromRubrica = async (rubrica: RubricaEstatica, curso: string, asignatura: string) => {
+    try {
+      // Asegurar que la rúbrica está guardada en Firestore
+      if (!rubrica.id) {
+        rubrica.id = crypto.randomUUID();
+      }
+      await saveRubricaEstatica(rubrica);
+
+      // Construir resultados iniciales por estudiante
+      const estudiantes = allUsers.filter(
+        (u) => u.profile === Profile.ESTUDIANTE && normalizeCurso(u.curso || '') === curso
+      );
+      const resultados: Record<string, ResultadoInteractivo> = {};
+      estudiantes.forEach((est) => {
+        resultados[est.id] = { puntajes: {}, feedback: '' };
+      });
+
+      const nueva = {
+        nombre: rubrica.titulo,
+        curso,
+        asignatura,
+        rubricaEstaticaId: rubrica.id,
+        resultados,
+      } as Omit<RubricaInteractiva, 'id'>;
+
+  const id = await createRubricaInteractiva(nueva);
+      setShowAssignModal(false);
+      alert('Rúbrica interactiva creada.');
+      onCreatedInteractiva?.(id);
+    } catch (e) {
+      console.error(e);
+      alert('No se pudo crear la rúbrica interactiva.');
+    }
+  };
 
   const handleGenerateRubrica = async (title: string, description: string) => {
     if (!title.trim() || !description.trim()) {
@@ -1062,36 +882,48 @@ const RubricasSubmodule: React.FC<{
       return;
     }
     setIsLoading(true);
-    const prompt = `Crea una rúbrica de evaluación detallada sobre "${title}" con el propósito de "${description}". Genera entre 3 y 5 dimensiones de evaluación. Para cada dimensión, crea un descriptor para 4 niveles: Insuficiente, Suficiente, Competente, y Avanzado. Tu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, explicaciones, ni el bloque \`\`\`json.`;
-
+    
     try {
-      logApiCall('Evaluación - Rúbricas', null);
-      const response = await fetch('/api/generarRubrica', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, title, description }),
+      logApiCall('Evaluación - Rúbricas', currentUser);
+      
+      const result = await generarRubricaConGeminiFn({
+        objetivo: title,
+        niveles: ["Insuficiente", "Suficiente", "Competente", "Avanzado"],
+        dimensiones: [],
+        contextoAdicional: `El propósito de la rúbrica es: "${description}". Por favor, genera entre 3 y 5 dimensiones de evaluación relevantes.`,
       });
-      if (!response.ok) throw new Error('Error al generar la rúbrica con IA');
-      const generatedDimensions = await response.json();
+
+      const rubrica = (result.data as any).rubrica;
 
       const newRubrica: RubricaEstatica = {
         id: crypto.randomUUID(),
-        titulo: title,
-        descripcion: description,
+        titulo: rubrica.nombre,
+        descripcion: rubrica.descripcion,
         fechaCreacion: new Date().toISOString(),
-        dimensiones: generatedDimensions.map((d: any) => ({
+        dimensiones: rubrica.dimensiones.map((d: any) => ({
           id: crypto.randomUUID(),
-          nombre: d.dimension,
-          niveles: {
-            insuficiente: d.insuficiente,
-            suficiente: d.suficiente,
-            competente: d.competente,
-            avanzado: d.avanzado,
-          },
+          nombre: d.nombre,
+          niveles: d.descriptores.reduce((acc: any, desc: any) => {
+            const levelMap: { [key: string]: string } = {
+              "Insuficiente": "insuficiente",
+              "Suficiente": "suficiente",
+              "Competente": "competente",
+              "Avanzado": "avanzado"
+            };
+            const key = levelMap[desc.nivel] || desc.nivel.toLowerCase().replace(/\s/g, '');
+            if (key) {
+              acc[key] = desc.descripcion;
+            }
+            return acc;
+          }, { insuficiente: '', suficiente: '', competente: '', avanzado: '' }),
         })),
       };
+
+      // Guardar inmediatamente y abrir modal para asignar curso
+      await onCreate(newRubrica);
       setCurrentRubrica(newRubrica);
       setView('form');
+      setShowAssignModal(true);
     } catch (error) {
       console.error(error);
       alert('Error al generar la rúbrica con IA.');
@@ -1142,16 +974,15 @@ const RubricasSubmodule: React.FC<{
       ]
     } : null);
 
-    const prompt = `Para una rúbrica sobre "${currentRubrica.titulo}", genera descriptores para la dimensión "${dimensionName}" en 4 niveles: Insuficiente, Suficiente, Competente y Avanzado. Tu respuesta DEBE ser un único objeto JSON válido con las claves "insuficiente", "suficiente", "competente", "avanzado".`;
-
     try {
-      const response = await fetch('/api/generarDescriptorDimension', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+      const result = await generarDescriptorDimensionConGeminiFn({
+        objetivo: currentRubrica.titulo,
+        dimension: dimensionName,
+        nivel: "todos", // Pedimos todos los niveles
+        contextoAdicional: `Genera descriptores para los 4 niveles: Insuficiente, Suficiente, Competente y Avanzado. La respuesta debe ser un objeto JSON con claves "insuficiente", "suficiente", "competente", "avanzado".`
       });
-      if (!response.ok) throw new Error('Error en la API');
-      const niveles = await response.json();
+
+      const niveles = (result.data as any).descriptores;
 
       setCurrentRubrica(prev => prev ? {
         ...prev,
@@ -1266,97 +1097,134 @@ const RubricasSubmodule: React.FC<{
         )}
 
         {currentRubrica.dimensiones.length > 0 && (
-          <div className="space-y-4">
-            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">
-              Dimensiones a Evaluar
-            </h3>
-            <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-lg">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-700/50">
-                  <tr>
-                    {['Dimensión', 'Insuficiente', 'Suficiente', 'Competente', 'Avanzado', ''].map(
-                      (header) => (
-                        <th
-                          key={header}
-                          className="p-3 text-left font-semibold text-slate-600 dark:text-slate-300"
-                        >
-                          {header}
-                        </th>
-                      )
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {currentRubrica.dimensiones.map((dim) => (
-                    <tr key={dim.id}>
-                      <td className="p-2 w-1/5">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">Dimensiones a Evaluar</h3>
+            <button
+              type="button"
+              onClick={() => setShowAssignModal(true)}
+              className="bg-emerald-600 text-white font-semibold py-2 px-4 rounded-lg"
+            >
+              Usar como Rúbrica Interactiva
+            </button>
+          </div>
+        )}
+        <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-lg">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 dark:bg-slate-700/50">
+              <tr>
+                {['Dimensión', 'Insuficiente', 'Suficiente', 'Competente', 'Avanzado', ''].map(
+                  (header) => (
+                    <th
+                      key={header}
+                      className="p-3 text-left font-semibold text-slate-600 dark:text-slate-300"
+                    >
+                      {header}
+                    </th>
+                  )
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+              {currentRubrica.dimensiones.map((dim) => (
+                <tr key={dim.id}>
+                  <td className="p-2 w-1/5">
+                    <textarea
+                      value={dim.nombre}
+                      onChange={(e) => handleDimensionChange(dim.id, 'nombre', e.target.value)}
+                      rows={4}
+                      className={textareaStyles}
+                    />
+                  </td>
+                  {(Object.keys(dim.niveles) as (keyof NivelDescriptor)[]).map((level) => (
+                    <td key={level} className="p-2 w-1/5">
+                      {'isLoading' in dim && (dim as any).isLoading ? (
+                        <div className="flex justify-center items-center h-full">
+                          <div className="w-5 h-5 border-2 border-slate-300 border-t-amber-500 rounded-full animate-spin"></div>
+                        </div>
+                      ) : (
                         <textarea
-                          value={dim.nombre}
-                          onChange={(e) => handleDimensionChange(dim.id, 'nombre', e.target.value)}
+                          value={dim.niveles[level]}
+                          onChange={(e) =>
+                            handleDimensionChange(dim.id, level, e.target.value)
+                          }
                           rows={4}
                           className={textareaStyles}
                         />
-                      </td>
-                      {(Object.keys(dim.niveles) as (keyof NivelDescriptor)[]).map((level) => (
-                        <td key={level} className="p-2 w-1/5">
-                          {'isLoading' in dim && (dim as any).isLoading ? (
-                            <div className="flex justify-center items-center h-full">
-                              <div className="w-5 h-5 border-2 border-slate-300 border-t-amber-500 rounded-full animate-spin"></div>
-                            </div>
-                          ) : (
-                            <textarea
-                              value={dim.niveles[level]}
-                              onChange={(e) =>
-                                handleDimensionChange(dim.id, level, e.target.value)
-                              }
-                              rows={4}
-                              className={textareaStyles}
-                            />
-                          )}
-                        </td>
-                      ))}
-                      <td className="p-2 w-[5%] text-center align-middle">
-                        <button
-                          onClick={() => handleDeleteDimension(dim.id)}
-                          className="text-red-500 hover:text-red-700 p-1 rounded-full text-lg"
-                        >
-                          🗑️
-                        </button>
-                      </td>
-                    </tr>
+                      )}
+                    </td>
                   ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex items-end gap-2 pt-2">
-              <div className="flex-grow">
-                <label className="text-sm font-medium">Añadir Dimensión</label>
-                <input
-                  value={newDimensionName}
-                  onChange={(e) => setNewDimensionName(e.target.value)}
-                  placeholder="Escribe el nombre de la nueva dimensión..."
-                  className={`${inputStyles} mt-1`}
-                />
-              </div>
-              <button
-                onClick={handleAddDimensionWithAI}
-                disabled={!newDimensionName.trim()}
-                className="bg-slate-200 dark:bg-slate-600 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 h-10 disabled:opacity-50"
+                  <td className="p-2 w-[5%] text-center align-middle">
+                    <button
+                      onClick={() => handleDeleteDimension(dim.id)}
+                      className="text-red-500 hover:text-red-700 p-1 rounded-full text-lg"
+                    >
+                      🗑️
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex items-end gap-2 pt-2">
+          <div className="flex-grow">
+            <label className="text-sm font-medium">Añadir Dimensión</label>
+            <input
+              value={newDimensionName}
+              onChange={(e) => setNewDimensionName(e.target.value)}
+              placeholder="Escribe el nombre de la nueva dimensión..."
+              className={`${inputStyles} mt-1`}
+            />
+          </div>
+          <button
+            onClick={handleAddDimensionWithAI}
+            disabled={!newDimensionName.trim()}
+            className="bg-slate-200 dark:bg-slate-600 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 h-10 disabled:opacity-50"
+          >
+            Generar con IA
+          </button>
+        </div>
+
+        {/* Modal simple para asignar curso */}
+        {showAssignModal && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-lg w-full max-w-md space-y-4">
+              <h3 className="text-lg font-bold">Asignar a Curso</h3>
+              <label className="text-sm font-medium">Curso</label>
+              <select
+                value={selectedCourse}
+                onChange={(e) => setSelectedCourse(e.target.value)}
+                className="w-full border rounded p-2 dark:bg-slate-700"
               >
-                Generar con IA
-              </button>
+                <option value="">Selecciona un curso...</option>
+                {availableCourses.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <label className="text-sm font-medium">Asignatura</label>
+              <select
+                value={selectedSubject}
+                onChange={(e) => setSelectedSubject(e.target.value)}
+                className="w-full border rounded p-2 dark:bg-slate-700"
+              >
+                <option value="">Selecciona una asignatura...</option>
+                {ASIGNATURAS.map((a) => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setShowAssignModal(false)} className="px-4 py-2">Cancelar</button>
+                <button
+                  disabled={!selectedCourse || !currentRubrica || !selectedSubject}
+                  onClick={() => currentRubrica && createInteractiveFromRubrica(currentRubrica, selectedCourse, selectedSubject)}
+                  className="bg-emerald-600 text-white px-4 py-2 rounded"
+                >
+                  Crear Interactiva
+                </button>
+              </div>
             </div>
           </div>
         )}
-
-        <div className="flex justify-end pt-6 border-t dark:border-slate-700">
-          <button
-            onClick={handleSave}
-            className="bg-amber-500 text-white font-bold py-2.5 px-6 rounded-lg hover:bg-amber-600"
-          >
-            Guardar Rúbrica
-          </button>
-        </div>
       </div>
     );
   };
@@ -1414,7 +1282,7 @@ const RubricasSubmodule: React.FC<{
 };
 
 // -------------------------------------------------------------------
-// Submódulo 3: Rúbricas Interactivas (vista mínima para compilar)
+// Submódulo 3: Rúbricas Interactivas (implementación básica)
 // -------------------------------------------------------------------
 const RubricasInteractivas: React.FC<{
   allUsers: User[];
@@ -1423,123 +1291,119 @@ const RubricasInteractivas: React.FC<{
   const [rubricasInteractivas, setRubricasInteractivas] = useState<
     RubricaInteractiva[]
   >([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = subscribeToRubricasInteractivas(setRubricasInteractivas);
     return () => unsubscribe();
   }, []);
 
+  const selected = useMemo(
+    () => rubricasInteractivas.find((r) => r.id === selectedId) || null,
+    [rubricasInteractivas, selectedId]
+  );
+
+  const rubricaBase = useMemo(() => {
+    if (!selected) return null;
+    return rubricasEstaticas.find((r) => r.id === selected.rubricaEstaticaId) || null;
+  }, [selected, rubricasEstaticas]);
+
+  const estudiantesCurso = useMemo(() => {
+    if (!selected) return [] as User[];
+    return allUsers.filter(
+      (u) => u.profile === Profile.ESTUDIANTE && normalizeCurso(u.curso || '') === normalizeCurso(selected.curso)
+    );
+  }, [selected, allUsers]);
+
+  const setPuntaje = async (estId: string, dimName: string, value: number) => {
+    if (!selected) return;
+    const current = selected.resultados[estId] || { puntajes: {}, feedback: '' };
+    const updated = {
+      ...selected.resultados,
+      [estId]: { ...current, puntajes: { ...current.puntajes, [dimName]: value } },
+    };
+    await updateRubricaInteractiva(selected.id, { resultados: updated });
+  };
+
+  const calcNota = (estId: string): number => {
+    if (!rubricaBase) return 1;
+    const dims = rubricaBase.dimensiones.map((d) => d.nombre);
+    const res = selected?.resultados[estId];
+    if (!res) return 1;
+    const sum = dims.reduce((acc, name) => acc + (res.puntajes[name] || 0), 0);
+    const max = dims.length * 4; // niveles 1-4
+    const pct = max > 0 ? sum / max : 0;
+    const nota = 1 + 6 * pct; // escala 1-7
+    return Math.round(nota * 10) / 10;
+  };
+
   return (
     <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
-      <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">
-        Rúbricas Interactivas
-      </h2>
-      <p className="text-slate-600 dark:text-slate-400">
-        Módulo en desarrollo. Próximamente podrás asignar y calificar con rúbricas interactivas.
-      </p>
-      <div className="mt-4 text-sm text-slate-600 dark:text-slate-400">
-        Total de rúbricas activas: {rubricasInteractivas.length}
-      </div>
-    </div>
-  );
-};
-
-// -------------------------------------------------------------------
-// Submódulo 4: Gestión de Nóminas (Read-only)
-// -------------------------------------------------------------------
-const GestionNominas: React.FC<{ allUsers: User[] }> = ({ allUsers }) => {
-  const [selectedCourse, setSelectedCourse] = useState('');
-
-  const availableCourses = useMemo(() => {
-    return Array.from(
-      new Set(
-        allUsers
-          .filter((u) => u.profile === Profile.ESTUDIANTE && u.curso)
-          .map((u) => normalizeCurso(u.curso!))
-      )
-    ).sort();
-  }, [allUsers]);
-
-  const filteredStudents = useMemo(() => {
-    const baseStudentList = allUsers.filter((u) => u.profile === Profile.ESTUDIANTE);
-    if (!selectedCourse) {
-      return baseStudentList.sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
-    }
-    return baseStudentList
-      .filter((u) => normalizeCurso(u.curso || '') === selectedCourse)
-      .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
-  }, [allUsers, selectedCourse]);
-
-  return (
-    <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
-      <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Nóminas de Cursos</h2>
-      <p className="text-slate-500 dark:text-slate-400 mb-6">
-        Este es un visor de las nóminas de estudiantes. Para agregar, editar o eliminar estudiantes,
-        utilice el módulo de <strong className="font-semibold">Administración</strong>.
-      </p>
-      <div className="mb-4">
-        <label
-          htmlFor="curso-filter"
-          className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1"
-        >
-          Filtrar por Curso
-        </label>
-        <select
-          id="curso-filter"
-          value={selectedCourse}
-          onChange={(e) => setSelectedCourse(e.target.value)}
-          className="w-full max-w-xs border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
-        >
-          <option value="">Mostrar Todos los Estudiantes</option>
-          {availableCourses.map((curso) => (
-            <option key={curso} value={curso}>
-              {curso}
-            </option>
+      <h2 className="text-xl font-bold mb-4">Rúbricas Interactivas</h2>
+      <div className="flex gap-4">
+        <div className="w-1/3 space-y-2">
+          {rubricasInteractivas.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setSelectedId(r.id)}
+              className={`w-full text-left p-3 rounded border ${selectedId === r.id ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-slate-50 dark:bg-slate-700/50'}`}
+            >
+              <div className="font-semibold">{r.nombre}</div>
+              <div className="text-xs text-slate-500">Curso: {r.curso} · Asignatura: {r.asignatura}</div>
+            </button>
           ))}
-        </select>
-      </div>
-      <div className="overflow-x-auto border rounded-lg dark:border-slate-700 max-h-[60vh]">
-        <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-          <thead className="bg-slate-50 dark:bg-slate-700/50 sticky top-0">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
-                Nombre Completo
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
-                Curso
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
-                Email
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
-            {filteredStudents.length > 0 ? (
-              filteredStudents.map((est) => (
-                <tr key={est.id}>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-200">
-                    {est.nombreCompleto}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
-                    {normalizeCurso(est.curso || '')}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
-                    {est.email}
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan={3}
-                  className="px-6 py-10 text-center text-slate-500 dark:text-slate-400"
-                >
-                  No hay estudiantes que coincidan con el filtro.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+          {rubricasInteractivas.length === 0 && (
+            <p className="text-slate-500 text-sm">No hay rúbricas interactivas.</p>
+          )}
+        </div>
+        <div className="flex-1">
+          {selected && rubricaBase ? (
+            <div className="space-y-4">
+              <h3 className="text-lg font-bold">{selected.nombre} — {selected.curso}</h3>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr>
+                      <th className="p-2 text-left">Estudiante</th>
+                      {rubricaBase.dimensiones.map((d) => (
+                        <th key={d.id} className="p-2 text-left">{d.nombre}</th>
+                      ))}
+                      <th className="p-2 text-left">Nota</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {estudiantesCurso.map((est) => (
+                      <tr key={est.id} className="border-t">
+                        <td className="p-2">{est.nombreCompleto}</td>
+                        {rubricaBase.dimensiones.map((d) => {
+                          const current = selected.resultados[est.id]?.puntajes?.[d.nombre] || 0;
+                          return (
+                            <td key={d.id} className="p-2">
+                              <select
+                                value={current}
+                                onChange={(e) => setPuntaje(est.id, d.nombre, Number(e.target.value))}
+                                className="border rounded p-1 dark:bg-slate-700"
+                              >
+                                <option value={0}>—</option>
+                                <option value={1}>1 - Insuficiente</option>
+                                <option value={2}>2 - Suficiente</option>
+                                <option value={3}>3 - Competente</option>
+                                <option value={4}>4 - Avanzado</option>
+                              </select>
+                            </td>
+                          );
+                        })}
+                        <td className="p-2 font-semibold">{calcNota(est.id).toFixed(1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <p className="text-slate-500">Selecciona una rúbrica interactiva para calificar.</p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1595,26 +1459,21 @@ const EvaluacionAprendizajes: React.FC = () => {
         >
           Rúbricas Interactivas
         </button>
-        <button
-          className={`px-4 py-2 rounded-lg font-semibold ${activeTab === 'nominas' ? 'bg-amber-500 text-white' : 'bg-slate-200 dark:bg-slate-700 dark:text-slate-200'}`}
-          onClick={() => setActiveTab('nominas')}
-        >
-          Nóminas
-        </button>
       </div>
       {activeTab === 'pruebas' && <PruebasSubmodule />}
       {activeTab === 'rubricas' && (
         <RubricasSubmodule
           rubricas={rubricasEstaticas}
-          onSave={() => {}}
-          onDelete={() => {}}
-          onCreate={() => {}}
+          onSave={saveRubricaEstatica}
+          onDelete={deleteRubricaEstatica}
+          onCreate={saveRubricaEstatica}
+          allUsers={allUsers}
+          onCreatedInteractiva={() => setActiveTab('rubricasInteractivas')}
         />
       )}
       {activeTab === 'rubricasInteractivas' && (
         <RubricasInteractivas allUsers={allUsers} rubricasEstaticas={rubricasEstaticas} />
       )}
-      {activeTab === 'nominas' && <GestionNominas allUsers={allUsers} />}
     </div>
   );
 };

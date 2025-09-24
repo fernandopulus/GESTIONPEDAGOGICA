@@ -111,6 +111,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
   const [showCursoDropdown, setShowCursoDropdown] = useState(false);
   const [preguntaSeleccionada, setPreguntaSeleccionada] = useState<Pregunta | null>(null);
   const [preguntaEnEdicion, setPreguntaEnEdicion] = useState<Pregunta | null>(null);
+  const [usuarios, setUsuarios] = useState<any[]>([]); // Estado para todos los usuarios
   
   // Cargar sets de preguntas del profesor y los cursos disponibles
   useEffect(() => {
@@ -119,11 +120,12 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
         setCargando(true);
 
         // Cargar los sets de preguntas
-        const sets = await obtenerSetsPreguntasPorProfesor(currentUser.uid || '');
+  const sets = await obtenerSetsPreguntasPorProfesor(currentUser.id || '');
         setSetsPreguntas(sets);
 
         // Cargar los usuarios (estudiantes) para obtener cursos reales
-        const usuarios = await getAllUsers();
+  const usuarios = await getAllUsers();
+  setUsuarios(usuarios);
 
         // Obtener cursos únicos (normalizados)
         const cursosUnicos = new Set<string>();
@@ -242,81 +244,84 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
   const handleGuardarEvaluacion = async () => {
     try {
       if (!nuevaEvaluacion.titulo) {
-        setError('El título es obligatorio');
+        setError('El título de la evaluación es obligatorio');
         return;
       }
-
       if (!nuevaEvaluacion.preguntas || nuevaEvaluacion.preguntas.length === 0) {
-        setError('Debe agregar al menos una pregunta');
+        setError('Debes agregar al menos una pregunta');
         return;
       }
-
-      // Mensaje basado en si está asignando o solo guardando
-      const tieneAsignaciones = (nuevaEvaluacion.cursosAsignados || []).length > 0;
-      const accion = tieneAsignaciones ? 'guardando y asignando' : 'guardando';
-      
+      // Normalizar los IDs de cursos asignados antes de guardar
+      const cursosAsignadosNormalizados = (nuevaEvaluacion.cursosAsignados || []).map(normalizeCurso);
+      const tieneAsignaciones = cursosAsignadosNormalizados.length > 0;
       setCargando(true);
-      setInfoGeneracion({
-        tipo: 'warning',
-        mensaje: `Estamos ${accion} la evaluación...`
-      });
 
-      // Asegurar que el texto base se propague correctamente si existe
-      let preguntasFinales = [...(nuevaEvaluacion.preguntas || [])];
-      
-  // Si es una evaluación de competencia lectora, revisar si hay texto base
-  if (nuevaEvaluacion.asignatura === 'Competencia Lectora') {
-        const textoBase = encontrarTextoBase(preguntasFinales);
-        if (textoBase) {
-          preguntasFinales = propagarTextoBase(preguntasFinales, textoBase);
-          console.log("Texto base propagado a la primera pregunta:", textoBase);
-        }
+      // Obtener IDs de estudiantes de los cursos seleccionados
+      let estudiantesAsignados: string[] = [];
+      if (tieneAsignaciones) {
+        estudiantesAsignados = usuarios
+          .filter(user => user.profile === 'ESTUDIANTE' && user.curso && cursosAsignadosNormalizados.includes(normalizeCurso(user.curso)))
+          .map(user => user.id);
       }
-      // Normalizar todos los cursos asignados antes de guardar
-      const cursosAsignadosNormalizados = Array.isArray(nuevaEvaluacion.cursosAsignados)
-        ? nuevaEvaluacion.cursosAsignados.map(normalizeCurso)
-        : [];
 
-      // Construir el objeto evaluacionActualizada con todos los campos requeridos
-      const evaluacionActualizada: Omit<SetPreguntas, 'id'> = {
-        titulo: nuevaEvaluacion.titulo || '',
-        descripcion: nuevaEvaluacion.descripcion || '',
-  asignatura: nuevaEvaluacion.asignatura || 'Competencia Lectora',
-        preguntas: preguntasFinales,
-        creadorId: currentUser.uid || '', // SIEMPRE usar uid
-        creadorNombre: currentUser.nombreCompleto || '',
-        fechaCreacion: setSeleccionado?.fechaCreacion || new Date().toISOString(),
+      // Actualizar el objeto de evaluación con los cursos normalizados y estudiantes asignados
+      const evaluacionActualizada = {
+        ...nuevaEvaluacion,
         cursosAsignados: cursosAsignadosNormalizados,
-        barajarPreguntas: typeof nuevaEvaluacion.barajarPreguntas === 'boolean' ? nuevaEvaluacion.barajarPreguntas : true,
-        barajarAlternativas: typeof nuevaEvaluacion.barajarAlternativas === 'boolean' ? nuevaEvaluacion.barajarAlternativas : true
+        estudiantesAsignados
       };
 
-      if (setSeleccionado) {
-        // Actualizar set existente
-        await actualizarSetPreguntas(setSeleccionado.id, evaluacionActualizada);
-
-        // Actualizar la lista de sets
-        setSetsPreguntas(prev => prev.map(set =>
-          set.id === setSeleccionado.id ? { ...set, ...evaluacionActualizada } as SetPreguntas : set
-        ));
-      } else {
-        // Crear nuevo set
-        const nuevoId = await crearSetPreguntas(evaluacionActualizada);
-        const setCompleto = { id: nuevoId, ...evaluacionActualizada } as SetPreguntas;
-
-        // Agregar a la lista
-        setSetsPreguntas(prev => [setCompleto, ...prev]);
+      // Guardar la evaluación en la colección correcta
+      let nuevoId = '';
+      const { collection, addDoc, updateDoc, doc } = await import('firebase/firestore');
+      const { db } = await import('../../src/firebaseHelpers/config');
+      const coleccion = 'simce_evaluaciones';
+      console.log('[DEBUG] Guardando evaluación:', evaluacionActualizada);
+      try {
+        if (setSeleccionado && setSeleccionado.id) {
+          // Verificar si existe en simce_evaluaciones
+          const docRefEval = doc(db, coleccion, setSeleccionado.id);
+          const { getDoc, deleteDoc } = await import('firebase/firestore');
+          const snapEval = await getDoc(docRefEval);
+          console.log('[DEBUG] Documento a editar existe en simce_evaluaciones:', snapEval.exists());
+          if (snapEval.exists()) {
+            // Actualizar en simce_evaluaciones
+            await updateDoc(docRefEval, evaluacionActualizada);
+            nuevoId = setSeleccionado.id;
+            console.log('[DEBUG] Evaluación actualizada en simce_evaluaciones:', nuevoId);
+          } else {
+            // Migrar: crear en simce_evaluaciones y eliminar de simce_sets
+            const docRefNew = await addDoc(collection(db, coleccion), evaluacionActualizada);
+            nuevoId = docRefNew.id;
+            console.log('[DEBUG] Evaluación migrada a simce_evaluaciones:', nuevoId);
+            // Eliminar de simce_sets si existe
+            const docRefOld = doc(db, 'simce_sets', setSeleccionado.id);
+            const snapOld = await getDoc(docRefOld);
+            console.log('[DEBUG] Documento antiguo existe en simce_sets:', snapOld.exists());
+            if (snapOld.exists()) {
+              await deleteDoc(docRefOld);
+              console.log('[DEBUG] Documento antiguo eliminado de simce_sets:', setSeleccionado.id);
+            }
+          }
+        } else {
+          // Si es nuevo, crear el set en simce_evaluaciones
+          const docRef = await addDoc(collection(db, coleccion), evaluacionActualizada);
+          nuevoId = docRef.id;
+          console.log('[DEBUG] Evaluación nueva creada en simce_evaluaciones:', nuevoId);
+        }
+      } catch (err) {
+        console.error('[ERROR] Guardando evaluación:', err);
+        throw err;
       }
+      const setCompleto = { id: nuevoId, ...evaluacionActualizada } as SetPreguntas;
+      setSetsPreguntas(prev => [setCompleto, ...prev]);
 
-      // Mostrar mensaje de éxito
       setInfoGeneracion({
         tipo: 'success',
         mensaje: tieneAsignaciones 
-          ? `Evaluación guardada y asignada a ${nuevaEvaluacion.cursosAsignados?.length} curso${nuevaEvaluacion.cursosAsignados?.length !== 1 ? 's' : ''} correctamente`
+          ? `Evaluación guardada y asignada a ${cursosAsignadosNormalizados.length} curso${cursosAsignadosNormalizados.length !== 1 ? 's' : ''} correctamente`
           : 'Evaluación guardada correctamente'
       });
-      
-      // Limpiar el mensaje después de 3 segundos
       setTimeout(() => {
         setInfoGeneracion({ tipo: '', mensaje: '' });
       }, 3000);
@@ -327,13 +332,10 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
     } catch (error) {
       console.error('Error al guardar evaluación:', error);
       setError('No se pudo guardar la evaluación');
-      
       setInfoGeneracion({
         tipo: 'error',
         mensaje: 'Ocurrió un error al guardar la evaluación'
       });
-      
-      // Limpiar el mensaje de error después de 3 segundos
       setTimeout(() => {
         setInfoGeneracion({ tipo: '', mensaje: '' });
       }, 3000);
@@ -1101,25 +1103,56 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
             </div>
             
             {(nuevaEvaluacion.cursosAsignados || []).length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(nuevaEvaluacion.cursosAsignados || []).map(cursoId => {
-                  const curso = cursos.find(c => c.id === cursoId);
-                  return (
-                    <div
-                      key={cursoId}
-                      className="flex items-center bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-md text-sm"
-                    >
-                      <span>{curso?.nombre || cursoId}</span>
-                      <button
-                        onClick={() => handleToggleCurso(cursoId)}
-                        className="ml-1 text-slate-500 hover:text-slate-700 dark:text-slate-400 hover:dark:text-slate-200"
+              <>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(nuevaEvaluacion.cursosAsignados || []).map(cursoId => {
+                    const curso = cursos.find(c => c.id === cursoId);
+                    return (
+                      <div
+                        key={cursoId}
+                        className="flex items-center bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-md text-sm"
                       >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
+                        <span>{curso?.nombre || cursoId}</span>
+                        <button
+                          onClick={() => handleToggleCurso(cursoId)}
+                          className="ml-1 text-slate-500 hover:text-slate-700 dark:text-slate-400 hover:dark:text-slate-200"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Listado de estudiantes asignados */}
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Estudiantes asignados
+                  </label>
+                  <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-3 max-h-40 overflow-y-auto text-sm">
+                    {(() => {
+                      // Buscar estudiantes por cursos asignados usando el estado usuarios
+                      const estudiantesAsignados = usuarios.filter(user => {
+                        if (user.profile !== 'ESTUDIANTE' || !user.curso) return false;
+                        const cursoNorm = normalizeCurso(user.curso);
+                        return (nuevaEvaluacion.cursosAsignados || []).includes(cursoNorm);
+                      });
+                      if (estudiantesAsignados.length === 0) {
+                        return <span className="text-slate-500">No hay estudiantes asignados a los cursos seleccionados.</span>;
+                      }
+                      return (
+                        <ul className="list-disc pl-4">
+                          {estudiantesAsignados.map(est => (
+                            <li key={est.id} className="mb-1">
+                              {est.nombreCompleto || est.nombre || est.id} <span className="text-xs text-slate-400">({formatearNombreCurso(normalizeCurso(est.curso))})</span>
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </>
             )}
           </div>
           

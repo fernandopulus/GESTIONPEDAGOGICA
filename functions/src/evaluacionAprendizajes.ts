@@ -141,77 +141,74 @@ export const generarDescriptorDimensionConGemini = onCall({ secrets: ["GEMINI_AP
 /**
  * Genera una prueba o evaluación completa con preguntas y alternativas.
  */
+
 export const generarPruebaConGemini = onCall({ secrets: ["GEMINI_API_KEY"] }, async (request) => {
     isAuthenticated(request);
 
-    const { objetivo, numeroPreguntas, tiposPregunta, contextoAdicional } = request.data;
+    const { objetivo, cantidadesPorTipo, contextoAdicional } = request.data;
 
-    if (!objetivo || !numeroPreguntas || !tiposPregunta) {
-        throw new HttpsError("invalid-argument", "Faltan parámetros requeridos (objetivo, numeroPreguntas, tiposPregunta).");
+    if (!objetivo || !cantidadesPorTipo || typeof cantidadesPorTipo !== 'object') {
+        throw new HttpsError("invalid-argument", "Faltan parámetros requeridos (objetivo, cantidadesPorTipo).");
     }
 
-    const prompt = `
-        Por favor, genera una prueba de evaluación en formato JSON.
-        La prueba debe evaluar el siguiente objetivo de aprendizaje: "${objetivo}".
-        Debe contener exactamente ${numeroPreguntas} preguntas.
-        Los tipos de pregunta permitidos son: ${tiposPregunta.join(", ")}.
+    // Generar preguntas por cada tipo y cantidad
+    let todasLasPreguntas: Pregunta[] = [];
+    for (const tipo in cantidadesPorTipo) {
+        const cantidad = cantidadesPorTipo[tipo];
+        if (!cantidad || cantidad < 1) continue;
+        const prompt = `
+            GENERA ${cantidad} PREGUNTAS DEL TIPO "${tipo}" EN FORMATO JSON COMPACTO.
+            - Objetivo: "${objetivo}".
+            - NO incluyas explicaciones, comentarios ni texto adicional.
+            - Cada pregunta debe tener:
+                - enunciado (string)
+                - tipo (string): '${tipo}'
+                - alternativas (array):
+                    - 'seleccion_multiple': 4 o 5 objetos, solo una correcta
+                    - 'verdadero_falso': dos objetos, uno correcto
+                    - 'respuesta_corta': array vacío
+            ${contextoAdicional ? `- Contexto adicional: ${contextoAdicional}` : ""}
+            FORMATO DE SALIDA:
+            [ ... ]
+            RESPONDE ÚNICAMENTE CON EL ARRAY JSON, SIN TEXTO ADICIONAL, SIN ENCABEZADOS, SIN EXPLICACIONES. EL JSON DEBE SER VÁLIDO Y COMPACTO.`;
 
-        La estructura de la prueba debe ser la siguiente:
-        - Nombre de la prueba (string).
-        - Objetivo de la prueba (string, el mismo que se proporciona).
-        - Un array de "preguntas".
-
-        Cada pregunta debe tener:
-        - enunciado (string): El texto de la pregunta.
-        - tipo (string): Puede ser 'seleccion_multiple', 'verdadero_falso', o 'respuesta_corta'.
-        - alternativas (array de objetos):
-            - Para 'seleccion_multiple', un array de 4 o 5 objetos, cada uno con "texto" (string) y "esCorrecta" (boolean). Solo una debe ser correcta.
-            - Para 'verdadero_falso', un array de 2 objetos: { "texto": "Verdadero", "esCorrecta": boolean } y { "texto": "Falso", "esCorrecta": boolean }.
-            - Para 'respuesta_corta', un array vacío.
-
-        ${contextoAdicional ? `Considera el siguiente contexto adicional: ${contextoAdicional}` : ""}
-
-        Ejemplo de formato de salida JSON:
-        {
-          "nombre": "Prueba sobre el Ciclo del Agua",
-          "objetivo": "Comprender las fases del ciclo del agua.",
-          "preguntas": [
-            {
-              "enunciado": "¿Qué fase del ciclo del agua implica la conversión de vapor de agua en líquido?",
-              "tipo": "seleccion_multiple",
-              "alternativas": [
-                { "texto": "Evaporación", "esCorrecta": false },
-                { "texto": "Condensación", "esCorrecta": true },
-                { "texto": "Precipitación", "esCorrecta": false },
-                { "texto": "Infiltración", "esCorrecta": false }
-              ]
-            },
-            {
-              "enunciado": "El sol es el principal motor del ciclo del agua.",
-              "tipo": "verdadero_falso",
-              "alternativas": [
-                { "texto": "Verdadero", "esCorrecta": true },
-                { "texto": "Falso", "esCorrecta": false }
-              ]
-            },
-            {
-              "enunciado": "Nombra el proceso por el cual las plantas liberan vapor de agua a la atmósfera.",
-              "tipo": "respuesta_corta",
-              "alternativas": []
+        try {
+            const aiResponse = await callGemini({ prompt });
+            let jsonString = aiResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+            let preguntas: Pregunta[];
+            try {
+                preguntas = JSON.parse(jsonString) as Pregunta[];
+            } catch (error) {
+                // Fallback: intentar parsear hasta el último cierre de corchete
+                const lastBrace = jsonString.lastIndexOf('}]');
+                if (lastBrace !== -1) {
+                    const arrayStart = jsonString.indexOf('[');
+                    if (arrayStart !== -1) {
+                        const preguntasJson = jsonString.substring(arrayStart, lastBrace + 2);
+                        try {
+                            preguntas = JSON.parse(preguntasJson) as Pregunta[];
+                        } catch (e2) {
+                                throw new HttpsError("internal", `No se pudo recuperar preguntas válidas para tipo ${tipo}.`);
+                        }
+                    } else {
+                            throw new HttpsError("internal", `No se pudo generar preguntas para tipo ${tipo}.`);
+                    }
+                } else {
+                        throw new HttpsError("internal", `No se pudo generar preguntas para tipo ${tipo}.`);
+                }
             }
-          ]
+            todasLasPreguntas = todasLasPreguntas.concat(preguntas);
+        } catch (error) {
+            console.error(`Error al generar o parsear preguntas para tipo ${tipo}:`, error);
+                throw new HttpsError("internal", `No se pudo generar preguntas para tipo ${tipo}.`);
         }
-
-        IMPORTANTE: Responde únicamente con el objeto JSON, sin texto adicional, explicaciones o saltos de línea. El JSON debe ser válido y completo.
-    `;
-
-    try {
-        const aiResponse = await callGemini({ prompt });
-        const jsonString = aiResponse.replace(/```json/g, "").replace(/```/g, "").trim();
-        const prueba = JSON.parse(jsonString) as Prueba;
-        return { success: true, prueba };
-    } catch (error) {
-        console.error("Error al generar o parsear la prueba:", error);
-        throw new HttpsError("internal", "No se pudo generar la prueba con IA. Inténtalo de nuevo.");
     }
+
+    // Construir el objeto de prueba final
+    const prueba: Prueba = {
+        nombre: "Prueba generada",
+        objetivo,
+        preguntas: todasLasPreguntas
+    };
+    return { success: true, prueba };
 });
