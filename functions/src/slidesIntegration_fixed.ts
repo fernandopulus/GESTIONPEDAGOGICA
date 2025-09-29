@@ -200,7 +200,7 @@ export class SlidesIntegration {
   private async generatePresentationContent(data: PresentationData): Promise<GeneratedSlide[]> {
     try {
       const model = this.genAI.getGenerativeModel({ 
-        model: "gemini-pro",
+        model: "gemini-pro-latest",
         generationConfig: {
           temperature: 0.7,
           topK: 40,

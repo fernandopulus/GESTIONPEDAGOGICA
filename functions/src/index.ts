@@ -45,8 +45,8 @@ export const callGeminiAI = onCall({
 
   try {
     // *** NUEVA LÓGICA DE INICIALIZACIÓN Y LLAMADA ***
-    const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-    const model = genAI.getGenerativeModel({model: "gemini-pro"});
+  const genAI = new GoogleGenerativeAI(geminiApiKey.value());
+  const model = genAI.getGenerativeModel({model: "gemini-pro-latest"});
 
     // El prompt se construye aquí en el servidor
     const prompt = `

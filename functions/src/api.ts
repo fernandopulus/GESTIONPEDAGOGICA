@@ -51,7 +51,7 @@ const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
 };
 
 // ---- Gemini helper ----
-const callGeminiText = async (prompt: string, modelName = "gemini-1.5-pro") => {
+const callGeminiText = async (prompt: string, modelName = "gemini-2.5-pro") => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("No Gemini API Key configured");
   const ai = new GoogleGenerativeAI(apiKey);
@@ -355,8 +355,8 @@ apiRouter.post("/analisisTaxonomico", requireAuth, async (req: Request, res: Res
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) throw new Error("No se ha configurado la API Key de Gemini");
       
-      const ai = new GoogleGenerativeAI(apiKey);
-      const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
+  const ai = new GoogleGenerativeAI(apiKey);
+  const model = ai.getGenerativeModel({ model: "gemini-2.5-pro" });
   
       const result = await model.generateContent([
         prompt,

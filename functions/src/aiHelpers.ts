@@ -1,19 +1,51 @@
 import {onCall, CallableRequest, HttpsError} from "firebase-functions/v2/https";
-import {defineString} from "firebase-functions/params";
+import {defineSecret} from "firebase-functions/params";
 
-const geminiApiKey = defineString("GEMINI_API_KEY");
+// Definir variable secreta para la API key de Gemini
+const geminiApiKey = defineSecret("GEMINI_API_KEY");
+
+// Definir tipo de modo de generación
+type GenerationMode = "standard" | "flash";
+
+// Definir interfaces para los tipos de Gemini
+interface GeminiPart {
+  text: string;
+}
+
+interface GeminiContent {
+  parts: GeminiPart[];
+}
+
+interface GeminiCandidate {
+  content: GeminiContent;
+  finishReason?: "STOP" | "MAX_TOKENS" | "SAFETY" | "RECITATION" | "OTHER";
+  safetyRatings?: Array<{
+    category: string;
+    probability: string;
+  }>;
+}
+
+interface GeminiResponse {
+  candidates: GeminiCandidate[];
+  promptFeedback?: {
+    safetyRatings: Array<{
+      category: string;
+      probability: string;
+    }>;
+  };
+}
 
 /**
- * Obtiene la API Key de Gemini desde variables de entorno.
+ * Obtiene la API Key de Gemini desde las variables secretas.
  * @return {string} API Key de Gemini.
- * @throws Error si no está definida la variable de entorno.
+ * @throws Error si no está definida.
  */
 const getGeminiApiKey = (): string => {
-  const key = geminiApiKey.value();
-  if (!key) {
-    throw new Error("Falta la clave de Gemini en las variables de entorno (GEMINI_API_KEY).");
+  const apiKey = geminiApiKey.value();
+  if (!apiKey) {
+    throw new Error("Falta la API Key de Gemini en las variables secretas");
   }
-  return key;
+  return apiKey;
 };
 
 /**
@@ -41,69 +73,160 @@ export const isAuthenticated = (request: CallableRequest): void => {
 export async function callGemini({
   prompt,
   config,
+  mode = "standard",
 }: {
   prompt: string,
   config?: Record<string, unknown>,
-}): Promise<string> {
+  mode?: GenerationMode,
+}): Promise<{ text: string; modelUsed: string }> {
   const apiKey = getGeminiApiKey();
-  const url =
-    "https://generativelanguage.googleapis.com/v1beta/models/" +
-    "gemini-1.5-pro-latest:generateContent?key=" + apiKey;
+  const baseUrl = "https://generativelanguage.googleapis.com/v1beta/models";
 
-  const fetchResponse = await fetch(
-    url,
-    {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        contents: [{parts: [{text: prompt}]}],
-        generationConfig: config || {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 1024,
-        },
-      }),
-    },
-  );
+  // Lista de modelos candidatos — intentaremos en orden hasta que uno funcione.
+  const candidateModels = mode === 'flash'
+    ? [
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-preview-05-20',
+      'gemini-flash-latest',
+    ]
+    : [
+      'gemini-2.5-pro',
+      'gemini-pro-latest',
+    ];
 
-  if (!fetchResponse.ok) {
-    throw new Error("API Error: " + fetchResponse.status);
+  console.log('[DEBUG] Iniciando llamada a Gemini API - Modo:', mode, 'Candidates:', candidateModels.join(', '));
+
+  let lastError: Error | null = null;
+
+  for (const modelName of candidateModels) {
+    const url = `${baseUrl}/${modelName}:generateContent`;
+    // Intentos por modelo (para manejar MAX_TOKENS aumentando maxOutputTokens)
+    let attempt = 0;
+    const maxAttemptsPerModel = 2;
+    // Base tokens (puede venir desde config)
+    let baseMaxTokens = mode === 'flash' ? 256 : ((config?.maxOutputTokens as number) || 1024);
+
+    for (; attempt < maxAttemptsPerModel; attempt++) {
+      try {
+        const attemptMaxTokens = Math.min(8192, baseMaxTokens * Math.pow(2, attempt));
+        const fetchResponse = await fetch(`${url}?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              { role: 'user', parts: [{ text: prompt }] }
+            ],
+            generationConfig: {
+              temperature: mode === 'flash' ? 0.3 : ((config?.temperature as number) || 0.7),
+              topK: mode === 'flash' ? 8 : ((config?.topK as number) || 40),
+              topP: mode === 'flash' ? 0.7 : ((config?.topP as number) || 0.95),
+              maxOutputTokens: attemptMaxTokens,
+              candidateCount: 1,
+              stopSequences: mode === 'flash' ? ['STOP', '\n\n'] : ['STOP'],
+            },
+          }),
+        });
+
+        if (!fetchResponse.ok) {
+          const errorData = await fetchResponse.text();
+          console.error('[WARN] Modelo', modelName, 'respondió con status', fetchResponse.status);
+
+          if (fetchResponse.status === 404) {
+            lastError = new Error(`Error en API Gemini (404): ${errorData}`);
+            // No tiene sentido reintentar el mismo modelo si no existe
+            break;
+          }
+
+          console.error('[ERROR] Error de Gemini API:', {
+            model: modelName,
+            status: fetchResponse.status,
+            statusText: fetchResponse.statusText,
+            error: errorData,
+          });
+          throw new Error(`Error en API Gemini (${fetchResponse.status}): ${errorData}`);
+        }
+
+        const data = await fetchResponse.json() as GeminiResponse;
+        console.log('[DEBUG] Respuesta completa de Gemini (modelo:', modelName, '):', JSON.stringify(data, null, 2));
+
+        // Función auxiliar para extraer texto de distintas formas que devuelve la API
+        const extractTextFromCandidate = (cand: any): string => {
+          try {
+            if (!cand || !cand.content) return '';
+            // content.parts[].text (forma esperada)
+            if (Array.isArray(cand.content.parts)) {
+              for (const p of cand.content.parts) {
+                if (p && typeof p.text === 'string' && p.text.trim().length > 0) return p.text.trim();
+              }
+            }
+            // content.text
+            if (typeof cand.content.text === 'string' && cand.content.text.trim().length > 0) return cand.content.text.trim();
+            // content.output or output_text
+            if (typeof cand.content.output === 'string' && cand.content.output.trim().length > 0) return cand.content.output.trim();
+            if (typeof cand.content.output_text === 'string' && cand.content.output_text.trim().length > 0) return cand.content.output_text.trim();
+            // Si no hay texto, devolver stringified content para diagnóstico
+            const s = JSON.stringify(cand.content);
+            return s && s !== '{}' ? s : '';
+          } catch (e) {
+            return '';
+          }
+        };
+
+        const candidate = (data as any)?.candidates?.[0];
+        const responseText = extractTextFromCandidate(candidate);
+
+        // Si no hay texto, pero el modelo indicó que terminó por max tokens, intentar reintentar con mayor límite
+        const finishReason = candidate?.finishReason || '';
+        if ((!responseText || responseText.length < 10) && finishReason === 'MAX_TOKENS') {
+          console.error('[ERROR] La respuesta de la IA está vacía o truncada (finishReason=MAX_TOKENS). Intentando con más tokens...');
+          // Si no es el último intento, continuar para reintentar con más tokens
+          if (attempt < maxAttemptsPerModel - 1) {
+            continue;
+          }
+          // Si ya no quedan intentos, marcar como error y salir de attempts
+          throw new Error('La respuesta de la IA no contiene texto o está incompleta.');
+        }
+
+        if (!responseText || responseText.length < 10) {
+          console.error('[ERROR] La respuesta de la IA está vacía o truncada:', responseText);
+          throw new Error('La respuesta de la IA no contiene texto o está incompleta.');
+        }
+
+        // Respuesta satisfactoria: devolver texto y modelo usado
+        return { text: responseText, modelUsed: modelName };
+      } catch (error) {
+        console.error('[WARN] Falló llamada (intento', attempt + 1, 'de', maxAttemptsPerModel, ') con modelo', modelName, ':', error instanceof Error ? error.message : String(error));
+        if (error instanceof Error) lastError = error;
+        // Si fue un 404 en fetch, no reintentar con el mismo modelo
+        if (error instanceof Error && error.message.includes('404')) break;
+        // si quedan intentos, el for continuará y volverá a intentar con más tokens
+      }
+    }
   }
-  const data = await fetchResponse.json();
-  // Log de depuración: mostrar el objeto completo de la respuesta
-  console.log("[DEBUG] Respuesta completa de Gemini:", data);
-  // Obtener el texto completo de la respuesta
-  let responseText = "";
-  if (typeof data === "string") {
-    responseText = data;
-  } else if (
-    typeof data === "object" &&
-    data !== null &&
-    "candidates" in data &&
-    Array.isArray((data as any).candidates) &&
-    (data as any).candidates.length > 0 &&
-    (data as any).candidates[0].content &&
-    Array.isArray((data as any).candidates[0].content.parts) &&
-    (data as any).candidates[0].content.parts.length > 0
-  ) {
-    // Gemini puede devolver candidates
-    responseText = (data as any).candidates[0].content.parts[0].text || "";
+
+  // Si llegamos aquí, ningún modelo candidato funcionó. Intentar ListModels para diagnóstico.
+  try {
+    const listModelsUrl = baseUrl;
+    const listResp = await fetch(`${listModelsUrl}?key=${apiKey}`);
+    const listText = await listResp.text();
+    console.error('[ERROR] Ningún modelo candidato funcionó. ListModels status:', listResp.status);
+    console.error('[ERROR] ListModels response body (truncated):', listText.slice(0, 2000));
+    throw new Error(`Ningún modelo candidato soportó generateContent. ListModels status=${listResp.status}. Ver logs para detalles.`);
+  } catch (listErr) {
+    console.error('[ERROR] Falló ListModels al diagnosticar modelos disponibles:', listErr);
+    // Lanzar el último error conocido si existe, si no uno genérico
+    if (lastError) throw lastError;
+    throw new Error('Falló la llamada a Gemini y no se pudo recuperar la lista de modelos.');
   }
-  // Log de depuración: mostrar el texto extraído
-  console.log("[DEBUG] Texto extraído de Gemini:", responseText);
-  if (!responseText || responseText.length < 10) {
-    console.error("[ERROR] La respuesta de la IA está vacía o truncada:", responseText);
-    throw new Error("La respuesta de la IA no contiene texto o está incompleta.");
-  }
-  return responseText;
 }
 
 /**
  * Cloud Function onCall para solicitud general a Gemini.
  * @return {Promise<object>} Objeto con resultado, respuesta IA y metadata.
  */
-export const callGeminiAI = onCall(async (request) => {
+export const callGeminiAI = onCall({ 
+  secrets: [geminiApiKey]
+}, async (request) => {
   isAuthenticated(request);
   const {prompt, context, module} = request.data;
   if (!prompt) {
@@ -115,7 +238,7 @@ export const callGeminiAI = onCall(async (request) => {
     "Prompt del usuario: " + prompt + "\n\n" +
     "Por favor, proporciona una respuesta útil y educativa.";
   try {
-    const aiResponse = await callGemini({prompt: composedPrompt});
+    const { text: aiResponseText, modelUsed } = await callGemini({prompt: composedPrompt});
     console.log(
       "IA utilizada en módulo: " +
       module +
@@ -124,7 +247,8 @@ export const callGeminiAI = onCall(async (request) => {
     );
     return {
       success: true,
-      response: aiResponse,
+      response: aiResponseText,
+      modelUsed,
       module: module,
       timestamp: new Date().toISOString(),
     };

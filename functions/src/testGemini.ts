@@ -1,17 +1,30 @@
 /**
  * Función de prueba para verificar conectividad con Gemini AI
  */
-import { defineString } from "firebase-functions/params";
+import { defineSecret } from "firebase-functions/params";
 import { onCall } from "firebase-functions/v2/https";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const geminiApiKey = defineString("GEMINI_API_KEY");
+interface GeminiResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+}
 
-export const testGemini = onCall(async (request) => {
+const geminiApiKey = defineSecret("GEMINI_API_KEY");
+
+export const testGemini = onCall({ 
+  secrets: [geminiApiKey],
+  enforceAppCheck: false,
+  maxInstances: 10
+}, async (request) => {
   console.log('🧪 Iniciando prueba de Gemini API...');
   
   try {
-    const apiKey = geminiApiKey.value() || process.env.GEMINI_API_KEY;
+    const apiKey = geminiApiKey.value();
     console.log('🔑 API Key configurada:', apiKey ? 'SÍ' : 'NO');
     
     if (!apiKey) {
@@ -22,10 +35,7 @@ export const testGemini = onCall(async (request) => {
       };
     }
     
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-    
-    console.log('🤖 Modelo cargado, enviando prompt de prueba...');
+    console.log('🤖 Enviando prompt de prueba...');
     
     const prompt = `
     Responde con un JSON válido que contenga exactamente esto:
@@ -35,9 +45,72 @@ export const testGemini = onCall(async (request) => {
       "timestamp": "${new Date().toISOString()}"
     }
     `;
+
+    // Primero probamos listar los modelos disponibles
+    const listModelsUrl = "https://generativelanguage.googleapis.com/v1beta/models";
+    console.log('📋 Listando modelos disponibles...');
+    const listModelsResponse = await fetch(`${listModelsUrl}?key=${apiKey}`);
+    console.log('📋 Estado de la respuesta:', listModelsResponse.status);
+    const listModelsText = await listModelsResponse.text();
+    console.log('📋 Respuesta:', listModelsText);
+
+    // Si se solicita explícitamente, devolver la lista de modelos para diagnóstico
+    if (request && (request as any).data && (request as any).data.action === 'listModels') {
+      try {
+        const parsed = JSON.parse(listModelsText);
+        return { success: true, models: parsed };
+      } catch (e) {
+        return { success: true, rawModels: listModelsText };
+      }
+    }
+
+  // Usar v1beta para los modelos que requieren esa versión y un modelo disponible que soporte generateContent
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent";
+  // Alternativa más barata/rápida (flash):
+  // const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
+    const fetchResponse = await fetch(
+      `${url}?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            { role: "user", parts: [{ text: prompt }] } // añade role en v1
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 1024
+          }
+        })
+      }
+    );
+
+    if (!fetchResponse.ok) {
+      const errorData = await fetchResponse.text();
+      console.error('❌ Error de API:', {
+        status: fetchResponse.status,
+        statusText: fetchResponse.statusText,
+        error: errorData
+      });
+      throw new Error(`Error en API Gemini (${fetchResponse.status}): ${errorData}`);
+    }
+
+    const data = await fetchResponse.json() as GeminiResponse;
+    const responseText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    if (!responseText) {
+      console.error('❌ No se recibió respuesta de texto válida');
+      return {
+        success: false,
+        error: 'No se recibió respuesta de texto válida',
+        rawResponse: data
+      };
+    }
     
     console.log('📝 Respuesta recibida:', responseText.substring(0, 200));
     
@@ -50,7 +123,7 @@ export const testGemini = onCall(async (request) => {
           success: true,
           geminiResponse: parsed,
           rawResponse: responseText,
-          model: 'gemini-1.5-pro'
+  model: 'gemini-2.5-pro'
         };
       } else {
         return {
