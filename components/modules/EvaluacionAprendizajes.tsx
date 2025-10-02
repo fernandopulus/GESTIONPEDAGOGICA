@@ -40,7 +40,6 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logApiCall } from '../utils/apiLogger';
 import { normalizeCurso } from '../simce/SimceGeneradorPreguntas';
-import { TIPOS_ACTIVIDAD_REMOTA as TIPOS_ACTIVIDAD_PRUEBA } from '../../constants';
 // EyeIcon importado desde AlternanciaTP
 const EyeIcon: React.FC<{ className?: string; open?: boolean }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -65,7 +64,8 @@ const TIPOS_PRUEBA_ITEM: PruebaItemTipo[] = [
 const functions = getFunctions(app);
 const generarRubricaConGeminiFn = httpsCallable(functions, 'generarRubricaConGemini');
 const generarDescriptorDimensionConGeminiFn = httpsCallable(functions, 'generarDescriptorDimensionConGemini');
-const generarPruebaConGeminiFn = httpsCallable(functions, 'generarPruebaConGemini');
+// Nota: Usaremos fetch al endpoint HTTP con CORS para evitar problemas desde el navegador.
+const generarPruebaConGeminiFn = null as unknown as (...args: any[]) => Promise<any>;
 
 
 const ITEM_QUANTITIES: Record<string, number[]> = {
@@ -79,56 +79,180 @@ const ITEM_QUANTITIES: Record<string, number[]> = {
 // Submódulo: PruebaItemViewer
 // -------------------------------------------------------------------
 export const PruebaItemViewer: React.FC<{ item: PruebaItem; showAnswers?: boolean; shuffledDefinitions?: string[] }> = ({ item, showAnswers = false, shuffledDefinitions = [] }) => {
+  const puntaje = (item as any).puntaje ?? 1;
+  // Utilidades para visualización
+  const ensureFourOptions = (ops: string[] | undefined): string[] => {
+    const arr = Array.isArray(ops) ? ops.slice(0, 4) : [];
+    while (arr.length < 4) arr.push('');
+    return arr;
+  };
+
+  const getRotated = (arr: string[]): string[] => {
+    if (arr.length <= 1) return arr;
+    return [...arr.slice(1), arr[0]]; // rotación simple y determinística
+  };
+
   return (
-    <>
+    <div className="p-3 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700">
+      {/* Enunciado común */}
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+            {item.tipo}
+          </span>
+          <div className="font-semibold text-slate-800 dark:text-slate-200">
+            {item.pregunta || (item.tipo === 'Comprensión de lectura' ? 'Comprensión de lectura' : '')}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {('habilidadBloom' in item) && (item as any).habilidadBloom && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-200">Bloom: {(item as any).habilidadBloom}</span>
+          )}
+          <div className="text-xs text-slate-500 dark:text-slate-400">{puntaje} pts</div>
+        </div>
+      </div>
+
+      {/* Contenido según tipo */}
       {item.tipo === 'Selección múltiple' && (
-        <div className="ml-4 mt-2 space-y-2">
-          {(item as SeleccionMultipleItem).opciones.map((op, i) => {
+        <div className="ml-1 mt-2 space-y-2">
+          <div className="text-xs italic text-slate-500 dark:text-slate-400 mb-1">Marca la alternativa correcta.</div>
+          {ensureFourOptions((item as SeleccionMultipleItem).opciones).map((op, i) => {
             const isCorrect = showAnswers && i === (item as SeleccionMultipleItem).respuestaCorrecta;
             return (
-              <div key={i} className={`flex items-center gap-2 p-1 rounded ${isCorrect ? 'bg-green-100 dark:bg-green-900/50' : ''}`}>
-                <div className="w-5 h-5 border rounded-full"></div>
+              <div key={i} className={`flex items-center gap-2 p-1 rounded ${isCorrect ? 'bg-green-100 dark:bg-green-900/30' : ''}`}>
+                <div className="w-5 h-5 border rounded-full flex-shrink-0"></div>
                 <span>{String.fromCharCode(65 + i)}) {op}</span>
               </div>
             );
           })}
         </div>
       )}
-    </>
+
+      {item.tipo === 'Verdadero o Falso' && (
+        <div className="ml-1 mt-2 flex items-center gap-6">
+          <div className="text-xs italic text-slate-500 dark:text-slate-400">Indica si la afirmación es verdadera (V) o falsa (F).</div>
+          <div className="flex-1" />
+          <div className={`px-3 py-1 rounded ${showAnswers && (item as any).respuestaCorrecta === true ? 'bg-green-100 dark:bg-green-900/30' : 'bg-slate-100 dark:bg-slate-700'}`}>V</div>
+          <div className={`px-3 py-1 rounded ${showAnswers && (item as any).respuestaCorrecta === false ? 'bg-green-100 dark:bg-green-900/30' : 'bg-slate-100 dark:bg-slate-700'}`}>F</div>
+        </div>
+      )}
+
+      {item.tipo === 'Desarrollo' && (
+        <div className="mt-3 border rounded-md h-24 bg-slate-50 dark:bg-slate-700/40"></div>
+      )}
+
+      {item.tipo === 'Términos pareados' && (() => {
+        const pares = (item as TerminosPareadosItem).pares || [];
+        const conceptos = pares.map(p => p.concepto);
+        const definiciones = getRotated(pares.map(p => p.definicion));
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+        return (
+          <div className="mt-2">
+            <div className="text-xs italic text-slate-500 dark:text-slate-400 mb-2">Une cada concepto (columna izquierda) con su definición (columna derecha).</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="font-semibold mb-1">Columna A: Conceptos</div>
+                <div className="space-y-1">
+                  {conceptos.map((c, i) => (
+                    <div key={i} className="flex gap-2"><span className="font-semibold w-6 text-right">{i + 1}.</span><span>{c}</span></div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="font-semibold mb-1">Columna B: Definiciones</div>
+                <div className="space-y-1">
+                  {definiciones.map((d, i) => (
+                    <div key={i} className="flex gap-2"><span className="font-semibold w-6 text-right">{letters[i] || '?' }.</span><span>{d}</span></div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {item.tipo === 'Comprensión de lectura' && (
+        <div className="mt-2 space-y-3">
+          <div className="p-3 bg-slate-50 dark:bg-slate-700/40 rounded-md whitespace-pre-wrap">
+            {(item as ComprensionLecturaItem).texto}
+          </div>
+          <div className="space-y-3">
+            {(item as ComprensionLecturaItem).preguntas?.map((sub, sIdx) => (
+              <div key={sIdx} className="p-3 border rounded-md bg-white dark:bg-slate-800 dark:border-slate-700">
+                <div className="mb-1 flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200">CL-{sIdx + 1}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200">{sub.tipo}</span>
+                    <div className="font-medium">{sub.pregunta}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {('habilidadBloom' in sub) && (sub as any).habilidadBloom && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-200">Bloom: {(sub as any).habilidadBloom}</span>
+                    )}
+                    <div className="text-xs text-slate-500 dark:text-slate-400">{(sub as any).puntaje ?? 1} pts</div>
+                  </div>
+                </div>
+                {sub.tipo === 'Selección múltiple' ? (
+                  <div className="ml-1 mt-1 space-y-1">
+                    {(sub as SeleccionMultipleItem).opciones?.map((op, i) => {
+                      const isCorrect = showAnswers && i === (sub as SeleccionMultipleItem).respuestaCorrecta;
+                      return (
+                        <div key={i} className={`flex items-center gap-2 p-1 rounded ${isCorrect ? 'bg-green-100 dark:bg-green-900/30' : ''}`}>
+                          <div className="w-4 h-4 border rounded-full flex-shrink-0"></div>
+                          <span>{String.fromCharCode(65 + i)}) {op}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="mt-2 border rounded-md h-16 bg-slate-50 dark:bg-slate-700/40"></div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
-// -------------------------------------------------------------------
-// Submódulo 1: Pruebas
-// -------------------------------------------------------------------
-const PruebasSubmodule: React.FC = () => {
-  const initialFormState: {
-    nombre: string;
-    asignatura: string;
-    nivel: string;
-    contenido: string;
-    tiposActividad: Record<PruebaItemTipo, number>;
-    dificultad: 'Fácil' | 'Intermedio' | 'Avanzado';
-    isNee: boolean;
-    selectedNee: DificultadAprendizaje[];
-  } = {
-    nombre: '',
-    asignatura: ASIGNATURAS[0],
-    nivel: NIVELES[0],
-    contenido: '',
-    tiposActividad: {},
-    dificultad: 'Intermedio',
-    isNee: false,
-    selectedNee: [],
-  };
+    // -------------------------------------------------------------------
+    // Submódulo 1: Pruebas
+    // -------------------------------------------------------------------
+    const PruebasSubmodule: React.FC = () => {
+      const defaultTiposActividad = useMemo(() => {
+        return TIPOS_PRUEBA_ITEM.reduce((acc, tipo) => {
+          acc[tipo] = 0;
+          return acc;
+        }, {} as Record<PruebaItemTipo, number>);
+      }, []);
 
-  const [formData, setFormData] = useState(initialFormState);
+      const initialFormState: {
+        nombre: string;
+        asignatura: string;
+        nivel: string;
+        contenido: string;
+        tiposActividad: Record<PruebaItemTipo, number>;
+        dificultad: 'Fácil' | 'Intermedio' | 'Avanzado';
+        isNee: boolean;
+        selectedNee: DificultadAprendizaje[];
+      } = useMemo(() => ({
+        nombre: '',
+        asignatura: ASIGNATURAS?.[0] || '',
+        nivel: NIVELES?.[0] || '',
+        contenido: '',
+        tiposActividad: defaultTiposActividad,
+        dificultad: 'Intermedio',
+        isNee: false,
+        selectedNee: [],
+      }), [defaultTiposActividad]);  const [formData, setFormData] = useState(initialFormState);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentPrueba, setCurrentPrueba] = useState<Prueba | null>(null);
   const [pruebas, setPruebas] = useState<Prueba[]>([]);
   const [showAnswers, setShowAnswers] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [sortByType, setSortByType] = useState(false);
   const { currentUser } = useAuth();
 
   useEffect(() => {
@@ -148,10 +272,10 @@ const PruebasSubmodule: React.FC = () => {
   const handleTipoActividadToggle = (tipo: PruebaItemTipo) => {
     setFormData((prev) => {
       const newTipos = { ...prev.tiposActividad };
-      if (newTipos[tipo]) {
-        delete newTipos[tipo];
+      if (newTipos[tipo] > 0) {
+        newTipos[tipo] = 0;
       } else {
-        newTipos[tipo] = ITEM_QUANTITIES[tipo][0];
+        newTipos[tipo] = ITEM_QUANTITIES[tipo]?.[0] || 1;
       }
       return { ...prev, tiposActividad: newTipos };
     });
@@ -171,6 +295,140 @@ const PruebasSubmodule: React.FC = () => {
         : [...prev.selectedNee, dificultad];
       return { ...prev, selectedNee: newSelection };
     });
+  };
+
+  // --- Normalizadores reutilizables (para generación y para "Regenerar ítem") ---
+  const normalizeBloom = (v: any): string | undefined => {
+    const s = String(v || '').trim().toLowerCase();
+    if (!s) return undefined;
+    if (s.includes('record')) return 'Recordar';
+    if (s.includes('comprend') || s.includes('entend')) return 'Comprender';
+    if (s.includes('aplic')) return 'Aplicar';
+    if (s.includes('analiz')) return 'Analizar';
+    if (s.includes('evalu')) return 'Evaluar';
+    if (s.includes('crea') || s.includes('sintet')) return 'Crear';
+    return undefined;
+  };
+  const defaultBloomForType = (tipo: PruebaItemTipo): string => {
+    switch (tipo) {
+      case 'Selección múltiple': return 'Comprender';
+      case 'Verdadero o Falso': return 'Recordar';
+      case 'Desarrollo': return 'Analizar';
+      case 'Términos pareados': return 'Comprender';
+      case 'Comprensión de lectura': return 'Comprender';
+      default: return 'Comprender';
+    }
+  };
+  const toFourOptionsOuter = (ops: any): string[] => {
+    const arr: string[] = Array.isArray(ops)
+      ? ops.map((o) => (typeof o === 'string' ? o : (o?.texto ?? '')))
+      : [];
+    const four = arr.slice(0, 4);
+    while (four.length < 4) four.push('');
+    return four;
+  };
+  const indexFromCorrectOuter = (raw: any): number => {
+    if (typeof raw?.respuestaCorrecta === 'number') return Math.max(0, Math.min(3, raw.respuestaCorrecta));
+    if (Array.isArray(raw?.alternativas)) {
+      const idx = raw.alternativas.findIndex((a: any) => a && (a.esCorrecta === true || a.correcta === true));
+      if (idx >= 0 && idx < 4) return idx;
+    }
+    const c = String(raw?.correcta || raw?.respuesta || raw?.respuestaCorrecta || '').trim().toUpperCase();
+    const map: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 };
+    if (c in map) return map[c];
+    return 0;
+  };
+  const normalizeSMOuter = (raw: any): SeleccionMultipleItem => {
+    const opciones = toFourOptionsOuter(raw.opciones ?? raw.alternativas);
+    const respuestaCorrecta = indexFromCorrectOuter(raw);
+    const habilidadBloom = normalizeBloom(raw.habilidadBloom) || defaultBloomForType('Selección múltiple');
+    return {
+      id: raw.id || crypto.randomUUID(),
+      tipo: 'Selección múltiple',
+      pregunta: raw.pregunta || raw.enunciado || 'Pregunta',
+      puntaje: raw.puntaje ?? 1,
+      opciones,
+      respuestaCorrecta,
+      habilidadBloom,
+    } as SeleccionMultipleItem;
+  };
+  const normalizeVFOuter = (raw: any): VerdaderoFalsoItem => {
+    let respuestaCorrecta: boolean = false;
+    if (typeof raw?.respuestaCorrecta === 'boolean') respuestaCorrecta = raw.respuestaCorrecta;
+    else if (typeof raw?.esVerdadero === 'boolean') respuestaCorrecta = raw.esVerdadero;
+    else if (raw?.correcta) respuestaCorrecta = String(raw.correcta).toUpperCase().startsWith('V');
+    const habilidadBloom = normalizeBloom(raw.habilidadBloom) || defaultBloomForType('Verdadero o Falso');
+    return {
+      id: raw.id || crypto.randomUUID(),
+      tipo: 'Verdadero o Falso',
+      pregunta: raw.pregunta || raw.enunciado || 'Afirmación',
+      puntaje: raw.puntaje ?? 1,
+      respuestaCorrecta,
+      habilidadBloom,
+    } as VerdaderoFalsoItem;
+  };
+  const normalizeDEVOuter = (raw: any): DesarrolloItem => {
+    const habilidadBloom = normalizeBloom(raw.habilidadBloom) || defaultBloomForType('Desarrollo');
+    return {
+      id: raw.id || crypto.randomUUID(),
+      tipo: 'Desarrollo',
+      pregunta: raw.pregunta || raw.enunciado || 'Pregunta abierta',
+      puntaje: raw.puntaje ?? 1,
+      habilidadBloom,
+    } as DesarrolloItem;
+  };
+  const normalizePAREADOSOuter = (raw: any): TerminosPareadosItem => {
+    let pares = Array.isArray(raw?.pares) ? raw.pares : [];
+    if ((!pares || pares.length === 0) && Array.isArray(raw?.conceptos) && Array.isArray(raw?.definiciones)) {
+      const n = Math.min(raw.conceptos.length, raw.definiciones.length);
+      pares = Array.from({ length: n }, (_, i) => ({ concepto: raw.conceptos[i], definicion: raw.definiciones[i] }));
+    }
+    pares = (pares || []).map((p: any) => ({ concepto: p?.concepto ?? '', definicion: p?.definicion ?? '' }));
+    const habilidadBloom = normalizeBloom(raw.habilidadBloom) || defaultBloomForType('Términos pareados');
+    return {
+      id: raw.id || crypto.randomUUID(),
+      tipo: 'Términos pareados',
+      pregunta: raw.pregunta || raw.enunciado || 'Relaciona los términos',
+      puntaje: raw.puntaje ?? 1,
+      pares,
+      habilidadBloom,
+    } as TerminosPareadosItem;
+  };
+  const normalizeCLOuter = (raw: any): ComprensionLecturaItem => {
+    const texto = typeof raw?.texto === 'string' ? raw.texto : Array.isArray(raw?.texto) ? raw.texto.join('\n') : (raw?.lectura || '');
+    const sub = Array.isArray(raw?.preguntas) ? raw.preguntas : [];
+    const preguntas = sub
+      .map((q: any) => {
+        const qb = normalizeBloom(q?.habilidadBloom);
+        const t = (q?.tipo || '').toLowerCase();
+        if (t.includes('multiple') || t.includes('seleccion')) {
+          const item = normalizeSMOuter(q);
+          if (!item.habilidadBloom) (item as any).habilidadBloom = qb || defaultBloomForType('Selección múltiple');
+          return item;
+        }
+        if (t.includes('desarrollo') || t.includes('abierta')) {
+          const item = normalizeDEVOuter(q);
+          if (!item.habilidadBloom) (item as any).habilidadBloom = qb || defaultBloomForType('Desarrollo');
+          return item;
+        }
+        if (q?.alternativas || q?.opciones) {
+          const item = normalizeSMOuter(q);
+          if (!item.habilidadBloom) (item as any).habilidadBloom = qb || defaultBloomForType('Selección múltiple');
+          return item;
+        }
+        return null;
+      })
+      .filter(Boolean) as (SeleccionMultipleItem | DesarrolloItem)[];
+    const habilidadBloom = normalizeBloom(raw.habilidadBloom) || defaultBloomForType('Comprensión de lectura');
+    return {
+      id: raw.id || crypto.randomUUID(),
+      tipo: 'Comprensión de lectura',
+      pregunta: raw.pregunta || raw.enunciado || 'Comprensión de lectura',
+      puntaje: raw.puntaje ?? Math.max(1, preguntas.reduce((acc: number, p: any) => acc + (p.puntaje ?? 1), 0)),
+      texto,
+      preguntas,
+      habilidadBloom,
+    } as ComprensionLecturaItem;
   };
 
   // La función debe estar dentro del componente para acceder a los estados
@@ -199,7 +457,8 @@ const PruebasSubmodule: React.FC = () => {
 
       // Nuevo formato: enviar cantidadesPorTipo
       const cantidadesPorTipo = { ...formData.tiposActividad };
-      const result = await generarPruebaConGeminiFn({
+      // Preparar payload y endpoint
+      const payload = {
         objetivo: `Evaluar el siguiente contenido: "${formData.contenido}" para el nivel ${formData.nivel}.`,
         cantidadesPorTipo,
         contextoAdicional: `
@@ -213,35 +472,150 @@ const PruebasSubmodule: React.FC = () => {
           Directrices Generales: El vocabulario, la complejidad y el contexto de toda la prueba deben ser apropiados para el nivel educativo 'Educación Media' en Chile.
           Formato de Salida: Tu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, explicaciones, ni el bloque \`\`\`json.
         `,
-      });
+      };
 
-      const generatedData = (result.data as any).prueba;
+      // URL base de funciones: permite ajustar a emulador o-prod
+      const FUNCTIONS_BASE = process.env.REACT_APP_FUNCTIONS_BASE_URL || 'https://us-central1-plania-clase.cloudfunctions.net';
+      const url = `${FUNCTIONS_BASE}/generarPruebaConGeminiHttp`;
 
-      // Calcular puntajeIdeal si las preguntas tienen puntaje
-      let puntajeIdeal = 0;
-      if (generatedData.preguntas && Array.isArray(generatedData.preguntas)) {
-        generatedData.preguntas.forEach((item: any) => {
-          puntajeIdeal += item.puntaje || 1; // Asume 1 si no existe
-        });
+      // Obtener idToken del usuario para autorización
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) {
+        throw new Error('No se pudo obtener token de autenticación.');
       }
 
-      // Adaptar estructura para compatibilidad con el resto del sistema
-      // Asegurar que cada item tenga un id único
-
-      // Asegurar que cada item y subitem tenga un id único
-      const itemsConId = (generatedData.preguntas || []).map((item: any) => {
-        // Si es Comprensión de Lectura, asegurar ids en subpreguntas
-        if (item.tipo === 'Comprensión de lectura' && Array.isArray(item.preguntas)) {
-          item.preguntas = item.preguntas.map((sub: any) => ({
-            ...sub,
-            id: sub.id || crypto.randomUUID(),
-          }));
-        }
-        return {
-          ...item,
-          id: item.id || crypto.randomUUID(),
-        };
+      const fetchResp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(payload),
       });
+
+      if (!fetchResp.ok) {
+        const errText = await fetchResp.text();
+        throw new Error(`Error en función: ${fetchResp.status} ${errText}`);
+      }
+
+      const result = await fetchResp.json();
+
+  // Compatibilidad: si el endpoint devuelve { success:true, prueba } usamos result.prueba, si es callable, mantenemos compatibilidad
+  const generatedData = (result.prueba || (result.data && (result.data as any).prueba)) as any;
+
+      // --- Normalización de ítems generados por IA ---
+      const stripDiacritics = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const norm = (s: string) => stripDiacritics((s || '').toLowerCase());
+
+      const normalizeTipo = (t: any): PruebaItemTipo | null => {
+        const s = norm(String(t || ''));
+        if (!s) return null;
+        if (s.includes('comprension') || s.includes('lectura') || s.includes('reading')) return 'Comprensión de lectura';
+        if (s.includes('multiple') || s.includes('seleccion') || s.includes('mcq')) return 'Selección múltiple';
+        if (s.includes('verdadero') || s.includes('falso') || s === 'vf' || s.includes('true') || s.includes('false')) return 'Verdadero o Falso';
+        if (s.includes('paread') || s.includes('matching') || s.includes('emparejar')) return 'Términos pareados';
+        if (s.includes('desarrollo') || s.includes('respuesta corta') || s.includes('abierta')) return 'Desarrollo';
+        return null;
+      };
+
+      const toFourOptions = (ops: any): string[] => {
+        const arr: string[] = Array.isArray(ops)
+          ? ops.map((o) => (typeof o === 'string' ? o : (o?.texto ?? '')))
+          : [];
+        const four = arr.slice(0, 4);
+        while (four.length < 4) four.push('');
+        return four;
+      };
+
+      const indexFromCorrect = (raw: any): number => {
+        if (typeof raw?.respuestaCorrecta === 'number') return Math.max(0, Math.min(3, raw.respuestaCorrecta));
+        if (Array.isArray(raw?.alternativas)) {
+          const idx = raw.alternativas.findIndex((a: any) => a && (a.esCorrecta === true || a.correcta === true));
+          if (idx >= 0 && idx < 4) return idx;
+        }
+        const c = String(raw?.correcta || raw?.respuesta || '').trim().toUpperCase();
+        const map: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 };
+        if (c in map) return map[c];
+        return 0;
+      };
+
+      const normalizeBloom = (v: any): string | undefined => {
+        const s = String(v || '').trim().toLowerCase();
+        if (!s) return undefined;
+        if (s.includes('record')) return 'Recordar';
+        if (s.includes('comprend') || s.includes('entend')) return 'Comprender';
+        if (s.includes('aplic')) return 'Aplicar';
+        if (s.includes('analiz')) return 'Analizar';
+        if (s.includes('evalu')) return 'Evaluar';
+        if (s.includes('crea') || s.includes('sintet')) return 'Crear';
+        return undefined;
+      };
+      const defaultBloomForType = (tipo: PruebaItemTipo): string => {
+        switch (tipo) {
+          case 'Selección múltiple': return 'Comprender';
+          case 'Verdadero o Falso': return 'Recordar';
+          case 'Desarrollo': return 'Analizar';
+          case 'Términos pareados': return 'Comprender';
+          case 'Comprensión de lectura': return 'Comprender';
+          default: return 'Comprender';
+        }
+      };
+
+      // Usar los normalizadores externos ya definidos
+      const normalizeSM = normalizeSMOuter;
+      const normalizeVF = normalizeVFOuter;
+      const normalizeDEV = normalizeDEVOuter;
+      const normalizePAREADOS = normalizePAREADOSOuter;
+      const normalizeCL = normalizeCLOuter;
+
+      const normalizeItem = (raw: any): PruebaItem | null => {
+        const t = normalizeTipo(raw.tipo) || (raw?.alternativas || raw?.opciones ? 'Selección múltiple' : null);
+        switch (t) {
+          case 'Selección múltiple':
+            return normalizeSM(raw);
+          case 'Verdadero o Falso':
+            return normalizeVF(raw);
+          case 'Desarrollo':
+            return normalizeDEV(raw);
+          case 'Términos pareados':
+            return normalizePAREADOS(raw);
+          case 'Comprensión de lectura':
+            return normalizeCL(raw);
+          default:
+            if (raw?.alternativas || raw?.opciones) return normalizeSM(raw);
+            if (raw?.pares || (raw?.conceptos && raw?.definiciones)) return normalizePAREADOS(raw);
+            if ((raw?.texto || raw?.lectura) && Array.isArray(raw?.preguntas)) return normalizeCL(raw);
+            if (typeof raw?.respuestaCorrecta === 'boolean' || typeof raw?.esVerdadero === 'boolean' || /^(v|f)$/i.test(String(raw?.correcta || ''))) return normalizeVF(raw);
+            return normalizeDEV(raw);
+        }
+      };
+
+      const itemsConId = (Array.isArray(generatedData?.preguntas) ? generatedData.preguntas : [])
+        .map((it: any, idx: number) => {
+          const normalized = normalizeItem(it);
+          if (!normalized) return null;
+          return {
+            ...normalized,
+            id: normalized.id || crypto.randomUUID(),
+            pregunta: normalized.pregunta || `Ítem ${idx + 1}`,
+            puntaje: (normalized as any).puntaje ?? 1,
+          } as PruebaItem;
+        })
+        .filter(Boolean) as PruebaItem[];
+
+      const instruccionesFallback =
+        generatedData.instruccionesGenerales && generatedData.instruccionesGenerales.trim().length > 0
+          ? generatedData.instruccionesGenerales
+          : 'Lee atentamente y responde cada ítem según se indique. Marca solo una alternativa cuando corresponda. Justifica tus respuestas en los ítems de desarrollo.';
+
+      // Recalcular puntaje ideal considerando subpreguntas en Comprensión de lectura
+      const newPuntajeIdeal = (itemsConId || []).reduce((acc: number, it: any) => {
+        if (it.tipo === 'Comprensión de lectura' && Array.isArray(it.preguntas)) {
+          const subSum = it.preguntas.reduce((s: number, sub: any) => s + (sub.puntaje ?? 1), 0);
+          return acc + subSum;
+        }
+        return acc + (it.puntaje ?? 1);
+      }, 0);
 
       const newPrueba: Prueba = {
         id: crypto.randomUUID(),
@@ -252,13 +626,13 @@ const PruebasSubmodule: React.FC = () => {
         contenidoOriginal: formData.contenido,
         tiposActividadOriginal: formData.tiposActividad,
         objetivo: generatedData.objetivo || '',
-        instruccionesGenerales: generatedData.instruccionesGenerales || '',
-        puntajeIdeal,
+        instruccionesGenerales: instruccionesFallback,
+        puntajeIdeal: newPuntajeIdeal,
         actividades: [
           {
             id: crypto.randomUUID(),
             titulo: formData.nombre,
-            instrucciones: generatedData.instruccionesGenerales || '',
+            instrucciones: instruccionesFallback,
             items: itemsConId,
           },
         ],
@@ -366,7 +740,8 @@ const PruebasSubmodule: React.FC = () => {
         y += instr.length * 12 + 6;
 
         act.items.forEach((item, iIdx) => {
-          const enun = `${iIdx + 1}. ${item.pregunta} (${item.puntaje} pts)`;
+          const bloomLabel = (item as any).habilidadBloom ? ` [Bloom: ${(item as any).habilidadBloom}]` : '';
+          const enun = `${iIdx + 1}. ${item.pregunta} (${item.puntaje} pts)${bloomLabel}`;
           const enunLines = doc.splitTextToSize(enun, doc.internal.pageSize.getWidth() - margin * 2);
           if (y > doc.internal.pageSize.getHeight() - 100) {
             doc.addPage();
@@ -420,7 +795,8 @@ const PruebasSubmodule: React.FC = () => {
               y += textLines.length * 12 + 8;
 
               lectura.preguntas.forEach((sub, sIdx) => {
-                const subEnun = `${sIdx + 1}. ${sub.pregunta} (${sub.puntaje} pts)`;
+                const subBloomLabel = (sub as any).habilidadBloom ? ` [Bloom: ${(sub as any).habilidadBloom}]` : '';
+                const subEnun = `CL-${sIdx + 1}. ${sub.pregunta} (${sub.puntaje} pts)${subBloomLabel}`;
                 const subLines = doc.splitTextToSize(subEnun, doc.internal.pageSize.getWidth() - margin * 2);
                 if (y > doc.internal.pageSize.getHeight() - 100) {
                   doc.addPage();
@@ -465,6 +841,74 @@ const PruebasSubmodule: React.FC = () => {
   };
 
   if (currentPrueba) {
+    // Utilidad: regenerar un ítem específico llamando al endpoint HTTP con 1 unidad del tipo
+    const regenerateItemAt = async (actividadId: string, itemId: string) => {
+      try {
+        const actividadIdx = currentPrueba.actividades.findIndex(a => a.id === actividadId);
+        if (actividadIdx < 0) return;
+        const act = currentPrueba.actividades[actividadIdx];
+        const itemIdx = act.items.findIndex(i => i.id === itemId);
+        if (itemIdx < 0) return;
+        const original = act.items[itemIdx];
+
+        const mapTipo = (t: PruebaItemTipo): string => t; // mismos labels usados por backend
+
+        // Reconstruir objetivo aproximado
+        const objetivo = currentPrueba.objetivo && currentPrueba.objetivo.trim().length > 0
+          ? currentPrueba.objetivo
+          : `Evaluar el siguiente contenido: "${currentPrueba.contenidoOriginal}" para el nivel ${currentPrueba.nivel}.`;
+
+        const cantidadesPorTipo: Record<string, number> = { [mapTipo(original.tipo)]: 1 };
+        const payload = { objetivo, cantidadesPorTipo, contextoAdicional: `Regenerar un ítem del tipo ${original.tipo} manteniendo el mismo nivel (${currentPrueba.nivel}) y asignatura (${currentPrueba.asignatura}).` };
+
+        const FUNCTIONS_BASE = process.env.REACT_APP_FUNCTIONS_BASE_URL || 'https://us-central1-plania-clase.cloudfunctions.net';
+        const url = `${FUNCTIONS_BASE}/generarPruebaConGeminiHttp`;
+        const idToken = await auth.currentUser?.getIdToken();
+        if (!idToken) throw new Error('No se pudo obtener token de autenticación.');
+
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = await resp.json();
+        const rawList: any[] = Array.isArray(data?.prueba?.preguntas) ? data.prueba.preguntas : [];
+        if (rawList.length === 0) throw new Error('La IA no devolvió ítems nuevos.');
+
+        // Normalizar el primer ítem recibido al tipo local
+        const raw = rawList[0];
+        const t = ((): PruebaItemTipo | null => {
+          const s = (raw?.tipo || '').toLowerCase();
+          if (s.includes('múltiple') || s.includes('multiple') || s.includes('seleccion')) return 'Selección múltiple';
+          if (s.includes('verdadero') || s.includes('falso') || s === 'vf') return 'Verdadero o Falso';
+          if (s.includes('paread') || s.includes('matching') || s.includes('emparejar')) return 'Términos pareados';
+          if (s.includes('comprension') || s.includes('lectura')) return 'Comprensión de lectura';
+          if (s.includes('desarrollo') || s.includes('respuesta corta') || s.includes('abierta')) return 'Desarrollo';
+          return null;
+        })();
+
+  let nuevo: PruebaItem | null = null;
+  if (t === 'Selección múltiple') nuevo = normalizeSMOuter(raw);
+  else if (t === 'Verdadero o Falso') nuevo = normalizeVFOuter(raw);
+  else if (t === 'Desarrollo') nuevo = normalizeDEVOuter(raw);
+  else if (t === 'Términos pareados') nuevo = normalizePAREADOSOuter(raw);
+  else if (t === 'Comprensión de lectura') nuevo = normalizeCLOuter(raw);
+  else if (raw?.opciones || raw?.alternativas) nuevo = normalizeSMOuter(raw);
+        if (!nuevo) throw new Error('No se pudo normalizar el ítem generado.');
+
+        const updated = { ...currentPrueba } as Prueba;
+        updated.actividades = currentPrueba.actividades.map((a, aIdx) => {
+          if (aIdx !== actividadIdx) return a;
+          return { ...a, items: a.items.map((it, idx) => idx === itemIdx ? { ...nuevo!, id: it.id } : it) };
+        });
+        setCurrentPrueba(updated);
+      } catch (e) {
+        console.error('No se pudo regenerar el ítem:', e);
+        alert('No se pudo regenerar el ítem. Intenta de nuevo.');
+      }
+    };
+
     return (
       <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
         <div className="flex justify-between items-center mb-4">
@@ -481,6 +925,12 @@ const PruebasSubmodule: React.FC = () => {
             >
               <EyeIcon open={!showAnswers} />{' '}
               <span>{showAnswers ? 'Ocultar' : 'Mostrar'} Respuestas</span>
+            </button>
+            <button
+              onClick={() => setSortByType((v) => !v)}
+              className="bg-slate-100 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+            >
+              {sortByType ? 'Orden original' : 'Ordenar por tipo'}
             </button>
             <button
               onClick={handleSavePrueba}
@@ -549,14 +999,35 @@ const PruebasSubmodule: React.FC = () => {
               </h3>
               <p className="italic text-sm mb-4">{act.instrucciones}</p>
               <div className="space-y-6">
-                {act.items.map((item, index) => (
-                  <PruebaItemViewer
-                    key={item.id}
-                    item={item}
-                    index={index}
-                    showAnswers={showAnswers}
-                  />
-                ))}
+                {(() => {
+                  const order: Record<PruebaItemTipo, number> = {
+                    'Comprensión de lectura': 0,
+                    'Selección múltiple': 1,
+                    'Verdadero o Falso': 2,
+                    'Términos pareados': 3,
+                    'Desarrollo': 4,
+                  };
+                  const itemsToShow = sortByType
+                    ? [...(act.items || [])].sort((a, b) => (order[a.tipo] ?? 99) - (order[b.tipo] ?? 99))
+                    : (act.items || []);
+                  return itemsToShow.map((item) => (
+                    <div key={item.id} className="space-y-2">
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => regenerateItemAt(act.id, item.id)}
+                          className="text-xs bg-sky-600 text-white px-3 py-1 rounded hover:bg-sky-700"
+                        >
+                          Regenerar ítem
+                        </button>
+                      </div>
+                      <PruebaItemViewer
+                        item={item}
+                        showAnswers={showAnswers}
+                      />
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
           ))}
@@ -707,7 +1178,7 @@ const PruebasSubmodule: React.FC = () => {
           />
 
           <div className="space-y-3">
-            {TIPOS_ACTIVIDAD_PRUEBA.map((tipo) => (
+            {TIPOS_PRUEBA_ITEM.map((tipo) => (
               <div
                 key={tipo}
                 className="p-3 border rounded-lg has-[:checked]:bg-amber-50 has-[:checked]:border-amber-300 dark:border-slate-700 dark:has-[:checked]:bg-amber-900/20 dark:has-[:checked]:border-amber-700"
@@ -723,12 +1194,12 @@ const PruebasSubmodule: React.FC = () => {
                     {tipo}
                   </span>
                 </label>
-                {formData.tiposActividad[tipo] && (
+                {formData.tiposActividad[tipo] && ITEM_QUANTITIES[tipo] && (
                   <div className="mt-3 pl-8 flex items-center gap-2">
                     <span className="text-sm text-slate-500 dark:text-slate-400">
                       Cantidad:
                     </span>
-                    {ITEM_QUANTITIES[tipo].map((qty) => (
+                    {ITEM_QUANTITIES[tipo]?.map((qty) => (
                       <button
                         type="button"
                         key={qty}

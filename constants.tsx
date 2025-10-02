@@ -15,6 +15,7 @@ export const TargetIcon = () => (
 );
 
 // --- Estilos base ---
+// --- Listas de asignaturas y niveles ---
 export const iconClass = "w-6 h-6";
 export const profileIconClass = "w-24 h-24";
 

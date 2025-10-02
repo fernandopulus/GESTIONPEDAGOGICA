@@ -102,13 +102,13 @@ export async function callGemini({
     const url = `${baseUrl}/${modelName}:generateContent`;
     // Intentos por modelo (para manejar MAX_TOKENS aumentando maxOutputTokens)
     let attempt = 0;
-    const maxAttemptsPerModel = 2;
-    // Base tokens (puede venir desde config)
-    let baseMaxTokens = mode === 'flash' ? 256 : ((config?.maxOutputTokens as number) || 1024);
+  const maxAttemptsPerModel = 3;
+  // Base tokens (puede venir desde config). En flash elevamos para evitar MAX_TOKENS frecuentes.
+  let baseMaxTokens = mode === 'flash' ? 1024 : ((config?.maxOutputTokens as number) || 2048);
 
     for (; attempt < maxAttemptsPerModel; attempt++) {
       try {
-        const attemptMaxTokens = Math.min(8192, baseMaxTokens * Math.pow(2, attempt));
+  const attemptMaxTokens = Math.min(8192, baseMaxTokens * Math.pow(2, attempt));
         const fetchResponse = await fetch(`${url}?key=${apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -117,12 +117,12 @@ export async function callGemini({
               { role: 'user', parts: [{ text: prompt }] }
             ],
             generationConfig: {
-              temperature: mode === 'flash' ? 0.3 : ((config?.temperature as number) || 0.7),
-              topK: mode === 'flash' ? 8 : ((config?.topK as number) || 40),
-              topP: mode === 'flash' ? 0.7 : ((config?.topP as number) || 0.95),
+              temperature: mode === 'flash' ? 0.2 : ((config?.temperature as number) || 0.7),
+              topK: mode === 'flash' ? 16 : ((config?.topK as number) || 40),
+              topP: mode === 'flash' ? 0.85 : ((config?.topP as number) || 0.95),
               maxOutputTokens: attemptMaxTokens,
               candidateCount: 1,
-              stopSequences: mode === 'flash' ? ['STOP', '\n\n'] : ['STOP'],
+              // No forzamos stopSequences en flash para evitar cortes prematuros
             },
           }),
         });

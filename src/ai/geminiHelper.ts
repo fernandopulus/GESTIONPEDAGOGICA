@@ -20,7 +20,7 @@ export type KeywordScore = {
 // Configuraciones de modelos disponibles
 const MODEL_CONFIGS = [
   {
-    model: "gemini-1.5-pro",
+    model: "gemini-2.5-pro",
     generationConfig: {
       temperature: 0.7,
       topK: 40,
@@ -237,7 +237,7 @@ async function getProModel(): Promise<any> {
   
   // Configuración específica para el modelo Pro
   const proConfig = {
-    model: "gemini-1.5-pro",
+    model: "gemini-2.5-pro",
     generationConfig: {
       temperature: 0.7,
       topK: 40,

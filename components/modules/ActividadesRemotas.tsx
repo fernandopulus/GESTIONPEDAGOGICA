@@ -31,6 +31,7 @@ import {
   updateRespuestaActividadDocente,
   saveActividadFromPreview,
   calcularNota60,
+  updateActividad,
 } from '../../src/firebaseHelpers/actividadesRemotasHelper';
 import { auth } from '../../src/firebase';
 
@@ -185,7 +186,7 @@ const HABILIDADES_SIMCE = [
 /* ============================================================
    Componente principal
 ============================================================ */
-type TabKey = 'carpetas' | 'actividades' | 'pruebas';
+type TabKey = 'carpetas' | 'actividades' | 'pruebas' | 'gestion';
 
 const ActividadesRemotas: React.FC = () => {
   // Datos
@@ -209,6 +210,13 @@ const ActividadesRemotas: React.FC = () => {
   const [previewPrueba, setPreviewPrueba] = useState<PruebaEstandarizada | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [activeTab, setActiveTab] = useState<TabKey>('carpetas');
+  // Filtros nueva vista Gestión
+  const [filtroAsignatura, setFiltroAsignatura] = useState<string>('Todas');
+  const [filtroNivel, setFiltroNivel] = useState<string>('Todos');
+  // Reasignación
+  const [reasignandoActividad, setReasignandoActividad] = useState<ActividadRemota | null>(null);
+  const [reasignEstudiantes, setReasignEstudiantes] = useState<string[]>([]);
+  const [isReassignSaving, setIsReassignSaving] = useState(false);
 
   // NUEVO: carpeta/historial por estudiante
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -866,7 +874,7 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
   ============================================================ */
   const renderTabs = () => (
     <div className="flex flex-wrap gap-2 mb-6">
-      {(['carpetas','actividades','pruebas'] as TabKey[]).map(tab => (
+      {(['carpetas','actividades','pruebas','gestion'] as TabKey[]).map(tab => (
         <button
           key={tab}
           onClick={() => { setActiveTab(tab); setSelectedActividad(null); setSelectedPrueba(null); setSelectedStudentId(null); }}
@@ -876,7 +884,7 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
           {tab === 'carpetas' && <FolderOpen size={18} />}
           {tab === 'actividades' && <FileText size={18} />}
           {tab === 'pruebas' && <BarChart2 size={18} />}
-          {tab === 'carpetas' ? 'Carpetas de Estudiantes' : tab === 'actividades' ? 'Actividades Remotas' : 'Pruebas Estandarizadas'}
+          {tab === 'carpetas' ? 'Carpetas de Estudiantes' : tab === 'actividades' ? 'Actividades Remotas' : tab === 'pruebas' ? 'Pruebas Estandarizadas' : 'Gestión de Trabajos'}
         </button>
       ))}
       <div className="ml-auto flex items-center gap-2">
@@ -901,6 +909,191 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
           </button>
         )}
       </div>
+    </div>
+  );
+
+  /* ---------------------- Nueva vista: Gestión de Trabajos ---------------------- */
+  // Opciones de filtros a partir de actividades
+  const opcionesAsignatura = useMemo(() => {
+    const set = new Set<string>();
+    actividades.forEach(a => a?.asignatura && set.add(a.asignatura));
+    return ['Todas', ...Array.from(set).sort()];
+  }, [actividades]);
+
+  const opcionesNivel = useMemo(() => {
+    const set = new Set<string>();
+    actividades.forEach(a => a?.nivel && set.add(a.nivel));
+    const arr = Array.from(set).filter(x => !!x && x !== '—').sort();
+    return ['Todos', '—', ...arr];
+  }, [actividades]);
+
+  type TrabajoRow = {
+    actividad: ActividadRemota;
+    estudiante: User | null;
+    estado: 'Completado' | 'Pendiente';
+    respuesta?: RespuestaEstudianteActividad;
+  };
+
+  const trabajos: TrabajoRow[] = useMemo(() => {
+    const rows: TrabajoRow[] = [];
+    for (const a of actividades) {
+      const asignados = a.estudiantesDestino || [];
+      for (const nombre of asignados) {
+        const u = allUsers.find(x => x.profile === Profile.ESTUDIANTE && x.nombreCompleto === nombre) || null;
+        const r = u ? respuestas.find(rr => rr.estudianteId === u.id && rr.actividadId === a.id) : undefined;
+        rows.push({ actividad: a, estudiante: u, estado: r ? 'Completado' : 'Pendiente', respuesta: r });
+      }
+    }
+    return rows;
+  }, [actividades, allUsers, respuestas]);
+
+  const trabajosFiltrados = useMemo(() => {
+    return trabajos.filter(t => {
+      const okAsignatura = filtroAsignatura === 'Todas' || t.actividad.asignatura === filtroAsignatura;
+      const okNivel = filtroNivel === 'Todos' || t.actividad.nivel === filtroNivel;
+      return okAsignatura && okNivel;
+    });
+  }, [trabajos, filtroAsignatura, filtroNivel]);
+
+  const renderGestionView = () => (
+    <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
+      <div className="flex flex-col md:flex-row md:items-end gap-4 mb-6">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Gestión de Trabajos</h2>
+          <p className="text-slate-500">Organiza envíos y realizados por asignatura y nivel. Reasigna actividades ya creadas sin consumir tokens.</p>
+        </div>
+        <div className="md:ml-auto flex flex-wrap gap-3">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Asignatura</label>
+            <select value={filtroAsignatura} onChange={e => setFiltroAsignatura(e.target.value)} className="border-slate-300 rounded-md">
+              {opcionesAsignatura.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Nivel</label>
+            <select value={filtroNivel} onChange={e => setFiltroNivel(e.target.value)} className="border-slate-300 rounded-md">
+              {opcionesNivel.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+          <thead className="bg-slate-50 dark:bg-slate-700">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Asignatura</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Nivel</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Estudiante</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Tipos</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Estado</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Puntaje</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Nota</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Fecha</th>
+              <th className="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
+            {trabajosFiltrados.map((t, idx) => (
+              <tr key={`${t.actividad.id}-${t.estudiante?.id || idx}`} className="hover:bg-slate-50">
+                <td className="px-4 py-3 text-sm font-medium text-slate-800"><UltraSafeRenderer content={t.actividad.asignatura} context="gestion-asig"/></td>
+                <td className="px-4 py-3 text-sm">{t.actividad.nivel || '—'}</td>
+                <td className="px-4 py-3 text-sm">{t.estudiante?.nombreCompleto || '—'}</td>
+                <td className="px-4 py-3 text-sm">{t.actividad.tipos?.join(', ')}</td>
+                <td className="px-4 py-3 text-sm">
+                  {t.estado === 'Completado' ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800"><CheckCircle2 size={14}/> Completado</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800"><Clock size={14}/> Pendiente</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-sm">{t.respuesta ? `${t.respuesta.puntaje}/${t.respuesta.puntajeMaximo}` : '—'}</td>
+                <td className="px-4 py-3 text-sm font-semibold">{t.respuesta ? t.respuesta.nota : '—'}</td>
+                <td className="px-4 py-3 text-sm">{t.respuesta ? formatDateTime(t.respuesta.fechaCompletado) : '—'}</td>
+                <td className="px-4 py-3 text-sm text-right">
+                  <button
+                    onClick={() => { setReasignandoActividad(t.actividad); setReasignEstudiantes([]); }}
+                    className="text-blue-600 hover:text-blue-800 font-semibold"
+                    title="Reasignar a nuevos estudiantes"
+                  >Reasignar</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal de Reasignación */}
+      {reasignandoActividad && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-2xl rounded-xl p-6 shadow-xl">
+            <h3 className="text-xl font-bold mb-2">Reasignar Actividad</h3>
+            <p className="text-sm text-slate-600 mb-4">Selecciona estudiantes adicionales para la actividad de <strong>{reasignandoActividad.asignatura}</strong> — {reasignandoActividad.tipos?.join(', ')}.</p>
+
+            <div className="mb-3">
+              <input
+                type="text"
+                placeholder="Buscar estudiante..."
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                className="w-full border-slate-300 rounded-md shadow-sm"
+              />
+            </div>
+
+            <div className="max-h-64 overflow-y-auto border rounded-md p-2 bg-slate-50">
+              {(studentSearch ? filteredStudents : students).map((student) => {
+                const yaAsignado = (reasignandoActividad.estudiantesDestino || []).includes(student.nombreCompleto);
+                return (
+                  <label key={student.id} className={`flex items-center gap-2 p-2 rounded cursor-pointer ${yaAsignado ? 'opacity-50' : 'hover:bg-slate-100'}`}>
+                    <input
+                      type="checkbox"
+                      disabled={yaAsignado}
+                      checked={reasignEstudiantes.includes(student.nombreCompleto)}
+                      onChange={() => {
+                        setReasignEstudiantes(prev => prev.includes(student.nombreCompleto)
+                          ? prev.filter(n => n !== student.nombreCompleto)
+                          : [...prev, student.nombreCompleto]);
+                      }}
+                      className="h-4 w-4 rounded text-amber-500 focus:ring-amber-400"
+                    />
+                    <span className="text-sm font-medium text-slate-700 truncate" title={student.nombreCompleto}>
+                      {student.nombreCompleto}
+                    </span>
+                    {yaAsignado && <span className="ml-auto text-xs text-slate-400">Ya asignado</span>}
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => { setReasignandoActividad(null); setReasignEstudiantes([]); }}
+                className="px-4 py-2 rounded-lg bg-slate-200 text-slate-800 hover:bg-slate-300"
+              >Cancelar</button>
+              <button
+                disabled={isReassignSaving || reasignEstudiantes.length === 0}
+                onClick={async () => {
+                  if (!reasignandoActividad) return;
+                  try {
+                    setIsReassignSaving(true);
+                    const actuales = reasignandoActividad.estudiantesDestino || [];
+                    const merged = Array.from(new Set([...actuales, ...reasignEstudiantes]));
+                    await updateActividad(reasignandoActividad.id, { estudiantesDestino: merged });
+                    setReasignandoActividad(null);
+                    setReasignEstudiantes([]);
+                  } catch (e) {
+                    console.error('Error reasignando actividad:', e);
+                    setError('No se pudo reasignar la actividad.');
+                  } finally {
+                    setIsReassignSaving(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:bg-amber-400"
+              >{isReassignSaving ? 'Guardando...' : 'Confirmar reasignación'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -1920,6 +2113,8 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
         renderPreview()
       ) : selectedActividad || selectedPrueba ? (
         renderActivityView()
+      ) : activeTab === 'gestion' ? (
+        renderGestionView()
       ) : activeTab === 'pruebas' ? (
         isCreatingPrueba ? renderPruebaCreationForm() : renderPruebasList()
       ) : activeTab === 'actividades' ? (

@@ -109,7 +109,7 @@ const GeneradorActas: React.FC<GeneradorActasProps> = ({ currentUser }) => {
             logApiCall('Generador de Actas');
             const apiKey = "";
             const ai = new (globalThis as any).GoogleGenerativeAI(apiKey);
-            const model = ai.getGenerativeModel({ model: "gemini-pro" });
+            const model = ai.getGenerativeModel({ model: "gemini-pro-latest" });
             
             const prompt = `
                 Analiza el siguiente texto de un acta de reunión y extrae la información clave.

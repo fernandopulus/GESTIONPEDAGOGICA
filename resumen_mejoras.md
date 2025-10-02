@@ -3,11 +3,11 @@
 ## 1. Mejoras en la Calidad de Generación con Modelos IA
 
 ### Actualización del Modelo y Configuración
-- Reemplazo de `gemini-1.5-flash-latest` por `gemini-1.5-pro` para mayor calidad
+- Reemplazo de `gemini-1.5-flash-latest` por `gemini-2.5-pro` para mayor calidad
 - Implementación de configuración específica de generación:
   ```javascript
   const model = ai.getGenerativeModel({ 
-    model: 'gemini-1.5-pro',
+  model: 'gemini-2.5-pro',
     generationConfig: {
       temperature: 0.7,          // Control de creatividad balanceado
       topP: 0.9,                 // Diversidad controlada

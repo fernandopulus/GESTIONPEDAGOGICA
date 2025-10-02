@@ -4,7 +4,7 @@ Se han implementado varias mejoras para resolver los problemas con la generació
 
 ## 1. Priorización del Modelo Gemini Pro
 
-- Se ha reordenado la prioridad de los modelos de IA, priorizando `gemini-1.5-pro` por sobre `gemini-2.5-flash-lite` para la generación de preguntas educativas complejas.
+- Se ha reordenado la prioridad de los modelos de IA, priorizando `gemini-2.5-pro` por sobre `gemini-2.5-flash-lite` para la generación de preguntas educativas complejas.
 - El modelo Pro ofrece mejor calidad y consistencia en la generación de contenido educativo estructurado.
 - Se aumentó el límite de tokens de salida de 1024 a 2048 para permitir respuestas más completas.
 

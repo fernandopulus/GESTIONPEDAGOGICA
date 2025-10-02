@@ -405,6 +405,7 @@ export {
   generarRubricaConGemini,
   generarDescriptorDimensionConGemini,
   generarPruebaConGemini,
+  generarPruebaConGeminiHttp,
 } from "./evaluacionAprendizajes";
 
 export { api } from "./api";
