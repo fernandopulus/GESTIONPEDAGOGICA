@@ -359,9 +359,50 @@ interface LessonPlanViewerProps {
 const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson, onUseLesson, isLoading = false, onUpdatePlan }) => {
   const [progreso, setProgreso] = useState<number>(plan.progreso ?? 0);
   const [saving, setSaving] = useState(false);
+  // Estado local para Reflexión de la Unidad
+  const [fortalezas, setFortalezas] = useState<string>(plan.reflexionUnidad?.fortalezas || '');
+  const [mejoras, setMejoras] = useState<string>(plan.reflexionUnidad?.mejoras || '');
+  const [debilidades, setDebilidades] = useState<string>(plan.reflexionUnidad?.debilidades || '');
+  const HABILIDADES_BLOOM = ['Recordar','Comprender','Aplicar','Analizar','Evaluar','Crear'];
+  const initialRanks: Record<string, number | ''> = (() => {
+    const ranks: Record<string, number | ''> = Object.fromEntries(HABILIDADES_BLOOM.map(h => [h, '']));
+    (plan.reflexionUnidad?.ordenHabilidades || []).forEach((h, idx) => {
+      if (HABILIDADES_BLOOM.includes(h)) ranks[h] = idx + 1;
+    });
+    return ranks;
+  })();
+  const [habilidadRanks, setHabilidadRanks] = useState<Record<string, number | ''>>(initialRanks);
+  const [savingReflexion, setSavingReflexion] = useState(false);
+  // Sincronizar cuando cambie el plan
+  useEffect(() => {
+    setFortalezas(plan.reflexionUnidad?.fortalezas || '');
+    setMejoras(plan.reflexionUnidad?.mejoras || '');
+    setDebilidades(plan.reflexionUnidad?.debilidades || '');
+    const ranks: Record<string, number | ''> = Object.fromEntries(HABILIDADES_BLOOM.map(h => [h, '']));
+    (plan.reflexionUnidad?.ordenHabilidades || []).forEach((h, idx) => {
+      if (HABILIDADES_BLOOM.includes(h)) ranks[h] = idx + 1;
+    });
+    setHabilidadRanks(ranks);
+  }, [plan.id]);
+
+  // Chequeo de completitud de reflexión (Obligatoria)
+  const isReflexionCompleta = () => {
+    const textosOk = fortalezas.trim().length > 0 && mejoras.trim().length > 0 && debilidades.trim().length > 0;
+    const orden = Object.entries(habilidadRanks)
+      .filter(([, r]) => r !== '')
+      .sort((a, b) => (a[1] as number) - (b[1] as number))
+      .map(([h]) => h);
+    const habilidadesOk = orden.length >= 1; // al menos una priorizada
+    return textosOk && habilidadesOk;
+  };
   
   const handleProgresoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value, 10);
+    // Si intenta marcar 100% sin reflexión completa, bloquear
+    if (value === 100 && !isReflexionCompleta()) {
+      alert('Para marcar la unidad como 100% completada, primero debes completar y guardar la Reflexión Docente (fortalezas, mejoras, desafíos y priorización de habilidades).');
+      return;
+    }
     setProgreso(value);
     setSaving(true);
     try {
@@ -377,6 +418,53 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
       setProgreso(plan.progreso ?? 0);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Handlers Reflexión
+  const setRank = (habilidad: string, rank: number | '') => {
+    setHabilidadRanks(prev => {
+      const next = { ...prev };
+      // Si el rank ya lo usa otra habilidad, liberarlo
+      if (rank !== '') {
+        const usedBy = Object.keys(next).find(h => h !== habilidad && next[h] === rank);
+        if (usedBy) next[usedBy] = '';
+      }
+      next[habilidad] = rank;
+      return next;
+    });
+  };
+
+  const buildOrdenHabilidades = (): string[] => {
+    return Object.entries(habilidadRanks)
+      .filter(([, r]) => r !== '')
+      .sort((a, b) => (a[1] as number) - (b[1] as number))
+      .map(([h]) => h);
+  };
+
+  const handleGuardarReflexion = async () => {
+    if (!onUpdatePlan || !plan.id) return;
+    // Validaciones obligatorias
+    if (!isReflexionCompleta()) {
+      alert('La Reflexión Docente es obligatoria: completa Fortalezas, Mejoras, Desafíos y prioriza al menos una habilidad de Bloom.');
+      return;
+    }
+    setSavingReflexion(true);
+    try {
+      const ordenHabilidades = buildOrdenHabilidades();
+      await onUpdatePlan(plan.id, {
+        reflexionUnidad: {
+          fortalezas: fortalezas.trim(),
+          mejoras: mejoras.trim(),
+          debilidades: debilidades.trim(),
+          ordenHabilidades,
+        },
+      });
+    } catch (err) {
+      console.error('❌ Error al guardar reflexión:', err);
+      alert(`Error al guardar la reflexión: ${err.message}`);
+    } finally {
+      setSavingReflexion(false);
     }
   };
   return (
@@ -429,6 +517,59 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Reflexión Docente de la Unidad */}
+      <div className="p-4 border dark:border-slate-700 rounded-lg">
+        <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-3">Reflexión Docente</h3>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Obligatoria. Se usa en el módulo "Seguimiento Curricular" para análisis y visualización.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Fortalezas <span className="text-red-500">*</span></label>
+              <textarea value={fortalezas} onChange={e => setFortalezas(e.target.value)} rows={3} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Mejoras <span className="text-red-500">*</span></label>
+              <textarea value={mejoras} onChange={e => setMejoras(e.target.value)} rows={3} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Desafíos <span className="text-red-500">*</span></label>
+              <textarea value={debilidades} onChange={e => setDebilidades(e.target.value)} rows={3} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Habilidades Bloom priorizadas (1 = mayor prioridad) <span className="text-red-500">*</span></label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {HABILIDADES_BLOOM.map(h => (
+                <div key={h} className="flex items-center justify-between gap-3 p-2 bg-slate-50 dark:bg-slate-700/50 rounded-md">
+                  <span className="text-slate-700 dark:text-slate-200">{h}</span>
+                  <select
+                    value={habilidadRanks[h] === '' ? '' : String(habilidadRanks[h])}
+                    onChange={e => setRank(h, e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                    className="border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600"
+                  >
+                    <option value="">—</option>
+                    {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+              Selecciona números sin repetir. Solo se guardan las habilidades con número asignado.
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button onClick={handleGuardarReflexion} disabled={savingReflexion || isLoading} className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2 px-4 rounded-md disabled:opacity-50">
+            {savingReflexion ? (
+              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            <span>Guardar reflexión</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1766,6 +1907,13 @@ const renderUnidadTab = () => (
                       <p className="text-sm text-slate-500 dark:text-slate-400 truncate max-w-md">
                         Contenidos: {plan.contenidos}
                       </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        {plan.reflexionUnidad && plan.reflexionUnidad.fortalezas && plan.reflexionUnidad.mejoras && plan.reflexionUnidad.debilidades ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">Reflexión completa</span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Reflexión pendiente</span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <button 

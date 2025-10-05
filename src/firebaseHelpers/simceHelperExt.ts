@@ -1,6 +1,6 @@
 // Extensiones para el helper de SIMCE
 
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db } from './config';
 
 // Constante para la colección
@@ -22,6 +22,10 @@ export async function crearEvaluacionSimce(evaluacionData: any): Promise<string>
         ? evaluacionData.cursoAsignado 
         : [evaluacionData.cursoAsignado];
     }
+    // Asegurar que preguntas sea un arreglo
+    if (!Array.isArray(evaluacionData.preguntas)) {
+      evaluacionData.preguntas = [];
+    }
     
     const docRef = await addDoc(collection(db, SIMCE_EVALUACIONES_COLLECTION), evaluacionData);
     console.log('[DEBUG] crearEvaluacionSimce - Evaluación creada con ID:', docRef.id);
@@ -40,8 +44,18 @@ export async function crearEvaluacionSimce(evaluacionData: any): Promise<string>
  */
 export async function actualizarEvaluacionSimce(id: string, data: any): Promise<void> {
   try {
-    // Implementación pendiente
-    console.log('[DEBUG] actualizarEvaluacionSimce - Pendiente de implementar');
+    // Normalizar posibles campos
+    if (!data.cursosAsignados && data.cursoAsignado) {
+      data.cursosAsignados = Array.isArray(data.cursoAsignado) 
+        ? data.cursoAsignado 
+        : [data.cursoAsignado];
+    }
+    // No permitir undefined en preguntas; si no viene, no tocar
+    if (data.preguntas && !Array.isArray(data.preguntas)) {
+      data.preguntas = [];
+    }
+    await updateDoc(doc(db, SIMCE_EVALUACIONES_COLLECTION, id), data);
+    console.log('[DEBUG] actualizarEvaluacionSimce - Actualizada evaluación', id);
   } catch (error) {
     console.error('Error al actualizar evaluación SIMCE:', error);
     throw new Error('No se pudo actualizar la evaluación SIMCE');
@@ -55,8 +69,14 @@ export async function actualizarEvaluacionSimce(id: string, data: any): Promise<
  */
 export async function obtenerEvaluacionesProfesor(profesorId: string): Promise<any[]> {
   try {
-    console.log('[DEBUG] obtenerEvaluacionesProfesor - Pendiente de implementar');
-    return [];
+    if (!profesorId) return [];
+    const q = query(
+      collection(db, SIMCE_EVALUACIONES_COLLECTION),
+      where('creadorId', '==', profesorId),
+      orderBy('fechaCreacion', 'desc')
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (error) {
     console.error('Error al obtener evaluaciones del profesor:', error);
     return [];

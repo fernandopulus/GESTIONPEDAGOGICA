@@ -48,6 +48,31 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
   const [error, setError] = useState<string | null>(null);
   const [vistaActual, setVistaActual] = useState<'general' | 'porEstudiante' | 'porPregunta'>('general');
   const [filtroNivel, setFiltroNivel] = useState<'todos' | 'adecuado' | 'elemental' | 'insuficiente'>('todos');
+
+  // Helpers de visualización con retrocompatibilidad de campos
+  const getPorcentaje = (i: any): number => {
+    if (typeof i?.porcentajeAciertos === 'number') return i.porcentajeAciertos;
+    if (typeof (i as any)?.porcentajeLogro === 'number') return (i as any).porcentajeLogro;
+    return 0;
+  };
+  const getFechaEnvio = (i: any): string => {
+    const fecha = (i && (i.fechaEnvio || i.fechaRealizacion)) || null;
+    return fecha ? new Date(fecha).toLocaleDateString() : '-';
+  };
+  const getRespuestasCorrectas = (i: any): number | string => {
+    if (Array.isArray(i?.respuestas)) return i.respuestas.filter((r: any) => r?.esCorrecta).length;
+    if (typeof i?.respuestasCorrectas === 'number') return i.respuestasCorrectas;
+    return '-';
+  };
+  const getTiempoRealizacion = (i: any): string => {
+    const s = (i && (i.tiempoRealizacion ?? i.duracionSegundos)) as number | undefined;
+    if (typeof s === 'number' && s > 0) {
+      const mm = Math.floor(s / 60);
+      const ss = (s % 60).toString().padStart(2, '0');
+      return `${mm}:${ss}`;
+    }
+    return '-';
+  };
   
   useEffect(() => {
     const cargarEvaluaciones = async () => {
@@ -317,7 +342,7 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
                         {intento.estudiante?.curso || '-'}
                       </td>
                       <td className="px-4 py-3 font-semibold">
-                        {intento.porcentajeLogro.toFixed(1)}%
+                        {getPorcentaje(intento).toFixed(1)}%
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getBgColorNivelLogro(intento.nivelLogro)}`}>
@@ -325,13 +350,13 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        {intento.respuestasCorrectas || '-'}/{evaluacionSeleccionada?.preguntas.length || '-'}
+                        {getRespuestasCorrectas(intento)}/{evaluacionSeleccionada?.preguntas.length || '-'}
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                        {intento.tiempoRealizacion ? `${Math.floor(intento.tiempoRealizacion / 60)}:${(intento.tiempoRealizacion % 60).toString().padStart(2, '0')}` : '-'}
+                        {getTiempoRealizacion(intento)}
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                        {new Date(intento.fechaRealizacion).toLocaleDateString()}
+                        {getFechaEnvio(intento)}
                       </td>
                     </tr>
                   ))

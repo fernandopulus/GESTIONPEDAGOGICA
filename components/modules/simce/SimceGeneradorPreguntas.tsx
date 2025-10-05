@@ -84,8 +84,11 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
         setTitulo(evaluacion.titulo);
         setDescripcion(evaluacion.descripcion);
         setAsignatura(evaluacion.asignatura);
-  setPreguntas(evaluacion.preguntas);
-        setCursosSeleccionados(evaluacion.cursoAsignado || []);
+        // Asegurar que las preguntas se carguen correctamente
+        setPreguntas(Array.isArray(evaluacion.preguntas) ? evaluacion.preguntas : []);
+        // Compatibilidad: aceptar cursosAsignados o cursoAsignado
+        const cursos = (evaluacion as any).cursosAsignados || (evaluacion as any).cursoAsignado || [];
+        setCursosSeleccionados(Array.isArray(cursos) ? cursos : (cursos ? [cursos] : []));
       }
     }
   }, [evaluacionSeleccionada, modo, evaluaciones]);
@@ -144,13 +147,38 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
     setGuardando(true);
     
     try {
+      // Normalizador de curso a formato consistente (p.ej. 1ºA)
+      const normalizeCurso = (curso: string): string => {
+        if (!curso) return '';
+        let normalized = curso.trim().toLowerCase();
+        normalized = normalized.replace(/°/g, 'º');
+        normalized = normalized.replace(/\s+(medio|básico|basico)/g, '');
+        normalized = normalized.replace(/(\d)(st|nd|rd|th|ro|do|to|er)/, '$1º');
+        normalized = normalized.replace(/^(\d)(?![º])/, '$1º');
+        normalized = normalized.replace(/\s+/g, '').toUpperCase();
+        return normalized;
+      };
+      const cursosNormalizados = cursosSeleccionados.map(normalizeCurso);
+      // Sanitizar preguntas: quitar campos transient y asegurar estructura mínima
+      const preguntasSanitizadas = preguntas.map((p) => ({
+        id: p.id,
+        enunciado: p.enunciado,
+        alternativas: p.alternativas?.map((a) => ({ id: a.id, texto: a.texto, esCorrecta: a.esCorrecta ?? (a.id === (p as any).respuestaCorrecta), explicacion: a.explicacion })) || [],
+        estandarAprendizaje: p.estandarAprendizaje || '',
+        habilidad: p.habilidad || '',
+        textoBase: (p as any).textoBase || undefined,
+        dificultad: p.dificultad || undefined,
+        // respuestaCorrecta puede ser útil a nivel de UI; mantener si existe
+        respuestaCorrecta: (p as any).respuestaCorrecta,
+      } as any));
+
       const evaluacion: Omit<SetPreguntas, 'id'> = {
         titulo,
         descripcion,
         asignatura,
-        preguntas,
+        preguntas: preguntasSanitizadas,
         fechaCreacion: new Date().toISOString(),
-        cursosAsignados: cursosSeleccionados,
+        cursosAsignados: cursosNormalizados,
         creadorId: currentUser.id || currentUser.uid || '',
         creadorNombre: currentUser.nombreCompleto || currentUser.displayName || 'Docente',
         barajarPreguntas: false,
@@ -167,7 +195,12 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
         setPreguntas([]);
         setCursosSeleccionados([]);
       } else if (modo === 'edicion' && evaluacionSeleccionada) {
-        await actualizarEvaluacionSimce(evaluacionSeleccionada, evaluacion);
+        // Forzar merge completo con preguntas y cursos para no perder contenido
+        await actualizarEvaluacionSimce(evaluacionSeleccionada, {
+          ...evaluacion,
+          preguntas: preguntasSanitizadas,
+          cursosAsignados: cursosNormalizados,
+        });
         setExito("¡Evaluación actualizada con éxito!");
       }
       
