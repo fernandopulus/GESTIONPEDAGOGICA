@@ -5,6 +5,8 @@
 // y definir la variable de entorno: VITE_GEMINI_API_KEY
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../firebase';
 
 // Tipos exportados
 export type GeneratedChoiceQuestion = {
@@ -265,6 +267,29 @@ export async function generarConIA(prompt: string, maxRetries = 2, useProModel =
   console.log(`Iniciando generación con IA. Prompt: "${promptPreview}"`);
   console.log(`Configuración: maxRetries=${maxRetries}, useProModel=${useProModel}`);
   
+  // 1) Intentar primero vía Cloud Functions (usa secreto GEMINI_API_KEY en backend)
+  try {
+    // Primero una versión genérica sin App Check (aiHelpers)
+    const callableGeneric = httpsCallable(functions, 'callGeminiGeneric');
+    const resGeneric: any = await callableGeneric({ prompt, module: 'Horarios' });
+    if (resGeneric?.data?.success && typeof resGeneric.data.response === 'string' && resGeneric.data.response.length > 0) {
+      console.log('Respuesta obtenida vía Cloud Function (genérica).');
+      return resGeneric.data.response as string;
+    }
+    // Si no hay éxito, intentar variante con App Check
+    const callable = httpsCallable(functions, 'callGeminiAI');
+    const res: any = await callable({ prompt, module: 'Horarios' });
+    if (res?.data?.success && typeof res.data.response === 'string' && res.data.response.length > 0) {
+      console.log('Respuesta obtenida vía Cloud Function (secreto en backend).');
+      return res.data.response as string;
+    }
+  } catch (cfError: any) {
+    // Si el usuario no está autenticado o la función no existe, seguimos con otras rutas
+    const msg = cfError?.message || String(cfError);
+    console.warn('Fallo llamada a Cloud Function callGeminiAI, intentando otras rutas:', msg);
+  }
+  
+  // 2) Intentar usar el SDK en cliente (requiere VITE_GEMINI_API_KEY expuesta en build)
   // Intentar usar el modelo Pro para mejor calidad si se especifica
   let model;
   try {
@@ -281,12 +306,12 @@ export async function generarConIA(prompt: string, maxRetries = 2, useProModel =
     }
     
     if (!model) {
-      console.error("No se pudo inicializar ningún modelo de Gemini");
-      throw new Error('No se encontró un modelo de Gemini disponible. Verifique su conexión a internet y la API key.');
+      console.warn("IA en cliente no disponible (sin API key en frontend o sin conectividad). Usar fallback.");
+      throw new Error('IA_NOT_AVAILABLE');
     }
   } catch (initError) {
-    console.error("Error al inicializar modelo de Gemini:", initError);
-    throw new Error(`Error al inicializar el modelo de IA: ${initError.message}`);
+    console.warn("Inicialización de IA fallida, continuando con fallback:", initError);
+    throw new Error('IA_NOT_AVAILABLE');
   }
 
   let attempts = 0;

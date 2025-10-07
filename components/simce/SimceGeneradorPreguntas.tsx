@@ -264,12 +264,27 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
           .map(user => user.id);
       }
 
-      // Actualizar el objeto de evaluación con los cursos normalizados y estudiantes asignados
+      // Preparar metadatos de creador y fecha
+      const ahoraISO = new Date().toISOString();
+      const creadorId = currentUser.id || '';
+      const creadorNombre = currentUser.nombreCompleto || currentUser.displayName || currentUser.email || 'Docente';
+
+      // Actualizar el objeto de evaluación con los cursos normalizados, estudiantes asignados y metadatos requeridos
       const evaluacionActualizada = {
         ...nuevaEvaluacion,
         cursosAsignados: cursosAsignadosNormalizados,
-        estudiantesAsignados
-      };
+        estudiantesAsignados,
+        creadorId: (setSeleccionado && (setSeleccionado as any).creadorId) || creadorId,
+        creadorNombre: (setSeleccionado && (setSeleccionado as any).creadorNombre) || creadorNombre,
+        fechaCreacion: (setSeleccionado && (setSeleccionado as any).fechaCreacion) || ahoraISO,
+      } as Partial<SetPreguntas>;
+
+      // Asegurar que cada pregunta tenga `respuestaCorrecta` coherente con alternativas
+      const preguntasNormalizadas = (evaluacionActualizada.preguntas || []).map(p => {
+        const altCorrecta = p.alternativas.find(a => a.esCorrecta)?.id || p['respuestaCorrecta'];
+        return { ...p, respuestaCorrecta: altCorrecta } as Pregunta & { respuestaCorrecta: string };
+      });
+      (evaluacionActualizada as any).preguntas = preguntasNormalizadas;
 
       // Guardar la evaluación en la colección correcta
       let nuevoId = '';
@@ -314,7 +329,16 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
         throw err;
       }
       const setCompleto = { id: nuevoId, ...evaluacionActualizada } as SetPreguntas;
-      setSetsPreguntas(prev => [setCompleto, ...prev]);
+      // Actualizar listado local sin duplicar (reemplazar si existe)
+      setSetsPreguntas(prev => {
+        const idx = prev.findIndex(s => s.id === nuevoId);
+        if (idx >= 0) {
+          const copia = [...prev];
+          copia[idx] = setCompleto;
+          return copia;
+        }
+        return [setCompleto, ...prev];
+      });
 
       setInfoGeneracion({
         tipo: 'success',
@@ -835,7 +859,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
                         )}
                         
                         <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded-md text-xs">
-                          {new Date(set.fechaCreacion).toLocaleDateString()}
+                          {set.fechaCreacion ? new Date(set.fechaCreacion).toLocaleDateString() : '-'}
                         </span>
                       </div>
                     </div>

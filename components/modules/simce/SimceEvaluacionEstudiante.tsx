@@ -346,11 +346,11 @@ export const SimceEvaluacionEstudiante: React.FC<SimceEvaluacionEstudianteProps>
                 >
                   <div className="flex items-start">
                     <div className={`p-2 rounded-md mr-4 ${
-                      evaluacion.asignatura === 'Lectura' 
+                      (evaluacion.asignatura === 'Lectura' || (evaluacion as any).asignatura === 'Competencia Lectora') 
                         ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' 
                         : 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
                     }`}>
-                      {evaluacion.asignatura === 'Lectura' ? (
+                      {(evaluacion.asignatura === 'Lectura' || (evaluacion as any).asignatura === 'Competencia Lectora') ? (
                         <BookOpen className="w-6 h-6" />
                       ) : (
                         <Calculator className="w-6 h-6" />

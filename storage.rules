@@ -17,6 +17,17 @@ service firebase.storage {
                    && request.resource.size < 5 * 1024 * 1024;
     }
 
+    // Archivos de Multicopias: permitir a usuarios autenticados subir material (PDF e imágenes)
+    match /multicopias/{filePath=**} {
+      allow read: if request.auth != null; // lectura autenticada (los enlaces firmados igualmente funcionarán)
+      allow write: if request.auth != null
+                   && request.resource.size < 25 * 1024 * 1024 // hasta 25MB
+                   && (
+                        request.resource.contentType.matches('application/pdf') ||
+                        request.resource.contentType.matches('image/.*')
+                      );
+    }
+
   // Denegar cualquier otra ruta no contemplada explícitamente
     match /{path=**} {
       allow read, write: if false;

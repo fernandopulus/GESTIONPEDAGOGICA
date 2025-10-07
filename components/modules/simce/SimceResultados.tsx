@@ -24,6 +24,7 @@ import {
   obtenerEvaluacionPorId,
   obtenerEstadisticasPorCurso
 } from '@/firebaseHelpers/simceHelper';
+import { getAllUsers } from '@/firebaseHelpers/users';
 
 interface SimceResultadosProps {
   currentUser: User;
@@ -33,6 +34,7 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
   const [evaluaciones, setEvaluaciones] = useState<SimceEvaluacion[]>([]);
   const [evaluacionSeleccionada, setEvaluacionSeleccionada] = useState<SimceEvaluacion | null>(null);
   const [intentos, setIntentos] = useState<SimceIntento[]>([]);
+  const [estudiantesCurso, setEstudiantesCurso] = useState<User[]>([]);
   // Interfaz local para estadísticas retornadas por helper
   const [estadisticasCurso, setEstadisticasCurso] = useState<{
     totalEstudiantes: number;
@@ -104,18 +106,48 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
       if (evaluacion) {
         setEvaluacionSeleccionada(evaluacion);
         
-        // Obtener intentos de la evaluación
-        const intentosData = await obtenerIntentosPorEvaluacion(evaluacionId);
-        setIntentos(intentosData);
-        
-        // Obtener estadísticas por curso basadas en cursos asignados a la evaluación
+        // Detectar curso (toma el primero asignado) y cargar nómina + resultados cruzados
         const cursosEval = Array.isArray((evaluacion as any).cursosAsignados)
-          ? (evaluacion as any).cursosAsignados as string[]
+          ? ((evaluacion as any).cursosAsignados as string[])
           : [];
+
         if (cursosEval.length > 0) {
+          // Cargar estudiantes del curso
+          const usuarios = await getAllUsers();
+          const normalizeCurso = (curso: string): string => {
+            if (!curso) return '';
+            let normalized = curso.trim().toLowerCase();
+            normalized = normalized.replace(/°/g, 'º');
+            normalized = normalized.replace(/\s+(medio|básico|basico)/g, '');
+            normalized = normalized.replace(/(\d)(st|nd|rd|th|ro|do|to|er)/, '$1º');
+            normalized = normalized.replace(/^(\d)(?![º])/, '$1º');
+            normalized = normalized.replace(/\s+/g, '').toUpperCase();
+            return normalized;
+          };
+          const cursoObjetivo = normalizeCurso(cursosEval[0]);
+          const estudiantes = usuarios.filter((u: any) => u.profile === 'ESTUDIANTE' && normalizeCurso(u.curso || '') === cursoObjetivo);
+          setEstudiantesCurso(estudiantes as User[]);
+
+          // Obtener intentos filtrados por curso (ids de esos estudiantes)
+          const estudiantesIds = estudiantes.map((u: any) => u.id);
+          let intentosData: SimceIntento[] = [];
+          if (estudiantesIds.length > 0) {
+            const { obtenerResultadosPorCurso } = await import('@/firebaseHelpers/simceHelper');
+            intentosData = await obtenerResultadosPorCurso(evaluacionId, estudiantesIds);
+          } else {
+            // Si no hay estudiantes detectados, caer al total de intentos del set (por compatibilidad)
+            intentosData = await obtenerIntentosPorEvaluacion(evaluacionId);
+          }
+          setIntentos(intentosData);
+
+          // Estadísticas por curso
           const stats = await obtenerEstadisticasPorCurso(evaluacionId, cursosEval[0]);
           if (stats) setEstadisticasCurso(stats as any);
         } else {
+          // Sin cursos asignados: cargar todos los intentos del set para algo de visibilidad
+          const intentosData = await obtenerIntentosPorEvaluacion(evaluacionId);
+          setIntentos(intentosData);
+          setEstudiantesCurso([]);
           setEstadisticasCurso(null);
         }
       }
@@ -287,9 +319,16 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
   };
   
   const renderVistaEstudiantes = () => {
-    const estudiantesFiltrados = intentos.filter(intento => {
+    // Cruzar nómina con intentos: mostrar todos los estudiantes (con o sin intento)
+    const filas = (estudiantesCurso.length > 0 ? estudiantesCurso : [])
+      .map(est => ({
+        est,
+        intento: intentos.find(i => (i as any).estudianteId === est.id) as any
+      }));
+
+    const filasFiltradas = filas.filter(({ intento }) => {
       if (filtroNivel === 'todos') return true;
-      return intento.nivelLogro.toLowerCase() === filtroNivel;
+      return intento && typeof intento.nivelLogro === 'string' && intento.nivelLogro.toLowerCase() === filtroNivel;
     });
     
     return (
@@ -326,37 +365,43 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
                 </tr>
               </thead>
               <tbody>
-                {estudiantesFiltrados.length === 0 ? (
+                {filasFiltradas.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-6 text-center text-slate-600 dark:text-slate-400">
-                      No hay datos para mostrar con los filtros seleccionados
+                      {estudiantesCurso.length === 0
+                        ? 'No hay estudiantes detectados para el curso asignado o no hay intentos registrados.'
+                        : 'No hay datos para mostrar con los filtros seleccionados'}
                     </td>
                   </tr>
                 ) : (
-                  estudiantesFiltrados.map((intento) => (
-                    <tr key={intento.id} className="border-t border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                  filasFiltradas.map(({ est, intento }) => (
+                    <tr key={est.id} className="border-t border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
                       <td className="px-4 py-3">
-                        {intento.estudianteNombre || 'Desconocido'}
+                        {intento?.estudianteNombre || est.nombreCompleto || '—'}
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                        {intento.estudiante?.curso || '-'}
+                        {est.curso || (intento as any)?.curso || '-'}
                       </td>
                       <td className="px-4 py-3 font-semibold">
-                        {getPorcentaje(intento).toFixed(1)}%
+                        {intento ? getPorcentaje(intento).toFixed(1) + '%' : '—'}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getBgColorNivelLogro(intento.nivelLogro)}`}>
-                          {intento.nivelLogro}
-                        </span>
+                        {intento ? (
+                          <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getBgColorNivelLogro(intento.nivelLogro)}`}>
+                            {intento.nivelLogro}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
-                        {getRespuestasCorrectas(intento)}/{evaluacionSeleccionada?.preguntas.length || '-'}
+                        {intento ? `${getRespuestasCorrectas(intento)}/${evaluacionSeleccionada?.preguntas.length || '-'}` : '—'}
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                        {getTiempoRealizacion(intento)}
+                        {intento ? getTiempoRealizacion(intento) : '—'}
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                        {getFechaEnvio(intento)}
+                        {intento ? getFechaEnvio(intento) : '—'}
                       </td>
                     </tr>
                   ))
@@ -561,7 +606,13 @@ export const SimceResultados: React.FC<SimceResultadosProps> = ({ currentUser })
                           {evaluacion.preguntas.length} preguntas
                         </span>
                         <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200">
-                          {new Date(evaluacion.fechaCreacion).toLocaleDateString()}
+                          {(() => {
+                            try {
+                              const v: any = (evaluacion as any).fechaCreacion;
+                              const d = typeof v?.toDate === 'function' ? v.toDate() : new Date(v);
+                              return isNaN(d.getTime()) ? '-' : d.toLocaleDateString();
+                            } catch { return '-'; }
+                          })()}
                         </span>
                       </div>
                     </div>

@@ -1119,3 +1119,36 @@ export interface Empresa {
 export interface EmpresaData extends Omit<Empresa, 'id' | 'createdAt' | 'puntajeTotal'> {
     createdAt: FieldValue; // Tipo para `serverTimestamp()` de Firestore
 }
+
+// --- Multicopias ---
+
+export type EstadoMulticopia = 'Enviada' | 'Visada' | 'Aceptada' | 'Rechazada' | 'Completada';
+
+export interface SolicitudMulticopia {
+  id: string;
+  // Solicitante
+  solicitanteId: string;
+  solicitanteNombre: string;
+  solicitanteEmail?: string;
+  solicitanteEmailLower?: string;
+  // Datos del material
+  tituloMaterial: string;
+  asignatura: string;
+  nivel: NivelPlanificacion; // 1º-4º Medio
+  curso?: string; // opcional
+  cantidadCopias: number;
+  fechaEntregaDeseada: string; // YYYY-MM-DD
+  enlaceUrl?: string; // alternativa a adjunto
+  adjuntoUrl?: string; // URL en Storage si se sube archivo
+  comentarios?: string;
+  // Estado y gestión
+  estado: EstadoMulticopia;
+  visadoPor?: string;
+  aceptadoPor?: string;
+  rechazadoPor?: string;
+  completadoPor?: string;
+  motivoRechazo?: string;
+  // Timestamps (ISO en frontend)
+  createdAt?: string;
+  updatedAt?: string;
+}

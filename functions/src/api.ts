@@ -345,48 +345,90 @@ apiRouter.post("/generarObjetivoActividad", requireAuth, async (req, res) => {
 
 // --- Analisis Taxonomico ---
 apiRouter.post("/analisisTaxonomico", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const { prompt, fileData } = req.body || {};
-      if (!prompt || !fileData) {
-        return res.status(400).json({ error: "Prompt y fileData son requeridos" });
-      }
-  
-      // Llama a Gemini con el archivo
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("No se ha configurado la API Key de Gemini");
-      
-  const ai = new GoogleGenerativeAI(apiKey);
-  const model = ai.getGenerativeModel({ model: "gemini-2.5-pro" });
-  
-      const result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            mimeType: fileData.mimeType,
-            data: fileData.data,
-          },
-        },
-      ]);
-      
-      let text = result.response.text();
-  
-      // Limpia el resultado para obtener solo el JSON
-      const match = text.match(/```(json)?\n([\s\S]*?)\n```/);
-      if (match && match[2]) {
-        text = match[2].trim();
-      }
-  
-      const json = JSON.parse(text);
-      return res.status(200).json(json);
-  
-    } catch (error) {
-      console.error("analisisTaxonomico error:", error);
-      if (error instanceof Error) {
-          return res.status(500).json({ error: "Llamada a IA falló", details: error.message });
-      }
-      return res.status(500).json({ error: "Llamada a IA falló con un error desconocido" });
+  try {
+    const { prompt, fileData, fileUrl } = req.body || {};
+    if (!prompt || (!fileData && !fileUrl)) {
+      return res.status(400).json({ error: "Se requiere 'prompt' y uno de: 'fileData' o 'fileUrl'" });
     }
-  });
+
+    // Llama a Gemini con el archivo
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("No se ha configurado la API Key de Gemini");
+
+    // Utilidad para deducir MIME por extensión (fallback si no viene en headers)
+    const guessMimeFromUrl = (url: string): string | undefined => {
+      const u = url.split('?')[0].toLowerCase();
+      if (u.endsWith('.pdf')) return 'application/pdf';
+      if (u.endsWith('.png')) return 'image/png';
+      if (u.endsWith('.jpg') || u.endsWith('.jpeg')) return 'image/jpeg';
+      if (u.endsWith('.webp')) return 'image/webp';
+      if (u.endsWith('.gif')) return 'image/gif';
+      return undefined;
+    };
+
+    // Preparar inlineData para Gemini
+    let inlineData: { mimeType: string; data: string };
+
+    if (fileData) {
+      // Caso original: viene data base64 y mimeType desde el frontend
+      inlineData = {
+        mimeType: fileData.mimeType,
+        data: fileData.data,
+      };
+    } else {
+      // Nuevo: descargar desde una URL (típicamente downloadURL de Firebase Storage)
+      const resp = await fetch(fileUrl);
+      if (!resp || !resp.ok) {
+        return res.status(400).json({ error: `No se pudo descargar el archivo desde fileUrl: HTTP ${resp?.status}` });
+      }
+
+      const contentType = resp.headers.get('content-type') || guessMimeFromUrl(fileUrl) || 'application/pdf';
+      const contentLengthHeader = resp.headers.get('content-length');
+      const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : undefined;
+      const MAX_BYTES = 30 * 1024 * 1024; // 30MB de límite defensivo
+      if (contentLength && contentLength > MAX_BYTES) {
+        return res.status(413).json({ error: `Archivo demasiado grande (${contentLength} bytes). Máximo permitido: ${MAX_BYTES}` });
+      }
+
+      const arrayBuffer = await resp.arrayBuffer();
+      if (arrayBuffer.byteLength > MAX_BYTES) {
+        return res.status(413).json({ error: `Archivo demasiado grande (${arrayBuffer.byteLength} bytes). Máximo permitido: ${MAX_BYTES}` });
+      }
+
+      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      inlineData = {
+        mimeType: contentType,
+        data: base64,
+      };
+    }
+
+    const ai = new GoogleGenerativeAI(apiKey);
+    const model = ai.getGenerativeModel({ model: "gemini-2.5-pro" });
+
+    const result = await model.generateContent([
+      prompt,
+      { inlineData },
+    ]);
+
+    let text = result.response.text();
+
+    // Limpia el resultado para obtener solo el JSON
+    const match = text.match(/```(json)?\n([\s\S]*?)\n```/);
+    if (match && match[2]) {
+      text = match[2].trim();
+    }
+
+    const json = JSON.parse(text);
+    return res.status(200).json(json);
+
+  } catch (error) {
+    console.error("analisisTaxonomico error:", error);
+    if (error instanceof Error) {
+      return res.status(500).json({ error: "Llamada a IA falló", details: error.message });
+    }
+    return res.status(500).json({ error: "Llamada a IA falló con un error desconocido" });
+  }
+});
 
 // Montar el router bajo /api
 app.use("/api", apiRouter);

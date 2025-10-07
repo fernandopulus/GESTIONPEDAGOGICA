@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback, ChangeEvent } from 'react';
+import { Paperclip, Link as LinkIcon, FileText } from 'lucide-react';
 import { User, AnalisisTaxonomico as AnalisisTaxonomicoType, BloomLevel } from '../../types';
 
 import { auth } from '../../src/firebase';
@@ -11,6 +12,7 @@ import {
     createAnalisis,
     deleteAnalisis,
 } from '../../src/firebaseHelpers/analisis';
+import { listarAdjuntosMulticopias } from '../../src/firebaseHelpers/multicopiasHelper';
 
 const NIVELES_MEDIO = ["1º Medio","2º Medio","3º Medio","4º Medio"] as const;
 
@@ -57,6 +59,9 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
     const [isLoading, setIsLoading] = useState(false);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [fileData, setFileData] = useState<{ mimeType: string; data: string } | null>(null);
+    // Selección desde Storage (Multicopias)
+    const [adjuntosDisponibles, setAdjuntosDisponibles] = useState<Array<{ id: string; titulo: string; url: string; createdAt?: string; asignatura?: string; nivel?: string }>>([]);
+    const [selectedAdjuntoUrl, setSelectedAdjuntoUrl] = useState<string>('');
     const [nivelForm, setNivelForm] = useState<string>('');       // Nuevo
     const [asignaturaForm, setAsignaturaForm] = useState<string>(''); // Nuevo
 
@@ -89,6 +94,20 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
         fetchAnalisis();
     }, [fetchAnalisis]);
 
+    // Cargar adjuntos desde Multicopias del usuario (o todos si SD)
+    useEffect(() => {
+        (async () => {
+            try {
+                const emailLower = (currentUser.email || '').toLowerCase();
+                const items = await listarAdjuntosMulticopias({ emailLower: currentUser.profile === 'SUBDIRECCION' ? undefined : emailLower, max: 300 });
+                const mapped = items.map(it => ({ id: it.id, titulo: it.tituloMaterial, url: it.adjuntoUrl!, createdAt: it.createdAt, asignatura: it.asignatura, nivel: (it as any).nivel }));
+                setAdjuntosDisponibles(mapped);
+            } catch (e) {
+                console.warn('No se pudieron cargar adjuntos de Multicopias:', e);
+            }
+        })();
+    }, [currentUser]);
+
     const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -118,8 +137,9 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
     };
 
     const handleAnalyze = async () => {
-        if (!documentName.trim() || !fileData) {
-            setError("Debe subir un documento y asignarle un nombre para analizar.");
+        // Permitir analizar desde archivo local (fileData) o desde URL (selectedAdjuntoUrl)
+        if (!documentName.trim() || (!fileData && !selectedAdjuntoUrl)) {
+            setError("Debe subir un documento o seleccionar uno desde Multicopias, y asignarle un nombre para analizar.");
             return;
         }
         if (!nivelForm || !asignaturaForm) {
@@ -187,7 +207,7 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ prompt, fileData, documentName, nivelForm, asignaturaForm, userId: currentUser.id })
+                body: JSON.stringify({ prompt, fileData, fileUrl: selectedAdjuntoUrl || undefined, documentName, nivelForm, asignaturaForm, userId: currentUser.id })
             });
             if (!response.ok) {
                 const errorBody = await response.text();
@@ -212,6 +232,7 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
             setDocumentName('');
             setSelectedFile(null);
             setFileData(null);
+            setSelectedAdjuntoUrl('');
             setNivelForm('');
             setAsignaturaForm('');
 
@@ -282,7 +303,8 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
 
     const totalQuestions = useMemo(() => {
         if (!selectedAnalysis) return 0;
-        return Object.values(selectedAnalysis.summary).reduce((sum, count) => sum + (count || 0), 0);
+        const values = Object.values(selectedAnalysis.summary) as number[];
+        return values.reduce((sum, count) => sum + (count || 0), 0);
     }, [selectedAnalysis]);
 
     return (
@@ -315,6 +337,27 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
                                 </div>
                             </div>
 
+                            {/* O seleccionar desde Multicopias */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">O seleccionar desde Multicopias</label>
+                                <div className="relative">
+                                    <select
+                                        value={selectedAdjuntoUrl}
+                                        onChange={(e)=> setSelectedAdjuntoUrl(e.target.value)}
+                                        className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 pl-10"
+                                    >
+                                        <option value="">— Seleccione un adjunto —</option>
+                                        {adjuntosDisponibles.map(a => (
+                                            <option key={a.id} value={a.url}>
+                                                {a.titulo} {a.nivel ? `• ${a.nivel}` : ''} {a.asignatura ? `• ${a.asignatura}` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <Paperclip className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1">Se listan adjuntos que hayan sido subidos en Multicopias.</p>
+                            </div>
+
                             {/* Campos nuevos: Nivel y Asignatura */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
@@ -338,7 +381,7 @@ const AnalisisTaxonomico: React.FC<AnalisisTaxonomicoProps> = ({ currentUser }) 
                                 <input type="text" id="documentName" value={documentName} onChange={(e) => setDocumentName(e.target.value)} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" />
                             </div>
 
-                            <button onClick={handleAnalyze} disabled={isLoading || !fileData} className="w-full bg-slate-800 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-700 disabled:bg-slate-400 flex items-center justify-center">
+                            <button onClick={handleAnalyze} disabled={isLoading || (!fileData && !selectedAdjuntoUrl)} className="w-full bg-slate-800 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-700 disabled:bg-slate-400 flex items-center justify-center">
                                 {isLoading ? <Spinner /> : 'Analizar con IA'}
                             </button>
                         </div>

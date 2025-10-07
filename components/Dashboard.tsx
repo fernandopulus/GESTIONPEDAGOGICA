@@ -37,6 +37,8 @@ import DesarrolloProfesionalDocente from '../components/modules/DesarrolloProfes
 import AlternanciaTP from './modules/AlternanciaTP';
 import EvaluacionCompetencias from './modules/EvaluacionCompetencias';
 import SimceFixed from './modules/SimceFixed';
+import Multicopias from './modules/Multicopias';
+import EvaluacionEnsayo from './modules/EvaluacionEnsayo';
 
 // UI
 import { Menu, ChevronLeft, ChevronRight, GraduationCap, ChevronDown } from 'lucide-react';
@@ -164,7 +166,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               {
                 id: 'evaluacion',
                 title: 'Evaluación',
-                items: ['Evaluación de Aprendizajes', 'Evaluaciones Formativas', 'Evaluación de Competencias', 'Actividades Remotas', 'SIMCE'],
+                items: ['Evaluación de Ensayo', 'Evaluación de Aprendizajes', 'Evaluaciones Formativas', 'Evaluación de Competencias', 'Actividades Remotas', 'SIMCE'],
               },
               {
                 id: 'reflexion',
@@ -441,6 +443,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (profile === Profile.SUBDIRECCION) {
       if (activeModule.name === 'Dashboard') return <DashboardSubdireccion currentUser={currentUser} />;
       if (activeModule.name === 'Administración') return <Administracion />;
+      if (activeModule.name === 'Multicopias') return <Multicopias currentUser={currentUser} />;
+      if (activeModule.name === 'Evaluación de Ensayo') return <EvaluacionEnsayo currentUser={currentUser} />;
       if (activeModule.name === 'Seguimiento Curricular') return <SeguimientoCurricular currentUser={currentUser} />;
       if (activeModule.name === 'Acompañamiento docente') return <AcompanamientoDocente currentUser={currentUser} />;
       if (activeModule.name === 'Análisis Taxonómico') return <AnalisisTaxonomico currentUser={currentUser} />;
@@ -456,12 +460,14 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (activeModule.name === 'Planificación') return <PlanificacionDocente currentUser={currentUser} />;
       if (activeModule.name === 'Mis Acompañamientos') return <AcompanamientoDocenteProfesor currentUser={currentUser} />;
       if (activeModule.name === 'Recursos de Aprendizaje') return <RecursosAprendizaje />;
+      if (activeModule.name === 'Multicopias') return <Multicopias currentUser={currentUser} />;
   if (activeModule.name === 'Análisis Taxonómico') return <AnalisisTaxonomico currentUser={currentUser} />;
   if (activeModule.name === 'SIMCE') return <SimceFixed currentUser={currentUser} />;
       if (activeModule.name === 'Interdisciplinario') return <Interdisciplinario />;
       if (activeModule.name === 'Inclusión') return <Inclusion currentUser={currentUser} />;
       if (activeModule.name === 'Actividades Remotas') return <ActividadesRemotas />;
-      if (activeModule.name === 'Evaluación de Aprendizajes') return <EvaluacionAprendizajes />;
+  if (activeModule.name === 'Evaluación de Ensayo') return <EvaluacionEnsayo currentUser={currentUser} />;
+  if (activeModule.name === 'Evaluación de Aprendizajes') return <EvaluacionAprendizajes />;
       if (activeModule.name === 'Evaluaciones Formativas') return <EvaluacionesFormativas currentUser={currentUser} />;
       if (activeModule.name === 'Evaluación de Competencias') return <EvaluacionCompetencias currentUser={currentUser} />;
     }
@@ -470,6 +476,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (activeModule.name === 'Seguimiento Dual') return <SeguimientoDual />;
       if (activeModule.name === 'Asistencia Dual') return <AsistenciaDual />;
       if (activeModule.name === 'Pañol') return <Panol />;
+      if (activeModule.name === 'Multicopias') return <Multicopias currentUser={currentUser} />;
+  if (activeModule.name === 'Evaluación de Ensayo') return <EvaluacionEnsayo currentUser={currentUser} />;
   if (activeModule.name === 'SIMCE') return <SimceFixed currentUser={currentUser} />;
       if (activeModule.name === 'Gestión de Empresas') return <GestionEmpresas />;
       if (activeModule.name === 'Alternancia TP') return <AlternanciaTP />;

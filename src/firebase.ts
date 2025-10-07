@@ -1,16 +1,17 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, connectAuthEmulator } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage"; // ✅ Import correcto
+import { getStorage } from "firebase/storage";
 import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 
+// Config desde variables de entorno (alineada con src/firebaseHelpers/config.ts)
 const firebaseConfig = {
-  apiKey: "AIzaSyBX_n9qoSh0N2c1OAPurBAl6FC9ltX4tK0",
-  authDomain: "plania-clase.firebaseapp.com",
-  projectId: "plania-clase",
-  storageBucket: "plania-clase.appspot.com",
-  messagingSenderId: "978612067917",
-  appId: "1:978612067917:web:299137755ec80939d7c604"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || `${import.meta.env.VITE_FIREBASE_PROJECT_ID}.appspot.com`,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 export const app = initializeApp(firebaseConfig);
@@ -24,7 +25,7 @@ export const auth = getAuth(app);
 // }
 
 export const db = getFirestore(app);
-export const storage = getStorage(app); // ✅ Ahora no dará error
+export const storage = getStorage(app);
 
 // Configuramos explícitamente la región para las funciones
 export const functions = getFunctions(app, 'us-central1'); // Especificar la región us-central1

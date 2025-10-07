@@ -90,7 +90,7 @@ const styles = `
 `;
 import * as XLSX from 'xlsx';
 
-import { CURSOS, ASIGNATURAS } from '../../constants';
+import { CURSOS, ASIGNATURAS, DIAS_SEMANA, HORARIO_BLOQUES } from '../../constants';
 import {
   subscribeToDocentes,
   subscribeToAsignacionesCarga,
@@ -103,14 +103,16 @@ import {
   normalizarHeaderCurso,
   crearNuevoDocente,
 } from '../../src/firebaseHelpers/cargaHorariaHelper';
-
-import {
-  AsignacionCargaHoraria,
-  DocenteCargaHoraria,
-  FuncionLectiva,
-  CursoId,
-  TotalesDocenteCarga,
-  ValidationResultCarga,
+import { saveHorarios, subscribeToHorarios } from '../../src/firebaseHelpers/horariosHelper';
+import { generarHorarioSemanalConIA, ResultadoGeneracionHorario } from '../../src/ai/horarioAI';
+import type { 
+  HorariosGenerados, 
+  CursoId, 
+  AsignacionCargaHoraria, 
+  DocenteCargaHoraria, 
+  ValidationResultCarga, 
+  TotalesDocenteCarga, 
+  FuncionLectiva 
 } from '../../types';
 
 const CrearHorarios: React.FC = () => {
@@ -131,6 +133,12 @@ const CrearHorarios: React.FC = () => {
   const [vistaResumen, setVistaResumen] = useState<'docentes' | 'cursos' | 'funciones' | 'totales'>('docentes');
   const [validaciones, setValidaciones] = useState<ValidationResultCarga[]>([]);
   const [loading, setLoading] = useState(false);
+  // Horarios generados/guardados y vista
+  const [horariosActuales, setHorariosActuales] = useState<HorariosGenerados | null>(null);
+  const [horariosGenerados, setHorariosGenerados] = useState<HorariosGenerados | null>(null);
+  const [conflictosHorario, setConflictosHorario] = useState<string[]>([]);
+  const [fuenteHorario, setFuenteHorario] = useState<'IA' | 'fallback' | null>(null);
+  const [cursoVista, setCursoVista] = useState<string>(CURSOS[0] || '');
 
   const [showAddDocenteModal, setShowAddDocenteModal] = useState(false);
   const [nuevoDocente, setNuevoDocente] = useState<{
@@ -162,6 +170,14 @@ const CrearHorarios: React.FC = () => {
         return { ...rest, funcionesLectivas } as AsignacionCargaHoraria;
       });
       setAsignaciones(asignacionesConvertidas);
+    });
+    return unsub;
+  }, []);
+
+  // Cargar horarios actuales guardados en Firestore
+  useEffect(() => {
+    const unsub = subscribeToHorarios((data) => {
+      setHorariosActuales(data && Object.keys(data).length > 0 ? data : null);
     });
     return unsub;
   }, []);
@@ -432,6 +448,48 @@ const CrearHorarios: React.FC = () => {
     XLSX.utils.book_append_sheet(wb, ws, 'Horarios');
     XLSX.writeFile(wb, `horarios_${new Date().toISOString().split('T')[0]}.xlsx`);
   }, [asignaciones, docentes, totalesByDocente]);
+
+  // Generar horario con IA (con fallback automático)
+  const generarHorarioIA = useCallback(async () => {
+    try {
+      setLoading(true);
+      const cursos = CURSOS as string[];
+      const resultado: ResultadoGeneracionHorario = await generarHorarioSemanalConIA(asignaciones, docentes, cursos);
+      setHorariosGenerados(resultado.horarios);
+      setConflictosHorario(resultado.conflictos || []);
+      setFuenteHorario(resultado.fuente);
+      if (!cursoVista && cursos.length) setCursoVista(cursos[0]);
+    } catch (err) {
+      console.error('Error al generar horario:', err);
+      alert('No se pudo generar el horario.');
+    } finally {
+      setLoading(false);
+    }
+  }, [asignaciones, docentes, cursoVista]);
+
+  const guardarHorarioGenerado = useCallback(async () => {
+    if (!horariosGenerados) {
+      alert('No hay un horario generado para guardar.');
+      return;
+    }
+    try {
+      setLoading(true);
+      await saveHorarios(horariosGenerados);
+      alert('Horario guardado exitosamente');
+      setHorariosActuales(horariosGenerados);
+    } catch (e) {
+      console.error('Error al guardar horario:', e);
+      alert('Error al guardar el horario');
+    } finally {
+      setLoading(false);
+    }
+  }, [horariosGenerados]);
+
+  const descartarHorarioGenerado = useCallback(() => {
+    setHorariosGenerados(null);
+    setConflictosHorario([]);
+    setFuenteHorario(null);
+  }, []);
 
   const guardar = useCallback(async () => {
     const errores = validaciones.filter((v) => v.tipo === 'error');
@@ -772,6 +830,20 @@ const CrearHorarios: React.FC = () => {
             </button>
             
             <button 
+              onClick={generarHorarioIA} 
+              disabled={loading || asignaciones.length === 0} 
+              className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-cyan-500 to-sky-600 hover:from-cyan-600 hover:to-sky-700 text-white rounded-lg transition-all duration-200 shadow-sm group disabled:opacity-50"
+              title="Generar horario semanal automáticamente (IA)"
+            >
+              {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
+              )}
+              <span className="text-xs font-medium mt-1">Generar horario (IA)</span>
+            </button>
+            
+            <button 
               onClick={() => setMostrarResumen(true)} 
               className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white rounded-lg transition-all duration-200 shadow-sm group"
             >
@@ -830,7 +902,7 @@ const CrearHorarios: React.FC = () => {
 
       {/* Contenedor principal de la tabla con mejor manejo responsivo */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-100 dark:border-gray-700 overflow-hidden">
-        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-750 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
           <div className="flex items-center">
             <Briefcase className="w-5 h-5 text-gray-500 dark:text-gray-400 mr-2" />
             <h3 className="font-medium text-gray-700 dark:text-gray-300">Asignaciones de Carga Horaria</h3>
@@ -1278,12 +1350,13 @@ const CrearHorarios: React.FC = () => {
                       });
                     });
                     todas.sort((a, b) => b.totalHoras - a.totalHoras);
-                    if (todas.length === 0)
+                    if (todas.length === 0) {
                       return (
                         <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-750">
                           <p className="text-gray-500 dark:text-gray-400 text-center">No hay funciones lectivas asignadas.</p>
                         </div>
                       );
+                    }
                     return (
                       <div className="grid gap-4">
                         {todas.map((funcion, i) => (
@@ -1458,6 +1531,110 @@ const CrearHorarios: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Panel de generación y vista de Horario */}
+      <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden border border-gray-100 dark:border-gray-700">
+        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+            <h3 className="font-medium text-gray-700 dark:text-gray-300">Generación de Horario Semanal</h3>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <select
+                className="pl-3 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm shadow-sm"
+                value={cursoVista}
+                onChange={(e) => setCursoVista(e.target.value)}
+              >
+                {CURSOS.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            {horariosGenerados && (
+              <>
+                <button
+                  onClick={guardarHorarioGenerado}
+                  disabled={loading}
+                  className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm rounded-lg transition-all duration-200 shadow-sm"
+                >
+                  Guardar horario
+                </button>
+                <button
+                  onClick={descartarHorarioGenerado}
+                  disabled={loading}
+                  className="px-3 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 text-sm rounded-lg transition-all duration-200"
+                >
+                  Descartar
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {fuenteHorario && (
+            <div className={`px-4 py-3 rounded-lg text-sm ${fuenteHorario === 'IA' ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'}`}>
+              Fuente: {fuenteHorario === 'IA' ? 'Generado por IA' : 'Generado por algoritmo (fallback)'}
+            </div>
+          )}
+
+          {conflictosHorario.length > 0 && (
+            <div className="px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm">
+              <div className="font-medium mb-1">Conflictos detectados ({conflictosHorario.length}):</div>
+              <ul className="list-disc ml-5 space-y-1">
+                {conflictosHorario.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Vista previa del horario (por curso) */}
+          {(horariosGenerados || horariosActuales) ? (
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full min-w-[800px] border-collapse">
+                <thead>
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">Bloque</th>
+                    {DIAS_SEMANA.map((dia) => (
+                      <th key={dia} className="px-3 py-2 text-center text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">{dia}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {HORARIO_BLOQUES.map((b) => (
+                    <tr key={b.bloque} className="border-b border-gray-100 dark:border-gray-700">
+                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                        {b.bloque}. {b.inicio} - {b.fin}
+                      </td>
+                      {DIAS_SEMANA.map((dia) => {
+                        const data = (horariosGenerados || horariosActuales)?.[dia]?.[String(b.bloque)]?.[cursoVista];
+                        return (
+                          <td key={`${dia}_${b.bloque}`} className="px-3 py-2 align-top">
+                            {data && (data.asignatura || data.profesor) ? (
+                              <div className="p-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750">
+                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{data.asignatura}</div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400">{data.profesor}</div>
+                              </div>
+                            ) : (
+                              <div className="h-10 rounded bg-white dark:bg-gray-800 border border-dashed border-gray-200 dark:border-gray-700"></div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-750 text-gray-600 dark:text-gray-300 text-sm">
+              Aún no hay un horario guardado ni generado. Usa "Generar horario (IA)" para crear una propuesta.
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="mt-8 p-0 bg-gradient-to-r from-blue-500/5 to-indigo-500/5 dark:from-blue-900/10 dark:to-indigo-900/10 rounded-xl overflow-hidden border border-blue-200 dark:border-blue-800 shadow-sm">
         <div className="px-6 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white">

@@ -400,6 +400,9 @@ export {testGemini} from "./testGemini";
 // Función para generar preguntas SIMCE
 export {generarPreguntasSimce} from "./simceGenerator";
 
+// Notificaciones por correo de Multicopias
+export * from './triggers/multicopiasEmail';
+
 // Funciones para generar evaluaciones con IA
 export {
   generarRubricaConGemini,
@@ -409,3 +412,6 @@ export {
 } from "./evaluacionAprendizajes";
 
 export { api } from "./api";
+
+// Exportar función genérica de IA basada en secreto (sin App Check)
+export { callGeminiAI as callGeminiGeneric } from './aiHelpers';

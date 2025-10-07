@@ -14,6 +14,26 @@ import { db } from './config';
 import { getAllUsers } from './users';
 import { Pregunta, SetPreguntas, ResultadoIntento, AsignaturaSimce } from '../../types/simce';
 
+// Utilidad local: normalizar fecha (Timestamp de Firestore o string) a ISO string
+const normalizeFecha = (value: any): string => {
+  try {
+    if (!value) return new Date().toISOString();
+    // Firestore Timestamp tiene método toDate()
+    if (typeof value?.toDate === 'function') {
+      return value.toDate().toISOString();
+    }
+    // Si ya es Date
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    // Si es number (ms) o string parseable
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) return d.toISOString();
+  } catch {}
+  // Fallback a ahora
+  return new Date().toISOString();
+};
+
 // Colecciones
 const SETS_COLLECTION = 'simce_sets';
 const RESULTADOS_COLLECTION = 'simce_resultados';
@@ -347,22 +367,28 @@ export async function obtenerEvaluacionesEstudiante(estudianteId: string, cursoI
     console.log(`[DEBUG] obtenerEvaluacionesEstudiante - Encontradas ${sets.length} evaluaciones asignadas al curso ${cursoId}`);
     
     // Mapear a una estructura de evaluación esperada por la UI y asegurar que el texto base esté presente
-    const evaluacionesMapeadas = sets.map(set => {
+  const evaluacionesMapeadas = sets.map(set => {
       // Crear la estructura base
       const evaluacion = {
         id: set.id,
         titulo: set.titulo,
         descripcion: set.descripcion || '',
         // Normalizar etiqueta de asignatura para la UI del estudiante
-        asignatura: ((set.asignatura as unknown) as string) as AsignaturaSimce,
+        // Normalizar etiqueta de asignatura a los valores esperados por la UI
+        asignatura: ((): AsignaturaSimce => {
+          const a = String((set as any).asignatura || '').toLowerCase();
+          if (a.includes('lect')) return 'Competencia Lectora';
+          if (a.includes('lóg') || a.includes('log') || a.includes('mat')) return 'Pensamiento Lógico';
+          return (set as any).asignatura as AsignaturaSimce;
+        })(),
         preguntas: [...set.preguntas], // Copia las preguntas para no modificar el original
-        fechaAsignacion: set.fechaCreacion || new Date().toISOString(),
+        fechaAsignacion: (set as any).fechaCreacion || new Date().toISOString(),
         textoBase: '' // Campo adicional para almacenar el texto base a nivel de evaluación
       };
       
   // Si es una evaluación de Competencia Lectora, buscar y asegurar que el texto base esté disponible
-  const asignaturaStr = String((set as any).asignatura || '');
-  if (asignaturaStr === 'Competencia Lectora' || asignaturaStr === 'Lectura') {
+  const asignaturaStr = String((evaluacion.asignatura || '')).toLowerCase();
+  if (asignaturaStr.includes('lect')) {
         // Buscar texto base en cualquiera de las preguntas
         let textoBase = '';
         for (const pregunta of set.preguntas) {
@@ -436,9 +462,11 @@ export async function guardarIntentoEvaluacion(resultado: any): Promise<string> 
       ...resultado,
       setId: resultado.evaluacionId || resultado.setId || null,
       respuestas: resultado.respuestas || [],
-      porcentajeAciertos: resultado.porcentajeLogro || resultado.porcentajeAciertos || 0,
+      porcentajeAciertos: resultado.porcentajeAciertos ?? resultado.porcentajeLogro ?? 0,
+      porcentajeLogro: resultado.porcentajeLogro ?? resultado.porcentajeAciertos ?? 0,
       nivelLogro: resultado.nivelLogro || 'Insuficiente',
       fechaEnvio: resultado.fechaRealizacion || new Date().toISOString(),
+      tiempoRealizacion: resultado.tiempoRealizacion ?? resultado.duracionSegundos ?? null,
     };
 
     return await guardarResultadoIntento(payload as any);
@@ -490,8 +518,9 @@ export async function obtenerEvaluacionesPorProfesor(profesorId: string): Promis
       titulo: set.titulo,
       descripcion: set.descripcion || '',
       asignatura: set.asignatura,
-      preguntas: set.preguntas,
-      fechaCreacion: set.fechaCreacion || new Date().toISOString(),
+      preguntas: Array.isArray((set as any).preguntas) ? (set as any).preguntas : [],
+      // Normalizar fecha por compatibilidad (puede venir como Timestamp)
+      fechaCreacion: normalizeFecha((set as any).fechaCreacion),
       cursosAsignados: set.cursosAsignados || []
     }));
   } catch (error) {
