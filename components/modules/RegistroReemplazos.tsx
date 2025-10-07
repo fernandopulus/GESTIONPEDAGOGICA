@@ -7,7 +7,7 @@ import React, {
   ChangeEvent,
 } from "react";
 import { Reemplazo, User } from "../../types";
-import { ASIGNATURAS, CURSOS } from "../../constants";
+import { ASIGNATURAS, CURSOS, HORARIO_BLOQUES } from "../../constants";
 import {
   saveReemplazo,
   deleteReemplazo,
@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { exportToExcel } from "../../utils/excel/export";
 
-const BLOQUES = Array.from({ length: 12 }, (_, i) => i + 1);
+const BLOQUES = Array.from({ length: HORARIO_BLOQUES.length }, (_, i) => i + 1);
 
 const initialState: Omit<Reemplazo, "id" | "resultado"> = {
   docenteAusente: "",
@@ -302,7 +302,9 @@ const StatsCard: React.FC<{
     const porcentajeRealizadas =
       totalReemplazos > 0 ? (horasRealizadas / totalReemplazos) * 100 : 0;
 
-    const countReducer = (key: 'docenteAusente' | 'docenteReemplazante' | 'asignaturaAusente') => 
+    const countReducer = (
+      key: 'docenteAusente' | 'docenteReemplazante' | 'asignaturaAusente'
+    ): { label: string; value: number }[] =>
       Object.entries(
         dataForPeriod.reduce((acc, r) => {
           const value = r[key];
@@ -312,7 +314,7 @@ const StatsCard: React.FC<{
           return acc;
         }, {} as Record<string, number>)
       )
-      .map(([label, value]) => ({ label, value }))
+      .map(([label, value]) => ({ label, value: value as number }))
       .sort((a, b) => b.value - a.value);
 
     return {

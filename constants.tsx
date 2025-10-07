@@ -201,12 +201,16 @@ export const LECTIVAS_PCT = 0.65;     // 65% horas lectivas (aproximado)
 export const NO_LECTIVAS_PCT = 0.35;  // 35% horas no lectivas (aproximado)
 export const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 export const HORARIO_BLOQUES = [
-    { bloque: 1, inicio: '08:00', fin: '08:40' }, { bloque: 2, inicio: '08:40', fin: '09:20' },
-    { bloque: 3, inicio: '09:35', fin: '10:15' }, { bloque: 4, inicio: '10:15', fin: '10:55' },
-    { bloque: 5, inicio: '11:10', fin: '11:50' }, { bloque: 6, inicio: '11:50', fin: '12:30' },
-    { bloque: 7, inicio: '12:30', fin: '13:10' }, { bloque: 8, inicio: '13:10', fin: '13:50' },
-    { bloque: 9, inicio: '14:30', fin: '15:10' }, { bloque: 10, inicio: '15:10', fin: '15:50' },
-    { bloque: 11, inicio: '16:00', fin: '16:40' }, { bloque: 12, inicio: '16:40', fin: '17:20' },
+    { bloque: 1, inicio: '08:30', fin: '09:10' },
+    { bloque: 2, inicio: '09:10', fin: '09:50' },
+    { bloque: 3, inicio: '10:10', fin: '10:50' },
+    { bloque: 4, inicio: '10:50', fin: '11:30' },
+    { bloque: 5, inicio: '11:40', fin: '12:20' },
+    { bloque: 6, inicio: '12:20', fin: '13:00' },
+    { bloque: 7, inicio: '13:40', fin: '14:20' },
+    { bloque: 8, inicio: '14:20', fin: '15:00' },
+    { bloque: 9, inicio: '15:10', fin: '15:50' },
+    { bloque: 10, inicio: '15:50', fin: '16:30' },
 ];
 
 export const BLOCK_ALLOCATION_RULES = {
