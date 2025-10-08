@@ -1,8 +1,58 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function userDoc() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.token.email));
+    }
+    function currentUserProfile() {
+      return isSignedIn() ? userDoc().data.profile : null;
+    }
+    function currentUserName() {
+      return isSignedIn() ? userDoc().data.nombreCompleto : null;
+    }
+    function isAdminOrSubdir() {
+      let p = currentUserProfile();
+      return isSignedIn() && (p == 'ADMINISTRADOR' || p == 'SUBDIRECCION');
+    }
+    function isSubdirOnly() {
+      let p = currentUserProfile();
+      return isSignedIn() && (p == 'SUBDIRECCION');
+    }
+    function isOwner(resourceData) {
+      return isSignedIn() && (
+        (resourceData.docenteEmailLower != null && lower(resourceData.docenteEmailLower) == lower(request.auth.token.email)) ||
+        (resourceData.docente != null && currentUserName() != null && resourceData.docente == currentUserName()) ||
+        (resourceData.docenteInfo != null && currentUserName() != null && resourceData.docenteInfo == currentUserName())
+      );
+    }
+
+    // Acompañamientos
+    match /acompanamientos/{id} {
+  allow read: if isAdminOrSubdir() || isOwner(resource.data);
+      allow create: if isAdminOrSubdir();
+      allow update, delete: if isAdminOrSubdir();
+    }
+
+    // Ciclos OPR
+    match /ciclos_opr/{id} {
+      allow read: if isAdminOrSubdir() || isOwner(resource.data);
+      // Crear/actualizar/eliminar ciclos: solo Subdirección (según requerimiento)
+      allow create: if isSubdirOnly();
+      allow update: if isSubdirOnly();
+      allow delete: if isSubdirOnly();
+    }
+
+    // Usuarios: solo staff puede leer/escribir listados completos
+    match /usuarios/{uid} {
+      allow read, create, update, delete: if isAdminOrSubdir();
+    }
+
+    // Regla por defecto: Subdirección con permisos completos
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isSubdirOnly();
     }
   }
 }

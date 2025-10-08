@@ -118,6 +118,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
     [Profile.SUBDIRECCION]: [
         { name: 'Dashboard', icon: <ChartBarIcon /> },
         { name: 'Administración', icon: <CogIcon /> },
+        { name: 'Horario del liceo', icon: <ClockIcon /> },
         { name: 'Multicopias', icon: <ClipboardListIcon /> },
         { name: 'Evaluación de Ensayo', icon: <DocumentTextIcon /> },
         { name: 'Seguimiento Curricular', icon: <ClipboardCheckIcon /> },

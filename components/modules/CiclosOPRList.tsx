@@ -12,9 +12,11 @@ import {
 interface Props {
   acompanamientoId: string;
   onEdit?: (ciclo: CicloOPR) => void;
+  readOnly?: boolean;
+  allowDelete?: boolean;
 }
 
-const CiclosOPRList: React.FC<Props> = ({ acompanamientoId, onEdit }) => {
+const CiclosOPRList: React.FC<Props> = ({ acompanamientoId, onEdit, readOnly = false, allowDelete = true }) => {
   const [ciclos, setCiclos] = useState<CicloOPR[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,23 +156,27 @@ const CiclosOPRList: React.FC<Props> = ({ acompanamientoId, onEdit }) => {
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {onEdit && (
-                <button
-                  onClick={() => onEdit(c)}
-                  className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm px-3 py-1 rounded border border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                >
-                  Editar
-                </button>
-              )}
-              <button
-                onClick={() => handleDelete(c.id!)}
-                title="Eliminar ciclo"
-                className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
+            {!readOnly && (
+              <div className="flex items-center gap-2">
+                {onEdit && (
+                  <button
+                    onClick={() => onEdit(c)}
+                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm px-3 py-1 rounded border border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                  >
+                    Editar
+                  </button>
+                )}
+                {allowDelete && (
+                  <button
+                    onClick={() => handleDelete(c.id!)}
+                    title="Eliminar ciclo"
+                    className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       ))}

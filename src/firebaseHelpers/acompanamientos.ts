@@ -262,8 +262,10 @@ export const createAcompanamiento = async (
   acompanamiento: Omit<AcompanamientoDocente, 'id'>
 ): Promise<AcompanamientoDocente> => {
   try {
+    const docenteEmailLower = (acompanamiento as any).docenteEmailLower || auth.currentUser?.email?.toLowerCase() || undefined;
     const dataToSave = {
       ...acompanamiento,
+      docenteEmailLower,
       fecha: Timestamp.fromDate(new Date(acompanamiento.fecha)),
       fechaCreacion: Timestamp.now(),
     };
@@ -329,6 +331,7 @@ export const createCicloOPR = async (ciclo: Omit<CicloOPR, 'id'>): Promise<Ciclo
       acompanamientoId: String(ciclo.acompanamientoId || ''), // Puede ser string vacío para ciclos independientes
       fecha: Timestamp.fromDate(new Date(ciclo.fecha)),
       fechaCreacion: Timestamp.now(),
+      ...(ciclo as any).docenteEmailLower ? { docenteEmailLower: (ciclo as any).docenteEmailLower } : {},
     };
 
     if ((ciclo as any)?.seguimiento?.fecha) {
@@ -360,10 +363,10 @@ export const updateCicloOPR = async (
   try {
     const dataToUpdate: any = { ...updates };
     if (updates.fecha) dataToUpdate.fecha = Timestamp.fromDate(new Date(updates.fecha));
-    if (updates.seguimiento?.fecha) {
+    if ((updates as any).seguimiento?.fecha) {
       dataToUpdate.seguimiento = {
-        ...updates.seguimiento,
-        fecha: Timestamp.fromDate(new Date(updates.seguimiento.fecha)),
+        ...(updates as any).seguimiento,
+        fecha: Timestamp.fromDate(new Date((updates as any).seguimiento.fecha)),
       };
     }
     dataToUpdate.fechaModificacion = Timestamp.now();
@@ -390,7 +393,7 @@ export const getCiclosOPRByAcompanamiento = async (acompanamientoId: string): Pr
         fecha: normalizeFecha(data?.fecha),
       };
       if (data?.seguimiento?.fecha) {
-        base.seguimiento = {
+        (base as any).seguimiento = {
           ...data.seguimiento,
           fecha: normalizeFecha(data.seguimiento.fecha),
         };
@@ -422,7 +425,7 @@ export const getStandaloneCiclosOPR = async (): Promise<CicloOPR[]> => {
         fecha: normalizeFecha(data?.fecha),
       };
       if (data?.seguimiento?.fecha) {
-        base.seguimiento = {
+        (base as any).seguimiento = {
           ...data.seguimiento,
           fecha: normalizeFecha(data.seguimiento.fecha),
         };
@@ -453,7 +456,7 @@ export const getAllCiclosOPR = async (): Promise<CicloOPR[]> => {
         fecha: normalizeFecha(data?.fecha),
       };
       if (data?.seguimiento?.fecha) {
-        base.seguimiento = {
+        (base as any).seguimiento = {
           ...data.seguimiento,
           fecha: normalizeFecha(data.seguimiento.fecha),
         };
@@ -490,7 +493,7 @@ export const subscribeToCiclosOPRByAcompanamiento = (
           fecha: normalizeFecha(data?.fecha),
         };
         if (data?.seguimiento?.fecha) {
-          base.seguimiento = {
+          (base as any).seguimiento = {
             ...data.seguimiento,
             fecha: normalizeFecha(data.seguimiento.fecha),
           };
@@ -551,6 +554,29 @@ export const getAcompanamientosByDocente = async (
     );
     const snap = await getDocs(q);
 
+    return snap.docs.map((d) => {
+      const data = d.data() as any;
+      return {
+        id: d.id,
+        ...data,
+        fecha: normalizeFecha(data?.fecha),
+      } as AcompanamientoDocente;
+    });
+  } catch (_err) {
+    throw new Error('No se pudieron cargar los acompañamientos del docente');
+  }
+};
+
+export const getAcompanamientosByEmail = async (
+  emailLower: string
+): Promise<AcompanamientoDocente[]> => {
+  try {
+    const q = query(
+      collection(db, ACOMPANAMIENTOS_COLLECTION),
+      where('docenteEmailLower', '==', emailLower),
+      orderBy('fecha', 'desc')
+    );
+    const snap = await getDocs(q);
     return snap.docs.map((d) => {
       const data = d.data() as any;
       return {

@@ -260,9 +260,24 @@ export interface DetalleObservacionRow {
   actividades: string;
 }
 
+export interface CicloOPRPlanificacion {
+  preparacion: string;
+  objetivo: string;
+  actividad: string;
+  tiempo: string;
+}
+
+export interface CicloOPRSeguimiento {
+  fecha: string; // ISO string YYYY-MM-DD
+  curso: string;
+  profesor: string;
+  firma: string;
+}
+
 export interface CicloOPR {
   id?: string;
   docenteInfo: string;
+  docenteEmailLower?: string; // para reglas de seguridad y filtrado
   cursoInfo?: string;
   fecha: string; // ISO String
   horaInicio?: string;
@@ -276,7 +291,16 @@ export interface CicloOPR {
     exito: string; // Texto de retroalimentación positiva
     foco: string; // Foco de mejora
     elementosIdentificar: string; // Elementos a identificar
+    modelo?: string;
+    brecha?: {
+      minutoInicial?: string;
+      minutoFinal?: string;
+      preguntas?: string;
+      indicadores?: string;
+    };
   };
+  planificacion?: CicloOPRPlanificacion;
+  seguimiento?: CicloOPRSeguimiento;
   acompanamientoId?: string; // ID del acompañamiento asociado
 }
 
@@ -822,6 +846,7 @@ export interface AcompanamientoDocente {
   curso: string;
   asignatura: string;
   fecha: string;
+  bloques?: string; // Bloques horarios observados (opcional)
   observacionesGenerales?: string;
   planificacionFutura: string;
   rubricaResultados: Record<string, number>;

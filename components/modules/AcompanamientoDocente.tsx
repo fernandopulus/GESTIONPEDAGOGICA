@@ -367,10 +367,9 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
           asignatura: (cicloToEdit as any).asignaturaInfo || '',
         });
       }
-    } else {
-      setFormData(initialCicloState);
     }
-  }, [cicloToEdit, initialCicloState]);
+    // Importante: no reestablecer formData con initialCicloState aquí para no borrar cambios mientras escribe
+  }, [cicloToEdit]);
 
   const handleFieldChange = (
     e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -1329,6 +1328,7 @@ const CicloOPRForm: React.FC<CicloOPRFormProps> = ({
 const AcompanamientoDocente: React.FC = () => {
   const [acompanamientos, setAcompanamientos] = useState<AcompanamientoDocenteType[]>([]);
   const [profesores, setProfesores] = useState<string[]>([]);
+  const [profesoresMap, setProfesoresMap] = useState<Record<string, string>>({}); // nombre -> emailLower
   const [loading, setLoading] = useState(true);
   const [loadingProfesores, setLoadingProfesores] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1380,11 +1380,14 @@ const AcompanamientoDocente: React.FC = () => {
     setLoadingProfesores(true);
     try {
       const allUsers = await getAllUsers();
-      const teacherNames = allUsers
+      const teachers = allUsers
         .filter((user: any) => user.profile === 'PROFESORADO')
-        .map((user: any) => user.nombreCompleto)
-        .sort();
+        .map((user: any) => ({ nombre: user.nombreCompleto, email: (user.email || '').toLowerCase() }));
+      const teacherNames = teachers.map(t => t.nombre).sort();
+      const map: Record<string, string> = {};
+      teachers.forEach(t => { if (t.nombre && t.email) map[t.nombre] = t.email; });
       setProfesores(teacherNames);
+      setProfesoresMap(map);
     } catch (e: any) {
       setError('No se pudo cargar la lista de profesores.');
       console.error('❌ Error al cargar profesores:', e);
@@ -1516,11 +1519,12 @@ const AcompanamientoDocente: React.FC = () => {
     setError(null);
 
     try {
+      const docenteEmailLower = profesoresMap[(formData as any).docente]?.toLowerCase();
       if (editingId) {
-        await updateAcompanamiento(editingId, formData);
+        await updateAcompanamiento(editingId, { ...(formData as any), docenteEmailLower });
         alert('¡Acompañamiento actualizado correctamente!');
       } else {
-        const newRecord = await createAcompanamiento(formData);
+        const newRecord = await createAcompanamiento({ ...(formData as any), docenteEmailLower });
         setEditingId(newRecord.id);
         setFormData(newRecord);
         alert('¡Acompañamiento guardado correctamente! Ahora puedes agregar Ciclos OPR.');
@@ -1773,7 +1777,8 @@ const AcompanamientoDocente: React.FC = () => {
   const handleFieldChange = (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
-    setFormData((prev: any) => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    setFormData((prev: any) => ({ ...prev, [name]: value }));
   };
 
   const renderListView = () => (
@@ -2475,9 +2480,13 @@ const AcompanamientoDocente: React.FC = () => {
                   (typeof (data as any).acompanamientoId === 'string' && (data as any).acompanamientoId) ||
                   undefined;
 
+                // Mapear email del docente para el ciclo
+                const docenteNombre = currentAcompanamiento?.docente || (data as any).docenteInfo || '';
+                const docenteEmailLower = profesoresMap[docenteNombre]?.toLowerCase();
+
                 // If editing an existing cycle
                 if (editingCicloOPR && editingCicloOPR.id) {
-                  await updateCicloOPR(editingCicloOPR.id, data as Partial<CicloOPR>);
+                  await updateCicloOPR(editingCicloOPR.id, { ...(data as any), docenteEmailLower } as Partial<CicloOPR>);
                   alert('Ciclo OPR actualizado exitosamente');
                 } else {
                   // Creating a new cycle
@@ -2485,12 +2494,14 @@ const AcompanamientoDocente: React.FC = () => {
                     // For standalone cycles, we can create them without an accompaniment ID
                     const dataToSave = {
                       ...data,
+                      docenteEmailLower,
                       acompanamientoId: '', // Empty for standalone cycles
                     };
                     await createCicloOPR(dataToSave as any);
                   } else {
                     const dataToSave = {
                       ...data,
+                      docenteEmailLower,
                       acompanamientoId: String(acompId),
                     };
                     await createCicloOPR(dataToSave as any);

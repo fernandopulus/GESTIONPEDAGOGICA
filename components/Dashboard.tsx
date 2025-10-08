@@ -39,6 +39,7 @@ import EvaluacionCompetencias from './modules/EvaluacionCompetencias';
 import SimceFixed from './modules/SimceFixed';
 import Multicopias from './modules/Multicopias';
 import EvaluacionEnsayo from './modules/EvaluacionEnsayo';
+import HorarioSemanalLiceo from './modules/HorarioSemanalLiceo';
 
 // UI
 import { Menu, ChevronLeft, ChevronRight, GraduationCap, ChevronDown } from 'lucide-react';
@@ -264,6 +265,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 title: 'Gestión',
                 items: [
                   'Administración',
+                  'Horario del liceo',
                   'Registro de inasistencias y reemplazos docentes',
                   'Crear horarios',
                   'Seguimiento de acciones pedagógicas',
@@ -443,6 +445,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (profile === Profile.SUBDIRECCION) {
       if (activeModule.name === 'Dashboard') return <DashboardSubdireccion currentUser={currentUser} />;
       if (activeModule.name === 'Administración') return <Administracion />;
+  if (activeModule.name === 'Horario del liceo') return <HorarioSemanalLiceo />;
       if (activeModule.name === 'Multicopias') return <Multicopias currentUser={currentUser} />;
       if (activeModule.name === 'Evaluación de Ensayo') return <EvaluacionEnsayo currentUser={currentUser} />;
       if (activeModule.name === 'Seguimiento Curricular') return <SeguimientoCurricular currentUser={currentUser} />;

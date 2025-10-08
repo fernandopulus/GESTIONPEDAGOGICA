@@ -104,7 +104,7 @@ import {
   crearNuevoDocente,
 } from '../../src/firebaseHelpers/cargaHorariaHelper';
 import { saveHorarios, subscribeToHorarios } from '../../src/firebaseHelpers/horariosHelper';
-import { generarHorarioSemanalConIA, ResultadoGeneracionHorario } from '../../src/ai/horarioAI';
+import { generarHorarioSemanalConIA, ResultadoGeneracionHorario, ReglasGeneracion } from '../../src/ai/horarioAI';
 import type { 
   HorariosGenerados, 
   CursoId, 
@@ -139,6 +139,13 @@ const CrearHorarios: React.FC = () => {
   const [conflictosHorario, setConflictosHorario] = useState<string[]>([]);
   const [fuenteHorario, setFuenteHorario] = useState<'IA' | 'fallback' | null>(null);
   const [cursoVista, setCursoVista] = useState<string>(CURSOS[0] || '');
+  const [showReglasModal, setShowReglasModal] = useState(false);
+  const [reglas, setReglas] = useState<ReglasGeneracion>({
+    maxConsecutivasMecanica: 10,
+    maxConsecutivasPlanGeneral: 3,
+    practicasPM: false,
+    terceroSoloPlanGeneral: false,
+  });
 
   const [showAddDocenteModal, setShowAddDocenteModal] = useState(false);
   const [nuevoDocente, setNuevoDocente] = useState<{
@@ -454,7 +461,7 @@ const CrearHorarios: React.FC = () => {
     try {
       setLoading(true);
       const cursos = CURSOS as string[];
-      const resultado: ResultadoGeneracionHorario = await generarHorarioSemanalConIA(asignaciones, docentes, cursos);
+      const resultado: ResultadoGeneracionHorario = await generarHorarioSemanalConIA(asignaciones, docentes, cursos, reglas);
       setHorariosGenerados(resultado.horarios);
       setConflictosHorario(resultado.conflictos || []);
       setFuenteHorario(resultado.fuente);
@@ -465,7 +472,7 @@ const CrearHorarios: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [asignaciones, docentes, cursoVista]);
+  }, [asignaciones, docentes, cursoVista, reglas]);
 
   const guardarHorarioGenerado = useCallback(async () => {
     if (!horariosGenerados) {
@@ -830,7 +837,7 @@ const CrearHorarios: React.FC = () => {
             </button>
             
             <button 
-              onClick={generarHorarioIA} 
+              onClick={() => setShowReglasModal(true)} 
               disabled={loading || asignaciones.length === 0} 
               className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-cyan-500 to-sky-600 hover:from-cyan-600 hover:to-sky-700 text-white rounded-lg transition-all duration-200 shadow-sm group disabled:opacity-50"
               title="Generar horario semanal automáticamente (IA)"
@@ -1603,28 +1610,65 @@ const CrearHorarios: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {HORARIO_BLOQUES.map((b) => (
-                    <tr key={b.bloque} className="border-b border-gray-100 dark:border-gray-700">
-                      <td className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
-                        {b.bloque}. {b.inicio} - {b.fin}
-                      </td>
-                      {DIAS_SEMANA.map((dia) => {
-                        const data = (horariosGenerados || horariosActuales)?.[dia]?.[String(b.bloque)]?.[cursoVista];
+                  {(() => {
+                    // Utilidad para convertir HH:MM a minutos
+                    const toMin = (t: string) => {
+                      const [h, m] = t.split(":").map(Number);
+                      return h * 60 + m;
+                    };
+                    const rows: Array<{ type: 'block' | 'break'; label: string; start?: string; end?: string; bloque?: number }> = [];
+                    for (let i = 0; i < HORARIO_BLOQUES.length; i++) {
+                      const b = HORARIO_BLOQUES[i];
+                      rows.push({ type: 'block', label: `Bloque ${b.bloque}`, start: b.inicio, end: b.fin, bloque: b.bloque });
+                      const next = HORARIO_BLOQUES[i + 1];
+                      if (next) {
+                        const gap = toMin(next.inicio) - toMin(b.fin);
+                        if (gap > 0) {
+                          const isLunch = b.fin === '13:00' && next.inicio === '13:40';
+                          rows.push({ type: 'break', label: isLunch ? 'Almuerzo' : 'Recreo', start: b.fin, end: next.inicio });
+                        }
+                      }
+                    }
+
+                    return rows.map((row, idx) => {
+                      if (row.type === 'break') {
                         return (
-                          <td key={`${dia}_${b.bloque}`} className="px-3 py-2 align-top">
-                            {data && (data.asignatura || data.profesor) ? (
-                              <div className="p-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750">
-                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{data.asignatura}</div>
-                                <div className="text-xs text-gray-600 dark:text-gray-400">{data.profesor}</div>
-                              </div>
-                            ) : (
-                              <div className="h-10 rounded bg-white dark:bg-gray-800 border border-dashed border-gray-200 dark:border-gray-700"></div>
-                            )}
-                          </td>
+                          <tr key={`break_${idx}`} className="border-b border-gray-100 dark:border-gray-700">
+                            <td className={`px-3 py-2 text-sm font-medium whitespace-nowrap ${row.label === 'Almuerzo' ? 'text-amber-700' : 'text-slate-600'}`}>
+                              {row.label} {row.start && row.end ? `(${row.start} – ${row.end})` : ''}
+                            </td>
+                            {DIAS_SEMANA.map((dia) => (
+                              <td key={`${dia}_break_${idx}`} className={`px-3 py-2 align-top ${row.label === 'Almuerzo' ? 'bg-amber-50 dark:bg-amber-900/20' : 'bg-slate-50 dark:bg-slate-800/50'}`}></td>
+                            ))}
+                          </tr>
                         );
-                      })}
-                    </tr>
-                  ))}
+                      }
+                      const b = HORARIO_BLOQUES.find(x => x.bloque === row.bloque)!;
+                      return (
+                        <tr key={`block_${row.bloque}`} className="border-b border-gray-100 dark:border-gray-700">
+                          <td className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                            {row.bloque}. {row.start} - {row.end}
+                          </td>
+                          {DIAS_SEMANA.map((dia) => {
+                            const data = (horariosGenerados || horariosActuales)?.[dia]?.[String(row.bloque!)]?.[cursoVista];
+                            const fridayAfterOne = dia === 'Viernes' && b && b.fin > '13:00';
+                            return (
+                              <td key={`${dia}_${row.bloque}`} className={`px-3 py-2 align-top ${fridayAfterOne ? 'bg-red-50 dark:bg-red-900/20' : ''}`} title={fridayAfterOne ? 'No permitido (Viernes > 13:00)' : ''}>
+                                {data && (data.asignatura || data.profesor) ? (
+                                  <div className={`p-2 rounded border ${fridayAfterOne ? 'border-red-300 dark:border-red-700 bg-red-50/60 dark:bg-red-900/20' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750'}`}>
+                                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{data.asignatura}</div>
+                                    <div className="text-xs text-gray-600 dark:text-gray-400">{data.profesor}</div>
+                                  </div>
+                                ) : (
+                                  <div className={`h-10 rounded ${fridayAfterOne ? 'bg-red-50/60 dark:bg-red-900/10 border border-red-200 dark:border-red-800' : 'bg-white dark:bg-gray-800 border border-dashed border-gray-200 dark:border-gray-700'}`}></div>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -1718,6 +1762,78 @@ const CrearHorarios: React.FC = () => {
       </div>
 
       <AddDocenteModal />
+
+      {showReglasModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-scaleIn">
+            <div className="p-5 bg-gradient-to-r from-cyan-500 to-sky-600 text-white flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Reglas para generar horario</h2>
+              <button onClick={() => setShowReglasModal(false)} className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/20 transition-all duration-200">
+                <CloseIcon className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-medium mb-1">Máximo de horas de mecánica juntas</label>
+                <select
+                  value={reglas.maxConsecutivasMecanica}
+                  onChange={(e) => setReglas((r) => ({ ...r, maxConsecutivasMecanica: parseInt(e.target.value) }))}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                >
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Máximo de horas de plan general juntas</label>
+                <select
+                  value={reglas.maxConsecutivasPlanGeneral}
+                  onChange={(e) => setReglas((r) => ({ ...r, maxConsecutivasPlanGeneral: parseInt(e.target.value) }))}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                >
+                  {[1,2,3].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-medium">Asignaturas prácticas en horario P.M.</label>
+                  <p className="text-xs text-gray-500">Ubica taller/práctica/laboratorio en bloques desde 13:40</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={!!reglas.practicasPM}
+                  onChange={(e) => setReglas((r) => ({ ...r, practicasPM: e.target.checked }))}
+                  className="w-5 h-5"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-medium">3º medio sólo horas de plan general</label>
+                  <p className="text-xs text-gray-500">Para cursos 3º*, restringe a asignaturas de plan general</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={!!reglas.terceroSoloPlanGeneral}
+                  onChange={(e) => setReglas((r) => ({ ...r, terceroSoloPlanGeneral: e.target.checked }))}
+                  className="w-5 h-5"
+                />
+              </div>
+            </div>
+            <div className="p-4 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+              <button onClick={() => setShowReglasModal(false)} className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200">Cancelar</button>
+              <button
+                onClick={async () => { setShowReglasModal(false); await generarHorarioIA(); }}
+                className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white flex items-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" /> Generar con estas reglas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">

@@ -1,9 +1,6 @@
 import {onCall, CallableRequest, HttpsError} from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
-// *** INICIO DE LA CORRECCIÓN: Se cambia el paquete de IA ***
-import {GoogleGenerativeAI} from "@google/generative-ai";
-import {defineString} from "firebase-functions/params";
-// *** FIN DE LA CORRECCIÓN ***
+import { callGemini } from './aiHelpers';
 
 // Inicializa Firebase Admin
 admin.initializeApp();
@@ -14,9 +11,8 @@ const auth = admin.auth();
 // INICIO: CÓDIGO CORREGIDO PARA LA FUNCIÓN DE IA
 // =================================================================
 
-// Define un parámetro secreto para la API Key de Gemini.
-// Deberás configurar este valor en tu proyecto de Firebase.
-const geminiApiKey = defineString("GEMINI_API_KEY");
+// El secreto GEMINI_API_KEY se declara en la configuración de la función
+// mediante 'secrets' en onCall. No es necesario leerlo aquí.
 
 // Definición de tu función en la nube 'callGeminiAI'
 export const callGeminiAI = onCall({
@@ -44,14 +40,9 @@ export const callGeminiAI = onCall({
   }
 
   try {
-    // *** NUEVA LÓGICA DE INICIALIZACIÓN Y LLAMADA ***
-  const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-  const model = genAI.getGenerativeModel({model: "gemini-pro-latest"});
-
-    // El prompt se construye aquí en el servidor
+    // Construir prompt a partir del contexto (manteniendo compatibilidad)
     const prompt = `
-Genera una retroalimentación pedagógica detallada y un resumen de 
-observaciones basado en estos datos del acompañamiento docente:
+Genera una retroalimentación pedagógica detallada y un resumen de observaciones basado en estos datos del acompañamiento docente:
 
 DATOS DEL ACOMPAÑAMIENTO:
 - Docente: ${contexto.docente}
@@ -66,26 +57,27 @@ ${contexto.rubricaResultados}
 OBSERVACIONES GENERALES:
 ${contexto.observacionesGenerales}
 
-Por favor genera una retroalimentación con tono técnico pedagógico, clara y 
-constructiva, con la siguiente estructura:
+Por favor genera una retroalimentación con tono técnico pedagógico, clara y constructiva, con la siguiente estructura:
 1. INTRODUCCIÓN: Contextualización del acompañamiento
 2. FORTALEZAS OBSERVADAS: Aspectos destacados del desempeño docente
 3. OPORTUNIDADES DE MEJORA: Áreas a desarrollar
 4. RECOMENDACIONES ESPECÍFICAS: Estrategias concretas para implementar
 5. CONCLUSIÓN: Síntesis y próximos pasos
 
-La retroalimentación debe ser profesional, constructiva y orientada al 
-desarrollo profesional docente.`;
+La retroalimentación debe ser profesional, constructiva y orientada al desarrollo profesional docente.`;
 
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const responseText = response.text();
+    // Usar helper centralizado que prioriza gemini-2.5-pro
+    const { text: aiResponseText, modelUsed } = await callGemini({
+      prompt,
+      mode: 'standard',
+      config: { maxOutputTokens: 2048, temperature: 0.7, topK: 40, topP: 0.95 }
+    });
 
-    if (!responseText) {
+    if (!aiResponseText) {
       throw new Error("La respuesta de la IA no contiene texto.");
     }
 
-    return {response: responseText};
+    return { response: aiResponseText, modelUsed };
   } catch (error) {
     console.error("Error al llamar a la API de Gemini:", error);
     throw new HttpsError(

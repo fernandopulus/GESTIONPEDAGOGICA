@@ -5,8 +5,10 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
     getAcompanamientosByDocente,
+    getAcompanamientosByEmail,
     getRubricaPersonalizada,
 } from '../../src/firebaseHelpers/acompanamientos'; // ← RUTA CORRECTA
+import CiclosOPRList from './CiclosOPRList';
 
 type RubricStructure = typeof defaultRubric;
 
@@ -52,11 +54,23 @@ const AcompanamientoDocenteProfesor: React.FC<AcompanamientoDocenteProfesorProps
     const fetchMisAcompanamientos = useCallback(async () => {
         setLoading(true);
         try {
-            const acompanamientos = await getAcompanamientosByDocente(currentUser.nombreCompleto);
+            // Preferimos filtrar por email si existe en auth/usuarios
+            let acompanamientos;
+            if (currentUser.email) {
+                try {
+                    acompanamientos = await getAcompanamientosByEmail(currentUser.email.toLowerCase());
+                } catch {
+                    acompanamientos = await getAcompanamientosByDocente(currentUser.nombreCompleto);
+                }
+            } else {
+                acompanamientos = await getAcompanamientosByDocente(currentUser.nombreCompleto);
+            }
             // Ordenar por fecha más reciente primero
-            const sortedAcompanamientos = acompanamientos.sort(
-                (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
-            );
+            const sortedAcompanamientos = acompanamientos.sort((a, b) => {
+                const da = a.fecha ? new Date(a.fecha).getTime() : 0;
+                const db = b.fecha ? new Date(b.fecha).getTime() : 0;
+                return db - da;
+            });
             setMisAcompanamientos(sortedAcompanamientos);
             setError(null);
         } catch (e) {
@@ -70,7 +84,7 @@ const AcompanamientoDocenteProfesor: React.FC<AcompanamientoDocenteProfesorProps
     // Cargar rúbrica personalizada si existe
     const fetchRubricaPersonalizada = useCallback(async () => {
         try {
-            const rubricaPersonalizada = await getRubricaPersonalizada();
+            const rubricaPersonalizada = await getRubricaPersonalizada(currentUser.nombreCompleto);
             if (rubricaPersonalizada) {
                 setRubrica(rubricaPersonalizada);
             }
@@ -78,7 +92,7 @@ const AcompanamientoDocenteProfesor: React.FC<AcompanamientoDocenteProfesorProps
             console.error("Error al cargar rúbrica personalizada", e);
             // No es crítico, usar la rúbrica por defecto
         }
-    }, []);
+    }, [currentUser.nombreCompleto]);
 
     useEffect(() => {
         fetchMisAcompanamientos();
@@ -248,6 +262,19 @@ const AcompanamientoDocenteProfesor: React.FC<AcompanamientoDocenteProfesorProps
                         </div>
                     </div>
                 </div>
+
+                {selectedAcompanamiento.id && (
+                  <div className="mt-10">
+                    <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-3">Mis Ciclos OPR</h3>
+                                        <div className="border rounded-lg dark:border-slate-700 p-4 bg-white dark:bg-slate-800">
+                                                                    <CiclosOPRList
+                                                                        acompanamientoId={selectedAcompanamiento.id}
+                                                                        readOnly
+                                                                        allowDelete={false}
+                                                                    />
+                                        </div>
+                  </div>
+                )}
             </div>
         );
     }
