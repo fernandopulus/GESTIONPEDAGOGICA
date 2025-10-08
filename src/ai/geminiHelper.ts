@@ -261,7 +261,12 @@ async function getProModel(): Promise<any> {
 }
 
 // Adapter ligero exportado con nombre en español para compatibilidad general
-export async function generarConIA(prompt: string, maxRetries = 2, useProModel = true): Promise<string> {
+export async function generarConIA(
+  prompt: string,
+  maxRetries: number = 2,
+  useProModel: boolean = true,
+  moduleLabel: string = 'General'
+): Promise<string> {
   // Registrar el tipo de solicitud para diagnóstico
   const promptPreview = prompt.substring(0, 50).replace(/\n/g, ' ') + '...';
   console.log(`Iniciando generación con IA. Prompt: "${promptPreview}"`);
@@ -270,15 +275,15 @@ export async function generarConIA(prompt: string, maxRetries = 2, useProModel =
   // 1) Intentar primero vía Cloud Functions (usa secreto GEMINI_API_KEY en backend)
   try {
     // Primero una versión genérica sin App Check (aiHelpers)
-    const callableGeneric = httpsCallable(functions, 'callGeminiGeneric');
-    const resGeneric: any = await callableGeneric({ prompt, module: 'Horarios' });
+  const callableGeneric = httpsCallable(functions, 'callGeminiGeneric');
+  const resGeneric: any = await callableGeneric({ prompt, module: moduleLabel });
     if (resGeneric?.data?.success && typeof resGeneric.data.response === 'string' && resGeneric.data.response.length > 0) {
       console.log('Respuesta obtenida vía Cloud Function (genérica).');
       return resGeneric.data.response as string;
     }
     // Si no hay éxito, intentar variante con App Check
-    const callable = httpsCallable(functions, 'callGeminiAI');
-    const res: any = await callable({ prompt, module: 'Horarios' });
+  const callable = httpsCallable(functions, 'callGeminiAI');
+  const res: any = await callable({ prompt, module: moduleLabel });
     if (res?.data?.success && typeof res.data.response === 'string' && res.data.response.length > 0) {
       console.log('Respuesta obtenida vía Cloud Function (secreto en backend).');
       return res.data.response as string;

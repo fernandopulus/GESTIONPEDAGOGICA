@@ -44,6 +44,7 @@ import {
   uploadFileImproved as uploadFile,
   getCiclosOPRByAcompanamiento,
   getStandaloneCiclosOPR,
+  repairCiclosOPRForAcompanamiento,
 } from '../../src/firebaseHelpers/acompanamientos';
 import { getAllUsers as getAllUsersFromFirebase } from '../../src/firebaseHelpers/users';
 import { auth } from '../../src/firebase';
@@ -1789,6 +1790,30 @@ const AcompanamientoDocente: React.FC = () => {
         </h2>
         <div className="flex gap-2">
           <button
+            onClick={async () => {
+              try {
+                const candidates = acompanamientos.filter(a => a.id);
+                let updated = 0;
+                for (const a of candidates) {
+                  const expectedEmail = profesoresMap[a.docente || '']?.toLowerCase();
+                  if (expectedEmail && (a as any).docenteEmailLower !== expectedEmail) {
+                    await updateAcompanamiento(a.id!, { ...(a as any), docenteEmailLower: expectedEmail });
+                    updated++;
+                  }
+                }
+                await fetchAcompanamientos();
+                alert(`Reparación completada: ${updated} acompañamiento(s) actualizados`);
+              } catch (e: any) {
+                console.error('Error reparando acompañamientos:', e);
+                alert('No se pudo reparar docenteEmailLower en algunos acompañamientos.');
+              }
+            }}
+            className="bg-amber-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-600 flex items-center gap-2 transition-colors"
+            title="Backfill docenteEmailLower desde el nombre del docente"
+          >
+            Reparar Acompañamientos
+          </button>
+          <button
             onClick={() => {
               handleCreateNew();
               setActiveTab('general');
@@ -1898,6 +1923,22 @@ const AcompanamientoDocente: React.FC = () => {
                           className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-semibold text-sm px-3 py-1 rounded border border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                         >
                           + Ciclo OPR
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await repairCiclosOPRForAcompanamiento(record);
+                              await fetchAllCiclosOPR();
+                              alert(`Reparación completada: ${res.updated}/${res.total} ciclos actualizados`);
+                            } catch (e: any) {
+                              console.error('Error reparando ciclos:', e);
+                              alert('No se pudo ejecutar la reparación de ciclos.');
+                            }
+                          }}
+                          title="Reparar visibilidad de ciclos (backfill)"
+                          className="text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-300 font-semibold text-sm px-3 py-1 rounded border border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                        >
+                          Reparar Ciclos
                         </button>
                         <button
                           onClick={() => handleDelete(record.id!)}

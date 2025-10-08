@@ -40,6 +40,7 @@ import SimceFixed from './modules/SimceFixed';
 import Multicopias from './modules/Multicopias';
 import EvaluacionEnsayo from './modules/EvaluacionEnsayo';
 import HorarioSemanalLiceo from './modules/HorarioSemanalLiceo';
+import Intranet from './modules/Intranet';
 
 // UI
 import { Menu, ChevronLeft, ChevronRight, GraduationCap, ChevronDown } from 'lucide-react';
@@ -162,7 +163,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               {
                 id: 'planificacion',
                 title: 'Planificación',
-                items: ['Planificación', 'Recursos de Aprendizaje', 'Interdisciplinario', 'Inclusión'],
+                items: ['Intranet', 'Planificación', 'Recursos de Aprendizaje', 'Interdisciplinario', 'Inclusión'],
               },
               {
                 id: 'evaluacion',
@@ -223,7 +224,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             })}
             {/* Otros módulos que no estén en los grupos definidos */}
             {modules.filter((m) => ![
-              'Planificación','Recursos de Aprendizaje','Interdisciplinario','Inclusión',
+              'Intranet','Planificación','Recursos de Aprendizaje','Interdisciplinario','Inclusión',
               'Evaluación de Aprendizajes','Evaluaciones Formativas','Evaluación de Competencias','Actividades Remotas','SIMCE',
               'Análisis Taxonómico','Mis Acompañamientos','Desarrollo Profesional',
               'Muro de Anuncios','Mensajería Interna','Generador de Actas'
@@ -233,7 +234,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <div className="px-2 pb-2">
                   {modules
                     .filter((m) => ![
-                      'Planificación','Recursos de Aprendizaje','Interdisciplinario','Inclusión',
+                      'Intranet','Planificación','Recursos de Aprendizaje','Interdisciplinario','Inclusión',
                       'Evaluación de Aprendizajes','Evaluaciones Formativas','Evaluación de Competencias','Actividades Remotas','SIMCE',
                       'Análisis Taxonómico','Mis Acompañamientos','Desarrollo Profesional',
                       'Muro de Anuncios','Mensajería Interna','Generador de Actas'
@@ -264,6 +265,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 id: 'sd_gestion',
                 title: 'Gestión',
                 items: [
+                  'Intranet',
                   'Administración',
                   'Horario del liceo',
                   'Registro de inasistencias y reemplazos docentes',
@@ -328,6 +330,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
             {/* Otros no agrupados (p. ej., SIMCE) */}
             {modules.filter((m) => ![
+              'Intranet',
               'Administración',
               'Registro de inasistencias y reemplazos docentes',
               'Crear horarios',
@@ -348,6 +351,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <div className="px-2 pb-2">
                   {modules
                     .filter((m) => ![
+                      'Intranet',
                       'Administración',
                       'Registro de inasistencias y reemplazos docentes',
                       'Crear horarios',
@@ -435,6 +439,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
 
     // ===== Módulos comunes =====
+  if (activeModule.name === 'Intranet') return <Intranet currentUser={currentUser} />;
     if (activeModule.name === 'Calendario Académico') return <CalendarioAcademico profile={profile} />;
     if (activeModule.name === 'Muro de Anuncios') return <MuroAnuncios currentUser={currentUser} />;
     if (activeModule.name === 'Mensajería Interna') return <MensajeriaInterna currentUser={currentUser} refreshUnreadCount={refreshUnreadCount} />;

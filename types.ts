@@ -1054,6 +1054,23 @@ export interface ApiCallLog {
     module: string;
 }
 
+// --- Intranet (Blog interno) ---
+export interface IntranetEntry {
+  id: string;
+  titulo: string;
+  resumen?: string; // texto breve opcional
+  contenidoHtml: string; // contenido enriquecido (HTML seguro, sin scripts)
+  etiquetas?: string[]; // tags/labels
+  enlaces?: { titulo?: string; url: string }[];
+  imagenes?: { url: string; titulo?: string; storagePath?: string }[]; // URLs públicas (si se sube a Storage, incluye storagePath)
+  videos?: { url: string; titulo?: string; storagePath?: string }[]; // URLs (YouTube, Drive, etc.)
+  creadoPor: string; // email del autor
+  autorNombre?: string;
+  createdAt: string; // ISO String
+  updatedAt?: string; // ISO String
+  destacado?: boolean; // para resaltar en la grilla
+}
+
 // Planificación de Actividades
 export interface TareaActividad {
     id: string;

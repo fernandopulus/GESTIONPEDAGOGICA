@@ -522,6 +522,68 @@ export const deleteCicloOPR = async (id: string): Promise<void> => {
 };
 
 // =========================
+// MANTENCIÓN / REPARACIÓN
+// =========================
+
+/**
+ * Repara ciclos OPR asociados a un acompañamiento, completando campos de propiedad/visibilidad
+ * para cumplir con las reglas de lectura por parte del docente:
+ * - docenteEmailLower
+ * - docenteInfo (nombre del docente)
+ * - docente (nombre del docente)
+ * - cursoInfo, asignaturaInfo (opcional, útil para consistencia)
+ */
+export const repairCiclosOPRForAcompanamiento = async (
+  acompanamiento: AcompanamientoDocente
+): Promise<{ updated: number; total: number }> => {
+  const acompId = acompanamiento.id;
+  if (!acompId) return { updated: 0, total: 0 };
+
+  const ciclosQ = query(
+    collection(db, CICLOS_OPR_COLLECTION),
+    where('acompanamientoId', '==', acompId)
+  );
+  const snap = await getDocs(ciclosQ);
+
+  if (snap.empty) return { updated: 0, total: 0 };
+
+  const batch = writeBatch(db);
+  let updatesCount = 0;
+
+  snap.forEach((d) => {
+    const data = d.data() as any;
+    const toUpdate: Record<string, any> = {};
+
+    if (!data.docenteEmailLower && (acompanamiento as any).docenteEmailLower) {
+      toUpdate.docenteEmailLower = (acompanamiento as any).docenteEmailLower;
+    }
+    if (!data.docenteInfo && acompanamiento.docente) {
+      toUpdate.docenteInfo = acompanamiento.docente;
+    }
+    if (!data.docente && acompanamiento.docente) {
+      toUpdate.docente = acompanamiento.docente;
+    }
+    if (!data.cursoInfo && acompanamiento.curso) {
+      toUpdate.cursoInfo = acompanamiento.curso;
+    }
+    if (!data.asignaturaInfo && acompanamiento.asignatura) {
+      toUpdate.asignaturaInfo = acompanamiento.asignatura;
+    }
+
+    if (Object.keys(toUpdate).length > 0) {
+      updatesCount++;
+      batch.update(doc(db, CICLOS_OPR_COLLECTION, d.id), toUpdate);
+    }
+  });
+
+  if (updatesCount > 0) {
+    await batch.commit();
+  }
+
+  return { updated: updatesCount, total: snap.size };
+};
+
+// =========================
 // UTILIDADES EXPORTADAS
 // =========================
 

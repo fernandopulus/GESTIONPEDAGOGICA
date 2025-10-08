@@ -1,4 +1,93 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "acompanamientos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "docenteEmailLower", "order": "ASCENDING" },
+        { "fieldPath": "fecha", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "acompanamientos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "docente", "order": "ASCENDING" },
+        { "fieldPath": "fecha", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ciclos_opr",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "acompanamientoId", "order": "ASCENDING" },
+        { "fieldPath": "fecha", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "simce_resultados",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estudianteId", "order": "ASCENDING" },
+        { "fieldPath": "fechaEnvio", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "simce_resultados",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "setId", "order": "ASCENDING" },
+        { "fieldPath": "fechaEnvio", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "simce_sets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "creadorId", "order": "ASCENDING" },
+        { "fieldPath": "fechaCreacion", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "simce_evaluaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "creadorId", "order": "ASCENDING" },
+        { "fieldPath": "fechaCreacion", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "simce_sets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cursosAsignados", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "fechaCreacion", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "simce_evaluaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cursosAsignados", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "fechaCreacion", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "simce_sets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estudiantesAsignados", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "fechaCreacion", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "simce_evaluaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estudiantesAsignados", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "fechaCreacion", "order": "DESCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

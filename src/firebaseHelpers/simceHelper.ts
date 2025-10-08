@@ -59,45 +59,54 @@ export async function actualizarSetPreguntas(id: string, data: Partial<SetPregun
 }
 
 export async function obtenerSetPreguntas(id: string): Promise<SetPreguntas> {
+  console.log(`[DEBUG] obtenerSetPreguntas - Buscando set con ID: ${id}`);
+
+  // 1) Intentar primero en 'simce_evaluaciones' (flujo más común para estudiantes)
   try {
-    console.log(`[DEBUG] obtenerSetPreguntas - Buscando set con ID: ${id}`);
-    
-    // Intentar primero en la colección principal de sets
-    let docSnap = await getDoc(doc(db, SETS_COLLECTION, id));
-    
-    // Si no está en la colección principal, intentar en la colección de evaluaciones
-    if (!docSnap.exists()) {
-      console.log(`[DEBUG] obtenerSetPreguntas - No encontrado en ${SETS_COLLECTION}, buscando en simce_evaluaciones`);
-      docSnap = await getDoc(doc(db, 'simce_evaluaciones', id));
-    }
-    
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      console.log(`[DEBUG] obtenerSetPreguntas - Set encontrado: ${data.titulo || 'Sin título'}`);
-      console.log(`[DEBUG] obtenerSetPreguntas - Cantidad de preguntas: ${data.preguntas?.length || 0}`);
-      
-      // Verificar y registrar detalles del set
+    const evalSnap = await getDoc(doc(db, 'simce_evaluaciones', id));
+    if (evalSnap.exists()) {
+      const data = evalSnap.data();
+      console.log(`[DEBUG] obtenerSetPreguntas - Encontrado en simce_evaluaciones: ${data.titulo || 'Sin título'}`);
+      console.log(`[DEBUG] obtenerSetPreguntas - Preguntas: ${data.preguntas?.length || 0}`);
       if (data.preguntas && data.preguntas.length > 0) {
-        // Verificar si alguna pregunta tiene textoBase
         for (let i = 0; i < data.preguntas.length; i++) {
           const pregunta = data.preguntas[i];
           if (pregunta.textoBase) {
-            console.log(`[DEBUG] obtenerSetPreguntas - Texto base encontrado en pregunta ${i + 1}`);
-            console.log(`[DEBUG] obtenerSetPreguntas - Extracto del texto base: ${pregunta.textoBase.substring(0, 50)}...`);
+            console.log(`[DEBUG] obtenerSetPreguntas - Texto base (eval) en pregunta ${i + 1}`);
             break;
           }
         }
       }
-      
-      return { id: docSnap.id, ...data } as SetPreguntas;
-    } else {
-      console.log(`[DEBUG] obtenerSetPreguntas - No se encontró set con ID: ${id} en ninguna colección`);
-      throw new Error('El set de preguntas no existe');
+      return { id: evalSnap.id, ...data } as SetPreguntas;
     }
-  } catch (error) {
-    console.error('Error al obtener set de preguntas:', error);
-    throw new Error('No se pudo obtener el set de preguntas');
+  } catch (e) {
+    console.warn('[DEBUG] obtenerSetPreguntas - Error al leer simce_evaluaciones, intentando simce_sets:', e);
   }
+
+  // 2) Intentar luego en 'simce_sets'
+  try {
+    const setSnap = await getDoc(doc(db, SETS_COLLECTION, id));
+    if (setSnap.exists()) {
+      const data = setSnap.data();
+      console.log(`[DEBUG] obtenerSetPreguntas - Encontrado en ${SETS_COLLECTION}: ${data.titulo || 'Sin título'}`);
+      console.log(`[DEBUG] obtenerSetPreguntas - Preguntas: ${data.preguntas?.length || 0}`);
+      if (data.preguntas && data.preguntas.length > 0) {
+        for (let i = 0; i < data.preguntas.length; i++) {
+          const pregunta = data.preguntas[i];
+          if (pregunta.textoBase) {
+            console.log(`[DEBUG] obtenerSetPreguntas - Texto base (set) en pregunta ${i + 1}`);
+            break;
+          }
+        }
+      }
+      return { id: setSnap.id, ...data } as SetPreguntas;
+    }
+  } catch (e) {
+    console.warn('[DEBUG] obtenerSetPreguntas - Error al leer simce_sets:', e);
+  }
+
+  console.log(`[DEBUG] obtenerSetPreguntas - No se encontró set con ID: ${id} en ninguna colección o sin permisos`);
+  throw new Error('No se pudo obtener el set de preguntas');
 }
 
 export async function obtenerSetsPreguntasPorProfesor(profesorId: string): Promise<SetPreguntas[]> {

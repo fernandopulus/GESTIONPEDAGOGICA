@@ -2,6 +2,21 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
+    // Intranet: imágenes y videos
+    match /intranet/images/{fileName=**} {
+      allow read: if true; // imágenes pueden ser públicas
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024 // 10MB
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /intranet/videos/{fileName=**} {
+      allow read: if request.auth != null; // videos internos, lectura autenticada
+      allow write: if request.auth != null
+                   && request.resource.size < 200 * 1024 * 1024 // 200MB
+                   && request.resource.contentType.matches('video/.*');
+    }
+
     // videos_opr/{acompId}/{cicloId}/{file...}
     match /videos_opr/{acompId}/{cicloId}/{filePath=**} {
       allow read: if request.auth != null;

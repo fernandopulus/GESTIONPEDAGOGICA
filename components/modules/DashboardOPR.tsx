@@ -138,7 +138,7 @@ DEVUELVE SOLO JSON (sin comentarios) con este esquema:
     setAiRaw(null);
     try {
       const prompt = buildPrompt();
-      const resp = await generarConIA(prompt, 1, true);
+  const resp = await generarConIA(prompt, 1, true, 'OPR');
       const json = safeJSON(resp);
       if (json) {
         setAiInsights(json);

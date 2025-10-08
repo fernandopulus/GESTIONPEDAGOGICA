@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { AcompanamientoDocente, User } from '../../types';
+import { AcompanamientoDocente, User, CicloOPR } from '../../types';
 import { RUBRICA_ACOMPANAMIENTO_DOCENTE as defaultRubric, PDFIcon } from '../../constants';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -9,6 +9,8 @@ import {
     getRubricaPersonalizada,
 } from '../../src/firebaseHelpers/acompanamientos'; // ← RUTA CORRECTA
 import CiclosOPRList from './CiclosOPRList';
+import { getStandaloneCiclosOPR } from '../../src/firebaseHelpers/acompanamientos';
+import CicloOPRViewerModal from '../modals/CicloOPRViewerModal';
 
 type RubricStructure = typeof defaultRubric;
 
@@ -49,6 +51,8 @@ const AcompanamientoDocenteProfesor: React.FC<AcompanamientoDocenteProfesorProps
     const [error, setError] = useState<string | null>(null);
     const [selectedAcompanamiento, setSelectedAcompanamiento] = useState<AcompanamientoDocente | null>(null);
     const [rubrica, setRubrica] = useState<RubricStructure>(defaultRubric);
+    const [standaloneCiclos, setStandaloneCiclos] = useState<CicloOPR[]>([]);
+    const [selectedStandaloneCiclo, setSelectedStandaloneCiclo] = useState<CicloOPR | null>(null);
 
     // Cargar acompañamientos del profesor desde Firestore
     const fetchMisAcompanamientos = useCallback(async () => {
@@ -98,6 +102,29 @@ const AcompanamientoDocenteProfesor: React.FC<AcompanamientoDocenteProfesorProps
         fetchMisAcompanamientos();
         fetchRubricaPersonalizada();
     }, [fetchMisAcompanamientos, fetchRubricaPersonalizada]);
+
+    // Cargar Ciclos OPR independientes visibles para el profesor (sin acompañamientoId)
+    useEffect(() => {
+        const cargarStandalone = async () => {
+            try {
+                const all = await getStandaloneCiclosOPR();
+                const emailLower = (currentUser.email || '').toLowerCase();
+                const nombre = currentUser.nombreCompleto;
+                const filtrados = all.filter(c =>
+                    (c as any).docenteEmailLower === emailLower ||
+                    (c as any).docenteInfo === nombre ||
+                    (c as any).docente === nombre
+                );
+                // Orden más reciente primero
+                filtrados.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
+                setStandaloneCiclos(filtrados);
+            } catch (e) {
+                console.warn('No se pudieron cargar Ciclos OPR independientes.', e);
+                setStandaloneCiclos([]);
+            }
+        };
+        cargarStandalone();
+    }, [currentUser.email, currentUser.nombreCompleto]);
     
     const domainPerformance = useMemo(() => {
         if (!selectedAcompanamiento) return [];
@@ -326,6 +353,43 @@ const AcompanamientoDocenteProfesor: React.FC<AcompanamientoDocenteProfesorProps
                     </div>
                 )}
             </div>
+
+            {/* Ciclos OPR Independientes (sin acompañamiento) visibles para el profesor */}
+            <div className="mt-10">
+                <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-3">Ciclos OPR Independientes</h3>
+                {standaloneCiclos.length === 0 ? (
+                    <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded border dark:border-slate-700 text-slate-600 dark:text-slate-300">
+                        No tienes ciclos OPR independientes registrados.
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {standaloneCiclos.map((c) => (
+                            <button
+                              key={c.id}
+                              onClick={() => setSelectedStandaloneCiclo(c)}
+                              className="w-full text-left p-4 border dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 shadow-sm hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                            >
+                                <div className="flex justify-between items-start gap-3">
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-semibold text-slate-800 dark:text-slate-200">{c.nombreCiclo || 'Ciclo'}</span>
+                                            <span className="text-sm text-slate-500">• {new Date(c.fecha).toLocaleDateString('es-CL')}</span>
+                                        </div>
+                                        {(c as any).cursoInfo && (c as any).asignaturaInfo && (
+                                            <div className="text-sm text-slate-600 dark:text-slate-300">
+                                                {(c as any).cursoInfo} • {(c as any).asignaturaInfo}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+            {selectedStandaloneCiclo && (
+              <CicloOPRViewerModal ciclo={selectedStandaloneCiclo} onClose={() => setSelectedStandaloneCiclo(null)} />
+            )}
         </div>
     );
 };
