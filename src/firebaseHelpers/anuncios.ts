@@ -1,4 +1,4 @@
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../firebase'; // Ajusta la ruta según tu configuración
 import { Anuncio } from '../../types';
 
@@ -7,15 +7,32 @@ const COLLECTION_NAME = 'anuncios';
 /**
  * Obtener todos los anuncios desde Firestore
  */
-export const getAllAnuncios = async (): Promise<Anuncio[]> => {
+export const getAllAnuncios = async (opts?: { profile?: string; curso?: string }): Promise<Anuncio[]> => {
     try {
-        const q = query(collection(db, COLLECTION_NAME), orderBy('fechaPublicacion', 'desc'));
-        const querySnapshot = await getDocs(q);
-        
-        return querySnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        })) as Anuncio[];
+        // Estrategia: para estudiantes, limitar por destinatarios.tipo == 'Todos' o 'Cursos' conteniendo su curso.
+        // Para otros perfiles, mantener consulta general ordenada.
+        const base = collection(db, COLLECTION_NAME);
+        let snapshots: any[] = [];
+
+        if (opts?.profile === 'ESTUDIANTE') {
+            const queries = [
+                query(base, where('destinatarios.tipo', '==', 'Todos'), orderBy('fechaPublicacion', 'desc')),
+                ...(opts?.curso ? [query(base, where('destinatarios.tipo', '==', 'Cursos'), where('destinatarios.cursos', 'array-contains', opts.curso), orderBy('fechaPublicacion', 'desc'))] : [])
+            ];
+            for (const qy of queries) {
+                const snap = await getDocs(qy);
+                snapshots.push(...snap.docs);
+            }
+            // Deduplicar por id
+            const map = new Map<string, any>();
+            snapshots.forEach(d => map.set(d.id, d));
+            const docs = Array.from(map.values());
+            return docs.map(doc => ({ id: doc.id, ...doc.data() })) as Anuncio[];
+        } else {
+            const qy = query(base, orderBy('fechaPublicacion', 'desc'));
+            const snap = await getDocs(qy);
+            return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Anuncio[];
+        }
     } catch (error) {
         console.error('Error al obtener anuncios:', error);
         throw new Error('No se pudieron cargar los anuncios');

@@ -1069,6 +1069,15 @@ export interface IntranetEntry {
   createdAt: string; // ISO String
   updatedAt?: string; // ISO String
   destacado?: boolean; // para resaltar en la grilla
+  // Estilo de tarjeta: gradiente persistente
+  gradiente?: {
+    presetId?: string;
+    from: string; // color hex o rgb
+    to: string;   // color hex o rgb
+    angle: number; // grados
+  };
+  // Icono manual opcional (si no está presente, se elige automáticamente según el contenido)
+  iconId?: string;
 }
 
 // Planificación de Actividades

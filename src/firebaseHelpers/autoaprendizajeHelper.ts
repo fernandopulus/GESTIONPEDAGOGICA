@@ -13,6 +13,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db } from './config';
+import { auth } from '../firebase';
 import { ActividadRemota, RespuestaEstudianteActividad, User } from '../../types';
 
 // --- CONSTANTES DE COLECCIONES ---
@@ -140,47 +141,82 @@ export const subscribeToActividadesDisponibles = (
 ) => {
   console.log('🔔 Suscribiéndose a actividades disponibles para:', currentUser.nombreCompleto);
   
-  const q = query(collection(db, ACTIVIDADES_COLLECTION), orderBy('fechaCreacion', 'desc'));
-  
-  const unsubscribe = onSnapshot(
-    q, 
-    {
-      next: (querySnapshot) => {
-        try {
-          console.log('📋 Actividades recibidas desde Firestore:', querySnapshot.docs.length);
-          
-          const todasActividades = querySnapshot.docs.map(doc => convertFirestoreDoc<ActividadRemota>(doc));
-          
-          const actividadesDisponibles = todasActividades.filter(actividad => {
-            if (!actividad.cursosDestino?.length && !actividad.estudiantesDestino?.length) {
-              const nivelNum = actividad.nivel.charAt(0);
-              return currentUser.curso?.startsWith(nivelNum);
-            }
-            if (actividad.cursosDestino?.includes(currentUser.curso || '')) {
-              return true;
-            }
-            if (actividad.estudiantesDestino?.includes(currentUser.nombreCompleto)) {
-              return true;
-            }
-            return false;
-          });
-          
-          console.log('✅ Actividades filtradas para el estudiante:', actividadesDisponibles.length);
-          onSuccess(actividadesDisponibles);
-        } catch (processingError: any) {
-          console.error('❌ Error procesando datos de actividades:', processingError);
-          const error = handleFirestoreError(processingError, 'procesamiento de actividades');
-          onError?.(error);
-        }
-      },
-      error: (error) => {
-        const firestoreError = handleFirestoreError(error, 'suscripción a actividades');
-        onError?.(firestoreError);
-      }
-    }
-  );
+  // Importante: las reglas requieren que las queries incluyan filtros de destino
+  const subs: Array<() => void> = [];
+  const combined = new Map<string, ActividadRemota>();
 
-  return unsubscribe;
+  const pushAndEmit = (docs: any[]) => {
+    for (const d of docs) {
+      const conv = convertFirestoreDoc<ActividadRemota>(d);
+      combined.set(conv.id, conv);
+    }
+    const arr = Array.from(combined.values());
+    // Ordenar en cliente por fecha si existe
+    arr.sort((a, b) => new Date(b.fechaCreacion || '').getTime() - new Date(a.fechaCreacion || '').getTime());
+    console.log('✅ Actividades combinadas para el estudiante:', arr.length);
+    onSuccess(arr);
+  };
+
+  try {
+    // 1) Por curso asignado
+    const curso = currentUser.curso || '';
+    if (curso) {
+      const qCurso = query(collection(db, ACTIVIDADES_COLLECTION), where('cursosDestino', 'array-contains', curso));
+      const unsubCurso = onSnapshot(qCurso, {
+        next: (snap) => {
+          console.log('📋 Actividades por curso:', snap.docs.length);
+          pushAndEmit(snap.docs);
+        },
+        error: (err) => {
+          // Si es permission-denied, degradar a warning y continuar (puede faltar usuarios/{email} o curso)
+          if (err?.code === 'permission-denied') {
+            console.warn('⚠️ Sin permisos para actividades por curso; verificando doc usuarios/{email} y campo curso.', err);
+          } else {
+            const firestoreError = handleFirestoreError(err, 'suscripción a actividades por curso');
+            onError?.(firestoreError);
+          }
+        }
+      });
+      subs.push(unsubCurso);
+    }
+
+  // 2) Por destinatario específico (email o uid del Auth). Evitamos nombreCompleto e IDs internos.
+  const authUid = auth.currentUser?.uid;
+  const email = currentUser.email;
+  const nombre = currentUser.nombreCompleto;
+  const candidates = [email, authUid, nombre].filter(Boolean);
+    // array-contains-any admite hasta 10 elementos
+    if (candidates.length) {
+      const qEst = query(collection(db, ACTIVIDADES_COLLECTION), where('estudiantesDestino', 'array-contains-any', candidates as any));
+      const unsubEst = onSnapshot(qEst, {
+        next: (snap) => {
+          console.log('📋 Actividades por estudiante:', snap.docs.length);
+          pushAndEmit(snap.docs);
+        },
+        error: (err) => {
+          // Si es permission-denied, degradar a warning y continuar con otras subscripciones
+          if (err?.code === 'permission-denied') {
+            console.warn('⚠️ Sin permisos para actividades por estudiante; continuando con filtro por curso.', err);
+          } else {
+            const firestoreError = handleFirestoreError(err, 'suscripción a actividades por estudiante');
+            onError?.(firestoreError);
+          }
+        }
+      });
+      subs.push(unsubEst);
+    }
+
+    // Si no hay curso ni identificadores válidos, emitimos vacío y avisamos
+    if (subs.length === 0) {
+      console.warn('⚠️ Usuario sin curso ni identificadores para filtrar actividades.');
+      onSuccess([]);
+    }
+  } catch (outerErr: any) {
+    const firestoreError = handleFirestoreError(outerErr, 'configuración de suscripciones de actividades');
+    onError?.(firestoreError);
+  }
+
+  return () => subs.forEach(u => u && u());
 };
 
 /**
@@ -192,59 +228,76 @@ export const subscribeToRespuestasEstudiante = (
   onError?: (error: FirestoreError) => void
 ) => {
   console.log('🔔 Suscribiéndose a respuestas del estudiante:', estudianteId);
-  
-  // Intentar primero con la consulta completa (con índice)
-  const qWithIndex = query(
-    collection(db, RESPUESTAS_COLLECTION), 
-    where('estudianteId', '==', estudianteId),
-    orderBy('fechaCompletado', 'desc')
-  );
-  
-  const unsubscribe = onSnapshot(
-    qWithIndex,
-    {
-      next: (querySnapshot) => {
-        try {
-          console.log('📝 Respuestas recibidas desde Firestore:', querySnapshot.docs.length);
-          
-          const respuestas = querySnapshot.docs.map(doc => {
-            const respuesta = convertFirestoreDoc<RespuestaEstudianteActividad>(doc);
-            
-            console.log(`📄 Respuesta ${doc.id}:`, {
-              actividadId: respuesta.actividadId,
-              puntaje: respuesta.puntaje,
-              nota: respuesta.nota,
-              requiereRevision: respuesta.requiereRevisionDocente,
-              revisionCompletada: respuesta.revisionDocente?.completada,
-              fechaCompletado: respuesta.fechaCompletado
-            });
-            
-            return respuesta;
-          });
-          
-          console.log('✅ Enviando respuestas procesadas al componente:', respuestas.length);
-          onSuccess(respuestas);
-        } catch (processingError: any) {
-          console.error('❌ Error procesando respuestas:', processingError);
-          const error = handleFirestoreError(processingError, 'procesamiento de respuestas');
-          onError?.(error);
-        }
-      },
-      error: (error) => {
-        const firestoreError = handleFirestoreError(error, 'suscripción a respuestas');
-        
-        // Si es error de índice, intentar consulta alternativa
-        if (error.code === 'failed-precondition' && error.message?.includes('requires an index')) {
-          console.log('⚠️ Error de índice detectado, intentando consulta alternativa...');
-          return subscribeToRespuestasEstudianteAlternative(estudianteId, onSuccess, onError);
-        }
-        
-        onError?.(firestoreError);
-      }
-    }
-  );
 
-  return unsubscribe;
+  // Considerar posibles identificadores válidos (UID y/o email)
+  const uid = auth.currentUser?.uid;
+  const email = auth.currentUser?.email;
+  const candidates = Array.from(new Set([estudianteId, uid, email].filter(Boolean))) as string[];
+  if (candidates.length === 0) {
+    console.warn('⚠️ Sin identificadores válidos para suscripción de respuestas.');
+    onSuccess([]);
+    return () => {};
+  }
+
+  const unsubscribers: Array<() => void> = [];
+  const combined = new Map<string, RespuestaEstudianteActividad>();
+  let activeSubscriptions = 0;
+  let failures = 0;
+
+  const emit = () => {
+    const arr = Array.from(combined.values()).sort((a, b) =>
+      new Date(b.fechaCompletado).getTime() - new Date(a.fechaCompletado).getTime()
+    );
+    console.log('✅ Enviando respuestas procesadas al componente (combinadas):', arr.length);
+    onSuccess(arr);
+  };
+
+  for (const id of candidates) {
+    const qSimple = query(
+      collection(db, RESPUESTAS_COLLECTION),
+      where('estudianteId', '==', id)
+    );
+    activeSubscriptions++;
+    const unsub = onSnapshot(
+      qSimple,
+      {
+        next: (querySnapshot) => {
+          try {
+            console.log(`📝 Respuestas recibidas para identificador ${id}:`, querySnapshot.docs.length);
+            for (const d of querySnapshot.docs) {
+              const r = convertFirestoreDoc<RespuestaEstudianteActividad>(d);
+              combined.set(r.id, r);
+            }
+            emit();
+          } catch (processingError: any) {
+            console.error('❌ Error procesando respuestas:', processingError);
+            const error = handleFirestoreError(processingError, 'procesamiento de respuestas');
+            onError?.(error);
+          }
+        },
+        error: (error) => {
+          // Degradar permission-denied a warning y continuar con otras suscripciones
+          if (error?.code === 'permission-denied') {
+            console.warn(`⚠️ Sin permisos para suscripción de respuestas con identificador ${id}. Continuando con otras.`, error);
+            failures++;
+            if (failures === candidates.length) {
+              const firestoreError = handleFirestoreError(error, 'suscripción a respuestas (todas fallaron)');
+              onError?.(firestoreError);
+            }
+            return;
+          }
+          // Si es error de índice (poco probable sin orderBy), no reintentamos aquí
+          const firestoreError = handleFirestoreError(error, 'suscripción a respuestas');
+          onError?.(firestoreError);
+        }
+      }
+    );
+    unsubscribers.push(unsub);
+  }
+
+  return () => {
+    for (const u of unsubscribers) try { u(); } catch {}
+  };
 };
 
 /**
@@ -302,11 +355,15 @@ export const saveRespuestaActividad = async (
       actividadId: respuestaData.actividadId,
       estudianteId: respuestaData.estudianteId,
       puntaje: respuestaData.puntaje,
-      nota: respuestaData.nota
+      calificacion: respuestaData.calificacion
     });
-    
+    // Unificación: forzar uso de UID del Auth como estudianteId cuando esté disponible
+    const estudianteUid = auth.currentUser?.uid;
+    const estudianteIdFinal = estudianteUid || respuestaData.estudianteId;
+
     const dataToSend = {
       ...respuestaData,
+      estudianteId: estudianteIdFinal,
       fechaCompletado: Timestamp.fromDate(new Date(respuestaData.fechaCompletado)),
     };
     
@@ -425,10 +482,8 @@ export const debugRespuestasEstudiante = async (estudianteId: string) => {
         id: respuesta.id,
         actividadId: respuesta.actividadId,
         puntaje: `${respuesta.puntaje}/${respuesta.puntajeMaximo}`,
-        nota: respuesta.nota,
-        requiereRevision: respuesta.requiereRevisionDocente,
-        revisionCompletada: respuesta.revisionDocente?.completada,
-        puntajeDocente: respuesta.revisionDocente?.puntajeDocente,
+        calificacion: respuesta.calificacion,
+        tieneFeedbackDetallado: !!respuesta.retroalimentacionDetallada,
         fechaCompletado: respuesta.fechaCompletado
       });
     });

@@ -62,6 +62,40 @@ export const subscribeToCalificaciones = (callback: (data: CalificacionesFormati
 };
 
 /**
+ * Se suscribe a las calificaciones SOLO de las evaluaciones indicadas.
+ * Devuelve actualizaciones parciales: { [evaluacionId]: { ...mapaCalificaciones } }
+ */
+export const subscribeToCalificacionesPorEvaluaciones = (
+  evaluacionIds: string[],
+  callback: (data: CalificacionesFormativas) => void
+) => {
+  if (!evaluacionIds || evaluacionIds.length === 0) {
+    // Nada que escuchar
+    return () => {};
+  }
+
+  const unsubscribes = evaluacionIds.map((id) => {
+    const ref = doc(db, CALIFICACIONES_COLLECTION, id);
+    return onSnapshot(ref, (docSnap) => {
+      if (docSnap.exists()) {
+        callback({ [id]: docSnap.data() } as CalificacionesFormativas);
+      } else {
+        // Si no existe, reportamos vacío para ese id
+        callback({ [id]: {} } as CalificacionesFormativas);
+      }
+    }, (error) => {
+      // Degradamos silenciosamente permission-denied para no romper la UI del estudiante
+      if (error?.code !== 'permission-denied') {
+        console.error(`Error subscribing to grade doc ${id}:`, error);
+      }
+      // En caso de error, no llamamos callback para evitar sobrescribir estado válido
+    });
+  });
+
+  return () => unsubscribes.forEach(u => u());
+};
+
+/**
  * Se suscribe a los trabajos grupales del curso del estudiante.
  */
 export const subscribeToTrabajosGrupalesEstudiante = (curso: string, callback: (data: TrabajoGrupal[]) => void) => {

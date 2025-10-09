@@ -3,7 +3,7 @@ import { User, EvaluacionFormativa, CalificacionesFormativas, TrabajoGrupal, Ins
 import { ROLES_TRABAJO_GRUPAL, INSIGNIAS_GAMIFICACION } from '../../constants';
 import {
     subscribeToEvaluacionesEstudiante,
-    subscribeToCalificaciones,
+    subscribeToCalificacionesPorEvaluaciones,
     subscribeToTrabajosGrupalesEstudiante,
     updateTrabajoGrupal
 } from '../../src/firebaseHelpers/evaluacionEstudianteHelper'; // AJUSTA la ruta a tu nuevo helper
@@ -49,7 +49,7 @@ const EvaluacionFormativaEstudiante: React.FC<EvaluacionFormativaEstudianteProps
         setLoading(true);
 
         const unsubEvaluaciones = subscribeToEvaluacionesEstudiante(currentUser.curso, setEvaluaciones);
-        const unsubCalificaciones = subscribeToCalificaciones(setCalificaciones);
+
         const unsubTrabajos = subscribeToTrabajosGrupalesEstudiante(currentUser.curso, (data) => {
             setTrabajosGrupales(data);
             setLoading(false); // La carga se considera completa cuando llega la última suscripción
@@ -57,10 +57,30 @@ const EvaluacionFormativaEstudiante: React.FC<EvaluacionFormativaEstudianteProps
 
         return () => {
             unsubEvaluaciones();
-            unsubCalificaciones();
             unsubTrabajos();
         };
     }, [currentUser.curso]);
+
+    // Suscripción a calificaciones por IDs visibles para el estudiante
+    useEffect(() => {
+        if (evaluaciones.length === 0) {
+            setCalificaciones({});
+            return;
+        }
+
+        const evalIds = evaluaciones.map(ev => ev.id);
+        // Acumulador que mergea actualizaciones parciales
+        let state: CalificacionesFormativas = {};
+        const mergeCallback = (partial: CalificacionesFormativas) => {
+            state = { ...state, ...partial };
+            setCalificaciones(state);
+        };
+        const unsubscribe = subscribeToCalificacionesPorEvaluaciones(evalIds, mergeCallback);
+
+        return () => {
+            unsubscribe();
+        };
+    }, [evaluaciones]);
 
     const resultadosPorAsignatura = useMemo<ResultadoAsignatura[]>(() => {
         if (!currentUser.curso) return [];
@@ -72,7 +92,8 @@ const EvaluacionFormativaEstudiante: React.FC<EvaluacionFormativaEstudianteProps
             return acc;
         }, {} as Record<string, EvaluacionFormativa[]>);
 
-        return Object.entries(evsPorAsignatura).map(([asignatura, evs]) => {
+        const entries = Object.entries(evsPorAsignatura) as [string, EvaluacionFormativa[]][];
+        return entries.map(([asignatura, evs]) => {
             let sumaNotas = 0;
             let count = 0;
 

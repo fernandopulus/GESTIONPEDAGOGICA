@@ -35,7 +35,7 @@ const MuroAnuncios: React.FC<MuroAnunciosProps> = ({ currentUser }) => {
     const fetchAnuncios = useCallback(async () => {
         setLoading(true);
         try {
-            const anunciosFS = await getAllAnuncios();
+            const anunciosFS = await getAllAnuncios({ profile: currentUser.profile, curso: currentUser.curso });
             setAnuncios(anunciosFS);
             setError(null);
         } catch (e) {

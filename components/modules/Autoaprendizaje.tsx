@@ -875,9 +875,12 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
       }
     );
 
+    // Determinar identificador del estudiante según reglas (uid o email)
+    const estudianteAuthId = auth.currentUser?.uid || auth.currentUser?.email || currentUser.email || currentUser.id;
+
     // SUSCRIPCIÓN A RESPUESTAS con manejo de errores robusto
     const unsubRespuestas = subscribeToRespuestasEstudiante(
-      currentUser.id, 
+      estudianteAuthId, 
       (data) => {
         console.log('📝 Respuestas del estudiante recibidas:', data.length);
         data.forEach((resp, i) => {
@@ -961,9 +964,11 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
   const handleCompleteActivity = useCallback(async (submission: any, detailedFeedback: DetailedFeedback) => {
     if (!selectedActividad) return;
 
+    const estudianteAuthId = auth.currentUser?.uid || auth.currentUser?.email || currentUser.email || currentUser.id;
+
     console.log('🚀 COMPLETANDO ACTIVIDAD:', {
       actividadId: selectedActividad.id,
-      estudianteId: currentUser.id,
+      estudianteId: estudianteAuthId,
       puntaje: submission.puntaje,
       nota: submission.nota
     });
@@ -974,7 +979,7 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
 
     const baseResult: Omit<RespuestaEstudianteActividad, 'id'> = {
       actividadId: selectedActividad.id,
-      estudianteId: currentUser.id,
+      estudianteId: estudianteAuthId,
       fechaCompletado: new Date().toISOString(),
       ...submission,
       retroalimentacionDetallada: detailedFeedback,

@@ -81,8 +81,17 @@ service cloud.firestore {
       // - Estudiante: solo si está asignado por nombre o por curso
       allow read: if isAdminOrSubdir() || isProfesor() || (
         isSignedIn() && (
-          (resource.data.estudiantesDestino != null && currentUserName() != null && resource.data.estudiantesDestino.hasAny([currentUserName(), request.auth.token.email, request.auth.uid])) ||
-          (resource.data.cursosDestino != null && currentUserCourse() != null && resource.data.cursosDestino.hasAny([currentUserCourse()]))
+          (
+            resource.data.estudiantesDestino != null && (
+              // Si hay nombre en el doc de usuarios, permite por nombre
+              (currentUserName() != null && resource.data.estudiantesDestino.hasAny([currentUserName()])) ||
+              // Siempre permite por email o uid sin requerir userDoc
+              resource.data.estudiantesDestino.hasAny([request.auth.token.email, request.auth.uid])
+            )
+          ) ||
+          (
+            resource.data.cursosDestino != null && currentUserCourse() != null && resource.data.cursosDestino.hasAny([currentUserCourse()])
+          )
         )
       );
       // Escritura: Profesorado o Staff
@@ -111,8 +120,15 @@ service cloud.firestore {
     match /pruebas_estandarizadas/{id} {
       allow read: if isAdminOrSubdir() || isProfesor() || (
         isSignedIn() && (
-          (resource.data.estudiantesDestino != null && currentUserName() != null && resource.data.estudiantesDestino.hasAny([currentUserName(), request.auth.token.email, request.auth.uid])) ||
-          (resource.data.cursosDestino != null && currentUserCourse() != null && resource.data.cursosDestino.hasAny([currentUserCourse()]))
+          (
+            resource.data.estudiantesDestino != null && (
+              (currentUserName() != null && resource.data.estudiantesDestino.hasAny([currentUserName()])) ||
+              resource.data.estudiantesDestino.hasAny([request.auth.token.email, request.auth.uid])
+            )
+          ) ||
+          (
+            resource.data.cursosDestino != null && currentUserCourse() != null && resource.data.cursosDestino.hasAny([currentUserCourse()])
+          )
         )
       );
       allow create, update, delete: if isAdminOrSubdir() || isProfesor();
@@ -181,16 +197,148 @@ service cloud.firestore {
     }
 
     match /entregas_interdisciplinarias/{id} {
-      allow read: if isAdminOrSubdir() || isProfesor() || (isSignedIn() && resource.data.estudianteId == request.auth.uid);
-      allow create: if isSignedIn() && request.resource.data.estudianteId == request.auth.uid;
-      allow update: if isAdminOrSubdir() || isProfesor() || (isSignedIn() && resource.data.estudianteId == request.auth.uid);
-      allow delete: if isAdminOrSubdir() || isProfesor() || (isSignedIn() && resource.data.estudianteId == request.auth.uid);
+      allow read: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && (resource.data.estudianteId == request.auth.uid || resource.data.estudianteId == request.auth.token.email)
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.estudianteId == request.auth.uid || request.resource.data.estudianteId == request.auth.token.email
+      );
+      allow update: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && (resource.data.estudianteId == request.auth.uid || resource.data.estudianteId == request.auth.token.email)
+      );
+      allow delete: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && (resource.data.estudianteId == request.auth.uid || resource.data.estudianteId == request.auth.token.email)
+      );
     }
 
     // Regla por defecto: Subdirección con permisos completos
     match /{document=**} {
       // Profesores: lectura y edición por defecto en el resto de colecciones (excepto donde existan reglas más específicas)
       allow read, write: if isSubdirOnly() || isProfesor();
+    }
+
+    // =====================
+    // Evaluaciones Formativas (lectura por curso para estudiantes)
+    // =====================
+    match /evaluaciones_formativas/{id} {
+      // Lectura: staff/profe o estudiante del curso de la evaluación
+      allow read: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && resource.data.curso != null && currentUserCourse() != null && resource.data.curso == currentUserCourse()
+      );
+      // Escritura: solo staff/profe
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor();
+    }
+
+    // =====================
+    // Calificaciones Formativas (documento por evaluación)
+    // =====================
+    match /calificaciones_formativas/{id} {
+      // Lectura: staff/profe o estudiante si:
+      //  - Existe una entrada con su nombre en el mapa de calificaciones, o
+      //  - La evaluación correspondiente pertenece a su curso
+      allow read: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && (
+          (currentUserName() != null && resource.data[currentUserName()] != null) ||
+          (currentUserCourse() != null && get(/databases/$(database)/documents/evaluaciones_formativas/$(id)).data.curso == currentUserCourse())
+        )
+      );
+      // Escritura: solo staff/profe
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor();
+    }
+
+    // =====================
+    // Trabajos Grupales Formativos
+    // =====================
+    match /trabajos_grupales_formativos/{id} {
+      // Lectura: staff/profe o estudiante del curso del trabajo
+      allow read: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && resource.data.curso != null && currentUserCourse() != null && resource.data.curso == currentUserCourse()
+      );
+      // Escritura: solo staff/profe (nota: para permitir que estudiantes seleccionen rol, considerar endpoint controlado)
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor();
+    }
+
+    // =====================
+    // Asistencia a Empresa (asistencia_dual)
+    // =====================
+    match /asistencia_dual/{id} {
+      // Lectura: staff/profe o estudiante dueño (por UID o email)
+      allow read: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && (
+          (resource.data.estudianteId != null && resource.data.estudianteId == request.auth.uid) ||
+          (resource.data.emailEstudiante != null && resource.data.emailEstudiante == request.auth.token.email)
+        )
+      );
+      // Creación: por el propio estudiante o staff/profe
+      allow create: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && (
+          (request.resource.data.estudianteId != null && request.resource.data.estudianteId == request.auth.uid) ||
+          (request.resource.data.emailEstudiante != null && request.resource.data.emailEstudiante == request.auth.token.email)
+        )
+      );
+      // Actualización: staff/profe o estudiante dueño
+      allow update: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && (
+          (resource.data.estudianteId != null && resource.data.estudianteId == request.auth.uid) ||
+          (resource.data.emailEstudiante != null && resource.data.emailEstudiante == request.auth.token.email)
+        )
+      );
+      // Eliminación: staff/profe
+      allow delete: if isAdminOrSubdir() || isProfesor();
+    }
+
+    // =====================
+    // Calendario Académico
+    // =====================
+    match /eventos_calendario/{id} {
+      // Lectura: staff/profe o propietario (userId)
+      allow read: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && resource.data.userId == request.auth.uid
+      );
+      // Escritura: staff/profe o propietario
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && (
+          (request.resource.data.userId != null && request.resource.data.userId == request.auth.uid) ||
+          (resource.data.userId != null && resource.data.userId == request.auth.uid)
+        )
+      );
+    }
+
+    match /actividades_calendario/{id} {
+      // Lectura: staff/profe o propietario (userId)
+      allow read: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && resource.data.userId == request.auth.uid
+      );
+      // Escritura: staff/profe o propietario
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && (
+          (request.resource.data.userId != null && request.resource.data.userId == request.auth.uid) ||
+          (resource.data.userId != null && resource.data.userId == request.auth.uid)
+        )
+      );
+    }
+
+    // =====================
+    // Muro de Anuncios
+    // =====================
+    match /anuncios/{id} {
+      // Lectura: 
+      //  - Staff/profe siempre
+      //  - Estudiante y otros perfiles según destinatarios:
+      //     Todos -> siempre
+      //     Cursos -> si su curso está incluido
+      //     Profesores -> si perfil es PROFESORADO
+      //     Coordinación TP -> si perfil es COORDINACION_TP
+      allow read: if isAdminOrSubdir() || isProfesor() || (
+        isSignedIn() && resource.data.destinatarios != null && (
+          (resource.data.destinatarios.tipo == 'Todos') ||
+          (resource.data.destinatarios.tipo == 'Cursos' && resource.data.destinatarios.cursos != null && currentUserCourse() != null && resource.data.destinatarios.cursos.hasAny([currentUserCourse()])) ||
+          (resource.data.destinatarios.tipo == 'Profesores' && currentUserProfile() == 'PROFESORADO') ||
+          (resource.data.destinatarios.tipo == 'Coordinación TP' && currentUserProfile() == 'COORDINACION_TP')
+        )
+      );
+      // Escritura: Staff/profe
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor();
     }
   }
 }

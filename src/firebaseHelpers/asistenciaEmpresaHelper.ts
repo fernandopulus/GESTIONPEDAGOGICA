@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './config'; // Make sure the path to your config is correct
 import { AsistenciaDual } from '../../types';
+import { auth } from '../firebase';
 
 // --- COLLECTION CONSTANTS ---
 const ASISTENCIA_COLLECTION = 'asistencia_dual';
@@ -34,21 +35,43 @@ const convertFirestoreDoc = <T>(docSnapshot: any): T => {
  * @returns A function to unsubscribe from the listener.
  */
 export const subscribeToPersonalAsistencia = (studentEmail: string, callback: (data: AsistenciaDual[]) => void) => {
-  const q = query(
+  const uid = auth.currentUser?.uid;
+  // Dos consultas: por email y por uid, para cubrir ambos caminos de las reglas
+  const unsubs: Array<() => void> = [];
+  const combined = new Map<string, AsistenciaDual>();
+  const emit = () => callback(Array.from(combined.values()));
+
+  const qEmail = query(
     collection(db, ASISTENCIA_COLLECTION),
     where('emailEstudiante', '==', studentEmail),
     orderBy('fechaHora', 'desc')
   );
-
-  const unsubscribe = onSnapshot(q, (querySnapshot) => {
-    const records = querySnapshot.docs.map(doc => convertFirestoreDoc<AsistenciaDual>(doc));
-    callback(records);
+  unsubs.push(onSnapshot(qEmail, (querySnapshot) => {
+    querySnapshot.docs.forEach(d => combined.set(d.id, convertFirestoreDoc<AsistenciaDual>(d)));
+    emit();
   }, (error) => {
-    console.error("Error subscribing to personal attendance:", error);
-    callback([]);
-  });
+    if (error?.code !== 'permission-denied') {
+      console.error("Error subscribing to personal attendance (email):", error);
+    }
+  }));
 
-  return unsubscribe;
+  if (uid) {
+    const qUid = query(
+      collection(db, ASISTENCIA_COLLECTION),
+      where('estudianteId', '==', uid),
+      orderBy('fechaHora', 'desc')
+    );
+    unsubs.push(onSnapshot(qUid, (querySnapshot) => {
+      querySnapshot.docs.forEach(d => combined.set(d.id, convertFirestoreDoc<AsistenciaDual>(d)));
+      emit();
+    }, (error) => {
+      if (error?.code !== 'permission-denied') {
+        console.error("Error subscribing to personal attendance (uid):", error);
+      }
+    }));
+  }
+
+  return () => unsubs.forEach(u => u());
 };
 
 // --- DATA WRITING FUNCTIONS ---

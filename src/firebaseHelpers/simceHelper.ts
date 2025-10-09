@@ -188,25 +188,6 @@ export async function obtenerSetsPreguntasPorCurso(cursoId: string): Promise<Set
     ];
     
     console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Total sets combinados: ${sets.length}`);
-
-    // Fallback: si no hay resultados (o por seguridad), traer todo y filtrar en cliente
-    if (!sets.length) {
-      console.warn('[DEBUG] obtenerSetsPreguntasPorCurso - Sin resultados por query; aplicando fallback (getDocs + filtro cliente)');
-      const [allA, allB] = await Promise.all([
-        getDocs(collection(db, SETS_COLLECTION)),
-        getDocs(collection(db, 'simce_evaluaciones'))
-      ]);
-      const cursoNorm = cursoId;
-      sets = [
-        ...allA.docs
-          .map(d => ({ id: d.id, ...d.data() } as any))
-          .filter(s => Array.isArray(s.cursosAsignados) && s.cursosAsignados.includes(cursoNorm)) as SetPreguntas[],
-        ...allB.docs
-          .map(d => ({ id: d.id, ...d.data(), preguntas: ((d.data() as any).preguntas || []) } as any))
-          .filter(s => Array.isArray(s.cursosAsignados) && s.cursosAsignados.includes(cursoNorm)) as SetPreguntas[]
-      ];
-      console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Fallback aplicó ${sets.length} sets`);
-    }
     return sets;
   } catch (error) {
     console.error('Error al obtener sets de preguntas por curso:', error);
@@ -508,19 +489,6 @@ export async function obtenerEvaluacionesPorProfesor(profesorId: string): Promis
       sets = await obtenerSetsPreguntasPorProfesor(profesorId);
     } catch (e) {
       console.warn('[DEBUG] obtenerEvaluacionesPorProfesor - Falla query directa, intento fallback:', e);
-    }
-    // Fallback: si está vacío, traer todo y filtrar en cliente
-    if (!sets.length) {
-      console.warn('[DEBUG] obtenerEvaluacionesPorProfesor - Sin resultados, aplicando fallback (getDocs + filtro por creadorId)');
-      const [allA, allB] = await Promise.all([
-        getDocs(collection(db, SETS_COLLECTION)),
-        getDocs(collection(db, 'simce_evaluaciones'))
-      ]);
-      sets = [
-        ...allA.docs.map(d => ({ id: d.id, ...d.data() } as SetPreguntas)),
-        ...allB.docs.map(d => ({ id: d.id, ...d.data(), preguntas: (d.data() as any).preguntas || [] } as SetPreguntas))
-      ].filter(s => (s as any).creadorId === profesorId);
-      console.log(`[DEBUG] obtenerEvaluacionesPorProfesor - Fallback encontró ${sets.length} sets`);
     }
     return sets.map(set => ({
       id: set.id,
