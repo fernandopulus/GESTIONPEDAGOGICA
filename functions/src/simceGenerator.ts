@@ -114,7 +114,7 @@ function construirPromptGeneracion(options: GeneracionSimceOptions): string {
     
     const ejes = options.ejesMatematica && options.ejesMatematica.length > 0 
       ? options.ejesMatematica 
-      : ['Números', 'Álgebra y Funciones', 'Geometría', 'Probabilidad y Estadística'];
+      : ['Números', 'Álgebra', 'Probabilidad y estadística', 'Geometría'];
     
     lines.push(`- Ejes temáticos a evaluar: ${ejes.join(', ')}`);
     lines.push('- Cada pregunta debe evaluar específicamente UNO de estos ejes.');

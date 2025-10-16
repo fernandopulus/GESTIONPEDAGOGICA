@@ -24,6 +24,13 @@ const Administracion: React.FC = () => {
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(false);
     const [activeTab, setActiveTab] = useState<'Usuarios' | 'Monitor de Uso'>('Usuarios');
+    // Estado para cambio masivo de contraseña
+    const [bulkPassword, setBulkPassword] = useState<string>("");
+    const [bulkProfile, setBulkProfile] = useState<string>("");
+    const [bulkCurso, setBulkCurso] = useState<string>("");
+    const [bulkStatus, setBulkStatus] = useState<null | { message: string; isError?: boolean }>(null);
+    const [bulkLoading, setBulkLoading] = useState<boolean>(false);
+    const [bulkResult, setBulkResult] = useState<null | { matched?: number; processed?: number; updated?: number; failed?: number; errors?: Array<{ email: string; error: string }> }>(null);
     const [userFormData, setUserFormData] = useState<Omit<User, 'id'>>({
         nombreCompleto: '',
         email: '',
@@ -345,6 +352,124 @@ const Administracion: React.FC = () => {
 
             {activeTab === 'Usuarios' && (
                 <div className="space-y-8">
+                    {/* Cambio masivo de contraseñas */}
+                    <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
+                        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Cambio masivo de contraseñas</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Nueva contraseña</label>
+                                <input
+                                    type="password"
+                                    value={bulkPassword}
+                                    onChange={(e) => setBulkPassword(e.target.value)}
+                                    placeholder="Mínimo 6 caracteres"
+                                    className={inputStyles}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Perfil</label>
+                                <select
+                                    value={bulkProfile}
+                                    onChange={(e) => { setBulkProfile(e.target.value); if (e.target.value !== Profile.ESTUDIANTE) setBulkCurso(""); }}
+                                    className={inputStyles}
+                                >
+                                    <option value="">Selecciona un perfil</option>
+                                    {ALL_PROFILES.map(p => (
+                                        <option key={p} value={p}>{p}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Curso (solo estudiantes)</label>
+                                <select
+                                    value={bulkCurso}
+                                    onChange={(e) => setBulkCurso(e.target.value)}
+                                    className={inputStyles}
+                                    disabled={bulkProfile !== Profile.ESTUDIANTE}
+                                >
+                                    <option value="">Todos los cursos</option>
+                                    {availableCourses.map(c => (
+                                        <option key={c} value={c}>{c}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    setBulkStatus(null);
+                                    setBulkResult(null);
+                                    if (!bulkPassword || bulkPassword.length < 6) {
+                                        setBulkStatus({ message: 'La contraseña debe tener al menos 6 caracteres.', isError: true });
+                                        return;
+                                    }
+                                    if (!bulkProfile) {
+                                        setBulkStatus({ message: 'Debes seleccionar un perfil.', isError: true });
+                                        return;
+                                    }
+                                    const confirmMsg = bulkProfile === Profile.ESTUDIANTE && !bulkCurso
+                                      ? 'Se cambiarán contraseñas de TODOS los estudiantes. ¿Deseas continuar?'
+                                      : `Se cambiarán contraseñas para ${bulkProfile}${bulkProfile === Profile.ESTUDIANTE && bulkCurso ? ' del curso ' + bulkCurso : ''}. ¿Confirmas?`;
+                                    if (!window.confirm(confirmMsg)) return;
+
+                                    try {
+                                        setBulkLoading(true);
+                                        const functions = getFunctions();
+                                        const bulkFn = httpsCallable(functions, 'bulkUpdatePasswords');
+                                        const payload: any = { newPassword: bulkPassword, profile: bulkProfile };
+                                        if (bulkProfile === Profile.ESTUDIANTE && bulkCurso) payload.curso = bulkCurso;
+                                        const res: any = await bulkFn(payload);
+                                        const data = (res?.data || res) as { matched?: number; processed?: number; updated?: number; failed?: number; errors?: Array<{ email: string; error: string }> };
+                                        const msg = `Coincidieron: ${data.matched ?? 0} | Procesados: ${data.processed ?? 0} | Actualizados: ${data.updated ?? 0} | Fallidos: ${data.failed ?? 0}`;
+                                        setBulkStatus({ message: msg, isError: (data.failed ?? 0) > 0 });
+                                        setBulkResult(data);
+                                        await fetchUsers();
+                                    } catch (err: any) {
+                                        console.error('Error en cambio masivo:', err);
+                                        setBulkStatus({ message: err?.message || 'Error al ejecutar cambio masivo', isError: true });
+                                    } finally {
+                                        setBulkLoading(false);
+                                    }
+                                }}
+                                disabled={bulkLoading || !bulkProfile || !bulkPassword || bulkPassword.length < 6}
+                                className={`bg-amber-600 text-white font-bold py-2 px-6 rounded-lg ${bulkLoading || !bulkProfile || !bulkPassword || bulkPassword.length < 6 ? 'opacity-60 cursor-not-allowed' : 'hover:bg-amber-700'}`}
+                            >
+                                {bulkLoading ? 'Procesando…' : 'Cambiar contraseñas'}
+                            </button>
+                        </div>
+                        {bulkStatus && (
+                            <div className="mt-3">
+                                <p className={`text-sm ${bulkStatus.isError ? 'text-red-600' : 'text-green-600'}`}>{bulkStatus.message}</p>
+                                {bulkResult?.failed && bulkResult.failed > 0 && (
+                                    <details className="mt-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-3">
+                                        <summary className="cursor-pointer text-red-700 dark:text-red-300 text-sm font-medium">
+                                            Ver errores ({bulkResult.failed})
+                                        </summary>
+                                        <div className="mt-2 max-h-56 overflow-auto">
+                                            <table className="min-w-full text-xs">
+                                                <thead>
+                                                    <tr className="text-left text-slate-600 dark:text-slate-300">
+                                                        <th className="pr-4 py-1">Email</th>
+                                                        <th className="py-1">Error</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {(bulkResult.errors || []).map((e, idx) => (
+                                                        <tr key={idx} className="border-t border-slate-200 dark:border-slate-700">
+                                                            <td className="pr-4 py-1 text-slate-800 dark:text-slate-200 whitespace-nowrap">{e.email}</td>
+                                                            <td className="py-1 text-slate-700 dark:text-slate-300">{e.error}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </details>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
                     {/* Carga masiva */}
                     <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
                         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Carga Masiva</h2>

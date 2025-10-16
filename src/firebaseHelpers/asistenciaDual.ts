@@ -7,10 +7,20 @@ import {
     Timestamp,
     getDocs,
     limit,
+    addDoc,
     Unsubscribe 
 } from 'firebase/firestore';
 import { db } from '../firebase'; // Ajusta la ruta según tu estructura
 import { AsistenciaDual, User, Profile } from '../../types'; // Ajusta la ruta según tu estructura
+
+// Utilidad local para parsear diferentes formatos de fecha a Date
+const parseFecha = (value: any): Date => {
+    if (!value) return new Date(NaN);
+    if (typeof value === 'string') return new Date(value);
+    if (value?.toDate) return value.toDate();
+    if (value instanceof Date) return value;
+    return new Date(value);
+};
 
 /**
  * Función de debug para verificar la estructura de la colección de usuarios
@@ -19,7 +29,7 @@ import { AsistenciaDual, User, Profile } from '../../types'; // Ajusta la ruta s
 export const debugUsersCollection = async () => {
     try {
         console.log('🔍 Debugging users collection...');
-        const usersRef = collection(db, 'users');
+    const usersRef = collection(db, 'usuarios');
         
         // Obtener una muestra de documentos
         const q = query(usersRef, limit(10));
@@ -34,7 +44,7 @@ export const debugUsersCollection = async () => {
         
         const allFields = new Set<string>();
         
-        snapshot.forEach((doc, index) => {
+        snapshot.forEach((doc) => {
             const data = doc.data();
             const docInfo = {
                 id: doc.id,
@@ -163,7 +173,7 @@ export const debugAsistenciaCollections = async (year: number, month: number) =>
     const startTimestamp = Timestamp.fromDate(startOfMonth);
     const endTimestamp = Timestamp.fromDate(endOfMonth);
 
-    const collections = ['asistenciaDual', 'asistenciaEmpresa', 'asistencia', 'attendance', 'checkins'];
+    const collections = ['asistencia_dual', 'asistencia_empresa', 'asistenciaDual', 'asistenciaEmpresa', 'asistencia', 'attendance', 'checkins'];
     const results: any = {};
 
     for (const collectionName of collections) {
@@ -182,6 +192,7 @@ export const debugAsistenciaCollections = async (year: number, month: number) =>
                     exists: true,
                     hasDateField: true,
                     count: snapshotWithDate.size,
+                    totalDocs: (await getDocs(query(collectionRef, limit(5)))).size, // sondeo rápido
                     sampleDoc: snapshotWithDate.docs[0]?.data() || null
                 };
             } catch (dateError) {
@@ -201,6 +212,7 @@ export const debugAsistenciaCollections = async (year: number, month: number) =>
                             exists: true,
                             hasDateField: dateField,
                             count: snapshotAltDate.size,
+                            totalDocs: (await getDocs(query(collectionRef, limit(5)))).size,
                             sampleDoc: snapshotAltDate.docs[0]?.data() || null
                         };
                         foundDateField = true;
@@ -218,6 +230,7 @@ export const debugAsistenciaCollections = async (year: number, month: number) =>
                         exists: true,
                         hasDateField: false,
                         count: simpleSnapshot.size,
+                        totalDocs: simpleSnapshot.size,
                         sampleDoc: simpleSnapshot.docs[0]?.data() || null,
                         note: 'No date field found for filtering'
                     };
@@ -339,7 +352,8 @@ export const subscribeToAsistenciaByMonth = (
     year: number,
     month: number,
     onData: (registros: AsistenciaDual[]) => void,
-    onError?: (error: Error) => void
+    onError?: (error: Error) => void,
+    options?: { includeAll?: boolean; limit?: number }
 ): Unsubscribe => {
     try {
         // Crear fechas con margen más amplio para capturar registros
@@ -356,8 +370,10 @@ export const subscribeToAsistenciaByMonth = (
         const startTimestamp = Timestamp.fromDate(startOfMonth);
         const endTimestamp = Timestamp.fromDate(endOfMonth);
 
-        const unsubscribers: Unsubscribe[] = [];
-        const allRegistros = new Map<string, AsistenciaDual>();
+    const unsubscribers: Unsubscribe[] = [];
+    const allRegistros = new Map<string, AsistenciaDual>();
+    const includeAll = options?.includeAll === true;
+    const hardLimit = options?.limit ?? 1000;
 
         const updateData = () => {
             const registrosArray = Array.from(allRegistros.values());
@@ -365,16 +381,7 @@ export const subscribeToAsistenciaByMonth = (
             
             if (registrosArray.length > 0) {
                 console.log(`📅 Registros por día:`, registrosArray.reduce((acc, r) => {
-                    let fecha: Date;
-                    if (r.fechaHora instanceof Date) {
-                        fecha = r.fechaHora;
-                    } else if (typeof r.fechaHora === 'string') {
-                        fecha = new Date(r.fechaHora);
-                    } else {
-                        // Si llegamos aquí, probablemente es un timestamp sin convertir
-                        fecha = new Date();
-                    }
-                    
+                    const fecha = parseFecha((r as any).fechaHora);
                     const day = fecha.getDate();
                     acc[day] = (acc[day] || 0) + 1;
                     return acc;
@@ -385,12 +392,9 @@ export const subscribeToAsistenciaByMonth = (
         };
 
         // Lista de colecciones a revisar - INCLUYENDO las que usa asistenciaEmpresaHelper
+        // Solo consultar la colección con reglas explícitas: asistencia_dual
         const collections = [
-            'asistencia_dual',      // con guión bajo
-            'asistenciaEmpresa',    // ← PROBABLEMENTE ESTA ES LA CORRECTA
-            'asistencia_empresa',   // con guión bajo también
-            'asistenciaDual',       // camelCase
-            'asistencia'            // básica
+            'asistencia_dual'
         ];
 
         collections.forEach((collectionName) => {
@@ -398,6 +402,71 @@ export const subscribeToAsistenciaByMonth = (
                 console.log(`🔍 Configurando suscripción para: ${collectionName}`);
                 const asistenciaRef = collection(db, collectionName);
                 
+                if (includeAll) {
+                    // Modo histórico: sin filtro por fecha desde servidor
+                    const qAll = query(asistenciaRef, orderBy('fechaHora', 'desc'), limit(hardLimit));
+                    const unsubscribeAll = onSnapshot(
+                        qAll,
+                        (snapshot) => {
+                            console.log(`📋 ${collectionName} (histórico): ${snapshot.size} documentos`);
+                            // Limpiar anteriores de esta colección
+                            const keysToDelete = Array.from(allRegistros.keys()).filter(key => key.startsWith(`${collectionName}_`));
+                            keysToDelete.forEach(key => allRegistros.delete(key));
+
+                            snapshot.forEach((doc) => {
+                                const data = doc.data();
+                                const fecha = parseFecha(data.fechaHora);
+                                const fechaHoraISO = isNaN(fecha.getTime()) ? new Date().toISOString() : fecha.toISOString();
+                                const registro: AsistenciaDual = {
+                                    id: doc.id,
+                                    emailEstudiante: data.emailEstudiante || data.email || '',
+                                    nombreEstudiante: data.nombreEstudiante || data.nombre || '',
+                                    curso: data.curso || '',
+                                    fechaHora: fechaHoraISO,
+                                    tipo: (data.tipo as 'Entrada' | 'Salida') || 'Entrada',
+                                    ubicacion: data.ubicacion || { latitud: null as any, longitud: null as any },
+                                    origen: collectionName,
+                                };
+                                const uniqueKey = `${collectionName}_${doc.id}`;
+                                allRegistros.set(uniqueKey, registro);
+                            });
+
+                            updateData();
+                        },
+                        (error) => {
+                            console.warn(`⚠️ Error en histórico ${collectionName} con orderBy fechaHora:`, error);
+                            // Fallback: sin orderBy
+                            const qNoOrder = query(asistenciaRef, limit(hardLimit));
+                            const unsubNoOrder = onSnapshot(qNoOrder, (snap) => {
+                                console.log(`📋 ${collectionName} (histórico sin orderBy): ${snap.size} documentos`);
+                                const keysToDelete = Array.from(allRegistros.keys()).filter(key => key.startsWith(`${collectionName}_`));
+                                keysToDelete.forEach(key => allRegistros.delete(key));
+                                snap.forEach((doc) => {
+                                    const data = doc.data();
+                                    const fecha = parseFecha(data.fechaHora);
+                                    const fechaHoraISO = isNaN(fecha.getTime()) ? new Date().toISOString() : fecha.toISOString();
+                                    const registro: AsistenciaDual = {
+                                        id: doc.id,
+                                        emailEstudiante: data.emailEstudiante || data.email || '',
+                                        nombreEstudiante: data.nombreEstudiante || data.nombre || '',
+                                        curso: data.curso || '',
+                                        fechaHora: fechaHoraISO,
+                                        tipo: (data.tipo as 'Entrada' | 'Salida') || 'Entrada',
+                                        ubicacion: data.ubicacion || { latitud: null as any, longitud: null as any },
+                                        origen: collectionName,
+                                    };
+                                    const uniqueKey = `${collectionName}_${doc.id}`;
+                                    allRegistros.set(uniqueKey, registro);
+                                });
+                                updateData();
+                            });
+                            unsubscribers.push(unsubNoOrder);
+                        }
+                    );
+                    unsubscribers.push(unsubscribeAll);
+                    return;
+                }
+
                 // Estrategia 1: Con filtro de fecha
                 const qWithFilter = query(
                     asistenciaRef,
@@ -436,45 +505,30 @@ export const subscribeToAsistenciaByMonth = (
 
                             querySnapshot.forEach((doc) => {
                                 const data = doc.data();
-                                
-                                // Procesar fecha con manejo flexible para diferentes formatos
-                                let fechaHora: Date;
-                                if (data.fechaHora?.toDate) {
-                                    // Firestore Timestamp
-                                    fechaHora = data.fechaHora.toDate();
-                                } else if (typeof data.fechaHora === 'string') {
-                                    // ISO string (como viene del asistenciaEmpresaHelper)
-                                    fechaHora = new Date(data.fechaHora);
-                                } else if (data.fechaHora instanceof Date) {
-                                    // Ya es un Date object
-                                    fechaHora = data.fechaHora;
-                                } else if (data.fechaHora) {
-                                    // Cualquier otro formato
-                                    fechaHora = new Date(data.fechaHora);
-                                } else {
-                                    fechaHora = new Date();
-                                }
+                                const fecha = parseFecha(data.fechaHora);
+                                const fechaHoraISO = isNaN(fecha.getTime()) ? new Date().toISOString() : fecha.toISOString();
 
                                 const registro: AsistenciaDual = {
                                     id: doc.id,
                                     emailEstudiante: data.emailEstudiante || data.email || '',
                                     nombreEstudiante: data.nombreEstudiante || data.nombre || '',
                                     curso: data.curso || '',
-                                    fechaHora,
-                                    tipo: data.tipo as 'Entrada' | 'Salida',
-                                    ubicacion: data.ubicacion || null,
-                                    observaciones: data.observaciones || '',
-                                    ...data
+                                    fechaHora: fechaHoraISO,
+                                    tipo: (data.tipo as 'Entrada' | 'Salida') || 'Entrada',
+                                    ubicacion: data.ubicacion || { latitud: null as any, longitud: null as any },
+                                    origen: collectionName,
                                 };
-                                
                                 const uniqueKey = `${collectionName}_${doc.id}`;
                                 allRegistros.set(uniqueKey, registro);
                             });
 
                             updateData();
                         } else {
-                            // NO borrar datos si esta colección está vacía
-                            console.log(`⚪ ${collectionName}: vacía, manteniendo datos existentes`);
+                            // Borrar datos de esta colección y notificar vacío para desbloquear la UI
+                            console.log(`⚪ ${collectionName}: sin registros en el período, limpiando y notificando vacío`);
+                            const keysToDelete = Array.from(allRegistros.keys()).filter(key => key.startsWith(`${collectionName}_`));
+                            keysToDelete.forEach(key => allRegistros.delete(key));
+                            updateData(); // Esto llamará onData([]) si no hay más datos
                         }
                     },
                     (error) => {
@@ -483,7 +537,7 @@ export const subscribeToAsistenciaByMonth = (
                         // Estrategia 2: Sin filtro, obtener documentos recientes y filtrar manualmente
                         console.log(`🔄 Intentando estrategia alternativa en ${collectionName}...`);
                         
-                        const qNoFilter = query(asistenciaRef, limit(200)); // Más documentos
+                        const qNoFilter = query(asistenciaRef, limit(hardLimit)); // Más documentos
                         
                         const unsubNoFilter = onSnapshot(qNoFilter, (snapshot) => {
                             console.log(`📋 ${collectionName} (sin filtro): ${snapshot.size} documentos`);
@@ -499,64 +553,39 @@ export const subscribeToAsistenciaByMonth = (
                                 const data = doc.data();
                                 if (!data.fechaHora) return false;
                                 
-                                let fecha: Date;
-                                if (data.fechaHora?.toDate) {
-                                    // Firestore Timestamp
-                                    fecha = data.fechaHora.toDate();
-                                } else if (typeof data.fechaHora === 'string') {
-                                    // ISO string
-                                    fecha = new Date(data.fechaHora);
-                                } else if (data.fechaHora instanceof Date) {
-                                    // Ya es Date
-                                    fecha = data.fechaHora;
-                                } else {
-                                    fecha = new Date(data.fechaHora);
-                                }
+                                const fecha = parseFecha(data.fechaHora);
                                 
                                 return fecha >= startOfMonth && fecha <= endOfMonth;
                             });
                             
                             console.log(`📅 ${collectionName}: ${filteredDocs.length} registros después de filtro manual`);
                             
+                            // Limpiar y, si hay, agregar registros filtrados; si no hay, notificar vacío
+                            const keysToDelete = Array.from(allRegistros.keys()).filter(key => key.startsWith(`${collectionName}_`));
+                            keysToDelete.forEach(key => allRegistros.delete(key));
+
                             if (filteredDocs.length > 0) {
-                                // Limpiar y agregar registros filtrados
-                                const keysToDelete = Array.from(allRegistros.keys()).filter(key => key.startsWith(`${collectionName}_`));
-                                keysToDelete.forEach(key => allRegistros.delete(key));
-                                
                                 filteredDocs.forEach(doc => {
                                     const data = doc.data();
-                                    let fechaHora: Date;
-                                    if (data.fechaHora?.toDate) {
-                                        // Firestore Timestamp
-                                        fechaHora = data.fechaHora.toDate();
-                                    } else if (typeof data.fechaHora === 'string') {
-                                        // ISO string
-                                        fechaHora = new Date(data.fechaHora);
-                                    } else if (data.fechaHora instanceof Date) {
-                                        // Ya es Date
-                                        fechaHora = data.fechaHora;
-                                    } else {
-                                        fechaHora = new Date(data.fechaHora);
-                                    }
-                                    
+                                    const fecha = parseFecha(data.fechaHora);
+                                    const fechaHoraISO = isNaN(fecha.getTime()) ? new Date().toISOString() : fecha.toISOString();
+
                                     const registro: AsistenciaDual = {
                                         id: doc.id,
                                         emailEstudiante: data.emailEstudiante || data.email || '',
                                         nombreEstudiante: data.nombreEstudiante || data.nombre || '',
                                         curso: data.curso || '',
-                                        fechaHora,
-                                        tipo: data.tipo as 'Entrada' | 'Salida',
+                                        fechaHora: fechaHoraISO,
+                                        tipo: (data.tipo as 'Entrada' | 'Salida') || 'Entrada',
                                         ubicacion: data.ubicacion || null,
-                                        observaciones: data.observaciones || '',
-                                        ...data
                                     };
                                     
                                     const uniqueKey = `${collectionName}_${doc.id}`;
                                     allRegistros.set(uniqueKey, registro);
                                 });
-                                
-                                updateData();
                             }
+
+                            updateData();
                         });
                         
                         // Reemplazar el unsubscribe original
@@ -610,7 +639,7 @@ export const subscribeToAllUsersMultiCollection = (
         console.log('🔍 Buscando usuarios en múltiples colecciones...');
         
         // Solo buscar en 'usuarios' ya que sabemos que está ahí
-        const possibleCollections = ['usuarios', 'users'];
+    const possibleCollections = ['usuarios'];
         const unsubscribers: Unsubscribe[] = [];
         const allUsers = new Map<string, User>();
 
@@ -644,64 +673,41 @@ export const subscribeToAllUsersMultiCollection = (
                 const unsubscribe = onSnapshot(
                     q,
                     (querySnapshot) => {
+                        // Limpiar usuarios anteriores de esta colección para reflejar estado real
+                        const keysToDelete = Array.from(allUsers.keys()).filter(key => key.startsWith(`${collectionName}_`));
+                        keysToDelete.forEach(key => allUsers.delete(key));
+
                         if (querySnapshot.size > 0) {
                             console.log(`✅ Encontrados ${querySnapshot.size} usuarios en colección: ${collectionName}`);
                             foundActiveCollection = true;
-                            
-                            // Limpiar usuarios anteriores de esta colección
-                            const keysToDelete = Array.from(allUsers.keys()).filter(key => key.startsWith(`${collectionName}_`));
-                            keysToDelete.forEach(key => allUsers.delete(key));
-
                             querySnapshot.forEach((doc) => {
                                 try {
                                     const data = doc.data();
-                                    
-                                    // Manejo flexible de campos
+                                    // Campos flexibles
                                     const email = data.email || data.userEmail || data.mail || data.correo || '';
                                     const nombreCompleto = data.nombreCompleto || data.displayName || data.name || data.nombre || data.fullName || '';
                                     const curso = data.curso || data.course || data.class || data.grade || '';
-                                    
-                                    // Manejo flexible del perfil
                                     let profile = data.profile || data.role || data.tipo || data.userType || Profile.ESTUDIANTE;
-                                    
-                                    // Normalizar valores de perfil
                                     if (typeof profile === 'string') {
                                         const profileLower = profile.toLowerCase();
-                                        if (profileLower.includes('estudiante') || profileLower.includes('student') || profileLower.includes('alumno')) {
-                                            profile = Profile.ESTUDIANTE;
-                                        } else if (profileLower.includes('coordinador') || profileLower.includes('coordinator')) {
-                                            profile = Profile.COORDINADOR_TP;
-                                        } else if (profileLower.includes('profesor') || profileLower.includes('teacher') || profileLower.includes('docente')) {
-                                            profile = Profile.PROFESOR;
-                                        } else if (profileLower.includes('subdireccion') || profileLower.includes('subdir')) {
-                                            profile = Profile.COORDINADOR_TP;
-                                        }
+                                        if (profileLower.includes('estudiante') || profileLower.includes('student') || profileLower.includes('alumno')) profile = Profile.ESTUDIANTE;
+                                        else if (profileLower.includes('coordinador') || profileLower.includes('coordinator')) profile = Profile.COORDINACION_TP;
+                                        else if (profileLower.includes('profesor') || profileLower.includes('teacher') || profileLower.includes('docente')) profile = Profile.PROFESORADO;
+                                        else if (profileLower.includes('subdireccion') || profileLower.includes('subdir')) profile = Profile.COORDINACION_TP;
                                     }
-
-                                    const user: User = {
-                                        id: doc.id,
-                                        email,
-                                        nombreCompleto,
-                                        curso,
-                                        profile,
-                                        activo: data.activo !== false,
-                                        fechaCreacion: data.fechaCreacion?.toDate?.() || new Date(data.fechaCreacion) || new Date(),
-                                        ultimaActividad: data.ultimaActividad?.toDate?.() || new Date(data.ultimaActividad) || new Date(),
-                                        ...data
-                                    };
-                                    
-                                    // Usar un ID único que incluya la colección
+                                    const user: User = { id: doc.id, email, nombreCompleto, curso, profile };
                                     const uniqueKey = `${collectionName}_${doc.id}`;
                                     allUsers.set(uniqueKey, user);
                                 } catch (docError) {
                                     console.warn(`Error procesando documento ${doc.id} en ${collectionName}:`, docError);
                                 }
                             });
-
-                            updateData();
                         } else {
                             console.log(`⚪ Colección ${collectionName}: vacía`);
                         }
+
+                        // Notificar siempre (incluyendo vacío) para desbloquear la UI
+                        updateData();
                     },
                     (error) => {
                         console.warn(`⚠️ Error en colección ${collectionName}:`, error);
@@ -758,7 +764,7 @@ export const subscribeToAllUsers = (
 ): Unsubscribe => {
     try {
         console.log('Setting up users subscription...');
-        const usersRef = collection(db, 'users');
+    const usersRef = collection(db, 'usuarios');
         
         // Consulta simple primero, sin orderBy en caso de que no haya índice
         const q = query(usersRef);
@@ -788,11 +794,11 @@ export const subscribeToAllUsers = (
                             if (profileLower.includes('estudiante') || profileLower.includes('student') || profileLower.includes('alumno')) {
                                 profile = Profile.ESTUDIANTE;
                             } else if (profileLower.includes('coordinador') || profileLower.includes('coordinator')) {
-                                profile = Profile.COORDINADOR_TP;
+                                profile = Profile.COORDINACION_TP;
                             } else if (profileLower.includes('profesor') || profileLower.includes('teacher') || profileLower.includes('docente')) {
-                                profile = Profile.PROFESOR;
+                                profile = Profile.PROFESORADO;
                             } else if (profileLower.includes('subdireccion') || profileLower.includes('subdir')) {
-                                profile = Profile.COORDINADOR_TP; // Tratar subdirección como coordinador para esta vista
+                                profile = Profile.COORDINACION_TP; // Tratar subdirección como coordinador para esta vista
                             }
                         }
 
@@ -802,10 +808,6 @@ export const subscribeToAllUsers = (
                             nombreCompleto,
                             curso,
                             profile,
-                            activo: data.activo !== false, // Por defecto true si no está definido
-                            fechaCreacion: data.fechaCreacion?.toDate?.() || new Date(data.fechaCreacion) || new Date(),
-                            ultimaActividad: data.ultimaActividad?.toDate?.() || new Date(data.ultimaActividad) || new Date(),
-                            ...data
                         };
                         
                         users.push(user);
@@ -861,11 +863,11 @@ export const subscribeToAllUsers = (
  */
 export const getUsersByProfile = async (profile: Profile): Promise<User[]> => {
     try {
-        const usersRef = collection(db, 'users');
+        // Usar la colección autorizada 'usuarios' y evitar orderBy para no requerir índice
+        const usersRef = collection(db, 'usuarios');
         const q = query(
-            usersRef, 
-            where('profile', '==', profile),
-            orderBy('nombreCompleto', 'asc')
+            usersRef,
+            where('profile', '==', profile)
         );
         
         const querySnapshot = await getDocs(q);
@@ -879,13 +881,12 @@ export const getUsersByProfile = async (profile: Profile): Promise<User[]> => {
                 nombreCompleto: data.nombreCompleto || '',
                 curso: data.curso || '',
                 profile: data.profile || Profile.ESTUDIANTE,
-                activo: data.activo !== false,
-                fechaCreacion: data.fechaCreacion?.toDate?.() || new Date(data.fechaCreacion) || new Date(),
-                ultimaActividad: data.ultimaActividad?.toDate?.() || new Date(data.ultimaActividad) || new Date(),
-                ...data
             };
             users.push(user);
         });
+
+        // Ordenar en cliente para consistencia visual
+        users.sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
         
         return users;
     } catch (error) {
@@ -905,7 +906,7 @@ export const getAsistenciaByDateRange = async (
     endDate: Date
 ): Promise<AsistenciaDual[]> => {
     try {
-        const asistenciaRef = collection(db, 'asistenciaDual');
+    const asistenciaRef = collection(db, 'asistencia_dual');
         const startTimestamp = Timestamp.fromDate(startDate);
         const endTimestamp = Timestamp.fromDate(endDate);
         
@@ -921,7 +922,8 @@ export const getAsistenciaByDateRange = async (
         
         querySnapshot.forEach((doc) => {
             const data = doc.data();
-            const fechaHora = data.fechaHora?.toDate?.() || new Date(data.fechaHora);
+            const fecha = parseFecha(data.fechaHora);
+            const fechaHora = isNaN(fecha.getTime()) ? new Date().toISOString() : fecha.toISOString();
             
             const registro: AsistenciaDual = {
                 id: doc.id,
@@ -931,8 +933,6 @@ export const getAsistenciaByDateRange = async (
                 fechaHora: fechaHora,
                 tipo: data.tipo || 'Entrada',
                 ubicacion: data.ubicacion || null,
-                observaciones: data.observaciones || '',
-                ...data
             };
             
             registros.push(registro);
@@ -956,7 +956,7 @@ export const subscribeToDualStudents = (
     onError?: (error: Error) => void
 ): Unsubscribe => {
     try {
-        const usersRef = collection(db, 'users');
+    const usersRef = collection(db, 'usuarios');
         const q = query(
             usersRef,
             where('profile', '==', Profile.ESTUDIANTE),
@@ -979,10 +979,6 @@ export const subscribeToDualStudents = (
                             nombreCompleto: data.nombreCompleto || '',
                             curso: data.curso || '',
                             profile: data.profile || Profile.ESTUDIANTE,
-                            activo: data.activo !== false,
-                            fechaCreacion: data.fechaCreacion?.toDate?.() || new Date(data.fechaCreacion) || new Date(),
-                            ultimaActividad: data.ultimaActividad?.toDate?.() || new Date(data.ultimaActividad) || new Date(),
-                            ...data
                         };
                         
                         students.push(user);

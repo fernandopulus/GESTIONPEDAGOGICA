@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { User, Profile, IntranetEntry } from '../../types';
 import { listenIntranetEntries, createIntranetEntry, updateIntranetEntry, deleteIntranetEntry } from '../../src/firebaseHelpers/intranetHelper';
-import { Plus, Tag, ExternalLink, Image as ImageIcon, Video as VideoIcon, Pin, Trash2, Edit3, Save, X, Eye, EyeOff, UploadCloud, Loader2, FileText, Calendar, Megaphone, BookOpen, Users, Settings, Star, MessageSquare, Bell, ClipboardList, CheckCircle, AlertTriangle, MapPin, GraduationCap, Folder, Link as LinkIcon, Wand2 } from 'lucide-react';
+import { Plus, Tag, ExternalLink, Image as ImageIcon, Video as VideoIcon, Pin, Trash2, Edit3, Save, X, Eye, EyeOff, UploadCloud, Loader2, FileText, Calendar, Megaphone, BookOpen, Users, Settings, Star, MessageSquare, Bell, ClipboardList, CheckCircle, AlertTriangle, MapPin, GraduationCap, Folder, Link as LinkIcon, Wand2, Briefcase, Building2, FileSpreadsheet, BarChart3, PieChart, Heart, Lightbulb, Rocket, Globe, Map, Clock3, Mail, Phone, Camera, PlayCircle } from 'lucide-react';
 import UltraSafeRenderer from '../common/UltraSafeRenderer';
 import { uploadIntranetFile, deleteIntranetFile } from '../../src/firebaseHelpers/uploads';
 
@@ -389,6 +389,7 @@ const MemoIntranetEditor = React.memo(IntranetEditor);
 const Intranet: React.FC<Props> = ({ currentUser }) => {
   const isSub = currentUser.profile === Profile.SUBDIRECCION;
   const canView = [Profile.SUBDIRECCION, Profile.PROFESORADO, Profile.COORDINACION_TP].includes(currentUser.profile);
+  const canPersonalize = [Profile.PROFESORADO, Profile.COORDINACION_TP].includes(currentUser.profile);
 
   const [entries, setEntries] = useState<IntranetEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -400,16 +401,13 @@ const Intranet: React.FC<Props> = ({ currentUser }) => {
   const [newLink, setNewLink] = useState<{ titulo?: string; url: string }>({ url: '' });
   const [imgUploadPct, setImgUploadPct] = useState<number | null>(null);
   const [vidUploadPct, setVidUploadPct] = useState<number | null>(null);
-  // Modal global para estilo de tarjeta
-  const gradientPresets = useMemo(() => ([
-    { id: 'blue-sky', from: '#0ea5e9', to: '#6366f1', angle: 135 },
-    { id: 'sunset', from: '#f97316', to: '#ef4444', angle: 135 },
-    { id: 'mint', from: '#10b981', to: '#06b6d4', angle: 135 },
-    { id: 'grape', from: '#7c3aed', to: '#db2777', angle: 135 },
-    { id: 'steel', from: '#64748b', to: '#1f2937', angle: 135 },
-  ]), []);
+  // Preferencias por usuario (solo en este navegador)
+  type UserPrefs = { order: string[]; colors: Record<string, string>; version: number };
+  const [prefs, setPrefs] = useState<UserPrefs>({ order: [], colors: {}, version: 1 });
+  const [personalizeMode, setPersonalizeMode] = useState<boolean>(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  // Modal global de apariencia (solo icono; tarjetas en blanco)
   const [styleEntry, setStyleEntry] = useState<IntranetEntry | null>(null);
-  const [styleLocal, setStyleLocal] = useState<{ presetId?: string; from: string; to: string; angle: number } | null>(null);
   const iconOptions = useMemo(() => ([
     { id: 'auto', label: 'Auto', Comp: Wand2 },
     { id: 'file', label: 'Documento', Comp: FileText },
@@ -431,23 +429,46 @@ const Intranet: React.FC<Props> = ({ currentUser }) => {
     { id: 'pin', label: 'Pin', Comp: Pin },
     { id: 'mappin', label: 'Ubicación', Comp: MapPin },
     { id: 'graduation', label: 'Educación', Comp: GraduationCap },
+    { id: 'briefcase', label: 'Portafolio', Comp: Briefcase },
+    { id: 'building', label: 'Edificio', Comp: Building2 },
+    { id: 'sheet', label: 'Hoja de cálculo', Comp: FileSpreadsheet },
+    { id: 'barchart', label: 'Gráfico barras', Comp: BarChart3 },
+    { id: 'piechart', label: 'Gráfico torta', Comp: PieChart },
+    { id: 'heart', label: 'Corazón', Comp: Heart },
+    { id: 'lightbulb', label: 'Idea', Comp: Lightbulb },
+    { id: 'rocket', label: 'Cohete', Comp: Rocket },
+    { id: 'globe', label: 'Globo', Comp: Globe },
+    { id: 'map', label: 'Mapa', Comp: Map },
+    { id: 'clock', label: 'Reloj', Comp: Clock3 },
+    { id: 'mail', label: 'Correo', Comp: Mail },
+    { id: 'phone', label: 'Teléfono', Comp: Phone },
+    { id: 'camera', label: 'Cámara', Comp: Camera },
+    { id: 'play', label: 'Reproducir', Comp: PlayCircle },
   ]), []);
   const [styleIconId, setStyleIconId] = useState<string>('auto');
   const [iconSearch, setIconSearch] = useState<string>('');
 
   const openStyleModal = (entry: IntranetEntry) => {
     setStyleEntry(entry);
-    const g = entry.gradiente && entry.gradiente.from && entry.gradiente.to ? entry.gradiente : (gradientPresets[0] as any);
-    setStyleLocal({ presetId: (g as any).presetId, from: (g as any).from, to: (g as any).to, angle: (g as any).angle || 135 });
     setStyleIconId(entry.iconId || 'auto');
   };
-  const closeStyleModal = () => { setStyleEntry(null); setStyleLocal(null); };
+  const closeStyleModal = () => { setStyleEntry(null); };
 
   useEffect(() => {
     if (!canView) return;
     setLoading(true);
     const unsub = listenIntranetEntries((rows) => {
       setEntries(rows);
+      // Limpiar ids que ya no existen en prefs
+      setPrefs(prev => {
+        const ids = new Set(rows.map(r=>r.id));
+        const newOrder = prev.order.filter(id => ids.has(id));
+        const newColors: Record<string,string> = {};
+  Object.entries(prev.colors).forEach(([id, col]) => { if (ids.has(id)) newColors[id] = String(col); });
+        const next = { ...prev, order: newOrder, colors: newColors };
+        savePrefs(next);
+        return next;
+      });
       setLoading(false);
     }, (e) => {
       console.error('Error al suscribirse a intranet:', e);
@@ -457,19 +478,59 @@ const Intranet: React.FC<Props> = ({ currentUser }) => {
     return () => { try { unsub && unsub(); } catch {} };
   }, [canView]);
 
+  // Cargar preferencias desde localStorage
+  useEffect(() => {
+    if (!canPersonalize) return;
+    try {
+      const raw = localStorage.getItem(`intranet_prefs_${currentUser.id}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') setPrefs({ order: parsed.order || [], colors: parsed.colors || {}, version: 1 });
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canPersonalize, currentUser.id]);
+
+  const savePrefs = (p: UserPrefs) => {
+    try { localStorage.setItem(`intranet_prefs_${currentUser.id}`, JSON.stringify(p)); } catch {}
+  };
+
+  const setPrefColor = (id: string, color?: string) => {
+    setPrefs(prev => {
+      const next: UserPrefs = { ...prev, colors: { ...prev.colors } };
+      if (!color) delete next.colors[id]; else next.colors[id] = color;
+      savePrefs(next);
+      return next;
+    });
+  };
+
+  const moveInOrder = (id: string, dir: 'up'|'down') => {
+    setPrefs(prev => {
+      const idsAll = entries.map(e=>e.id);
+      // construir orden efectivo actual
+      const effective = prev.order.filter(x => idsAll.includes(x)).concat(idsAll.filter(x => !prev.order.includes(x)));
+      const idx = effective.indexOf(id);
+      if (idx < 0) return prev;
+      const j = dir==='up' ? idx-1 : idx+1;
+      if (j < 0 || j >= effective.length) return prev;
+      const swapped = effective.slice();
+      [swapped[idx], swapped[j]] = [swapped[j], swapped[idx]];
+      const next: UserPrefs = { ...prev, order: swapped, colors: prev.colors, version: prev.version };
+      savePrefs(next);
+      return next;
+    });
+  };
+
   const startNew = () => {
     setEditing(null);
     setDraft({ ...emptyEntry, autorNombre: currentUser.nombreCompleto });
     setShowEditor(true);
   };
 
-  const FeedCard: React.FC<{ e: IntranetEntry }> = ({ e }) => {
-    const hasGradient = !!(e.gradiente && e.gradiente.from && e.gradiente.to);
-    const applied = hasGradient ? e.gradiente : undefined;
-    const bg = applied ? `linear-gradient(${applied.angle || 135}deg, ${applied.from}, ${applied.to})` : undefined;
-    const actionBtnClass = hasGradient
-      ? 'p-1.5 rounded-md bg-white/20 hover:bg-white/30 text-white'
-      : 'p-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700';
+  const FeedCard: React.FC<{ e: IntranetEntry; index: number }> = ({ e, index }) => {
+    // Tarjetas sin gradiente: fondo blanco siempre
+    const actionBtnClass = 'p-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700';
+    const userColor = prefs.colors[e.id];
 
     // Icono representativo del contenido
     const resolveAutoIcon = () => (
@@ -478,43 +539,69 @@ const Intranet: React.FC<Props> = ({ currentUser }) => {
       e.enlaces?.length ? ExternalLink :
       FileText
     );
-    const manualIconMap: Record<string, React.ComponentType<any>> = {
-      'file': FileText,
-      'folder': Folder,
-      'link': ExternalLink,
-      'image': ImageIcon,
-      'video': VideoIcon,
-      'pin': Pin,
-      'calendar': Calendar,
-      'megaphone': Megaphone,
-      'book': BookOpen,
-      'users': Users,
-      'settings': Settings,
-      'star': Star,
-      'message': MessageSquare,
-      'bell': Bell,
-      'clipboard': ClipboardList,
-      'check': CheckCircle,
-      'alert': AlertTriangle,
-      'mappin': MapPin,
-      'graduation': GraduationCap,
-    };
+    const manualIconMap: Record<string, React.ComponentType<any>> = useMemo(() => {
+      const m: Record<string, React.ComponentType<any>> = {};
+      iconOptions.forEach(({ id, Comp }) => { if (id !== 'auto') m[id] = Comp as any; });
+      return m;
+    }, [iconOptions]);
     const IconComp = e.iconId && e.iconId !== 'auto' ? (manualIconMap[e.iconId] || resolveAutoIcon()) : resolveAutoIcon();
 
+    const draggable = canPersonalize && personalizeMode;
     return (
-      <div className="relative rounded-xl shadow-sm hover:shadow-md transition overflow-hidden border border-slate-200 bg-white" style={bg ? { background: bg } : undefined}>
+      <div
+        className={`relative rounded-xl shadow-sm hover:shadow-md transition overflow-hidden border bg-white ${draggable ? 'cursor-move': ''} ${draggingId===e.id? 'opacity-80 ring-2 ring-blue-400' : ''}`}
+        style={{ borderColor: 'var(--tw-colors-slate-200)', borderLeft: userColor ? `6px solid ${userColor}` : undefined }}
+        draggable={draggable}
+        onDragStart={(ev) => { if (!draggable) return; setDraggingId(e.id); ev.dataTransfer.setData('text/plain', e.id); ev.dataTransfer.effectAllowed = 'move'; }}
+        onDragEnd={() => setDraggingId(null)}
+        onDragOver={(ev) => { if (!draggable) return; ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; }}
+        onDrop={(ev) => {
+          if (!draggable) return;
+          ev.preventDefault();
+          const fromId = ev.dataTransfer.getData('text/plain');
+          const toId = e.id;
+          if (!fromId || fromId === toId) return;
+          // calcular orden efectivo y mover
+          setPrefs(prev => {
+            const idsAll = entries.map(x=>x.id);
+            const effective = prev.order.filter(x => idsAll.includes(x)).concat(idsAll.filter(x => !prev.order.includes(x)));
+            const fromIdx = effective.indexOf(fromId);
+            const toIdx = effective.indexOf(toId);
+            if (fromIdx < 0 || toIdx < 0) return prev;
+            const newOrder = effective.slice();
+            const [moved] = newOrder.splice(fromIdx, 1);
+            newOrder.splice(toIdx, 0, moved);
+            const next = { ...prev, order: newOrder };
+            savePrefs(next);
+            return next;
+          });
+          setDraggingId(null);
+        }}
+      >
         {/* acciones */}
         {isSub && (
           <div className="absolute top-2 right-2 z-20 flex items-center gap-1">
             <button onClick={() => startEdit(e)} className={actionBtnClass} title="Editar contenido">
               <Edit3 className="w-4 h-4" />
             </button>
-            <button onClick={() => openStyleModal(e)} className={actionBtnClass} title="Editar estilo">
+            <button onClick={() => openStyleModal(e)} className={actionBtnClass} title="Editar icono">
               <Pin className="w-4 h-4" />
             </button>
-            <button onClick={() => removeEntry(e.id)} className={hasGradient ? 'p-1.5 rounded-md bg-white/20 hover:bg-white/30 text-red-100' : 'p-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-red-600'} title="Eliminar">
+            <button onClick={() => removeEntry(e.id)} className={'p-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-red-600'} title="Eliminar">
               <Trash2 className="w-4 h-4" />
             </button>
+          </div>
+        )}
+        {canPersonalize && personalizeMode && (
+          <div className="absolute top-2 left-2 z-20 flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <button type="button" className="px-1.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-xs" onClick={()=>moveInOrder(e.id,'up')} title="Subir">↑</button>
+              <button type="button" className="px-1.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-xs" onClick={()=>moveInOrder(e.id,'down')} title="Bajar">↓</button>
+            </div>
+            <div className="flex items-center gap-1 text-xs">
+              <input type="color" value={userColor || '#ffffff'} onChange={(ev)=>setPrefColor(e.id, ev.target.value)} title="Color" />
+              <button type="button" className="px-1.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50" onClick={()=>setPrefColor(e.id, undefined)} title="Quitar color">✕</button>
+            </div>
           </div>
         )}
 
@@ -570,7 +657,7 @@ const Intranet: React.FC<Props> = ({ currentUser }) => {
           )}
           {/* Icono centrado debajo del texto */}
           <div className="mt-6 grid place-items-center pointer-events-none select-none">
-            <IconComp className={`${hasGradient ? 'text-white/30' : 'text-slate-300'} w-16 h-16 md:w-20 md:h-20`} />
+            <IconComp className={`text-slate-300 w-16 h-16 md:w-20 md:h-20`} />
           </div>
         </div>
 
@@ -642,11 +729,21 @@ const Intranet: React.FC<Props> = ({ currentUser }) => {
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Intranet</h2>
           <p className="text-slate-600 dark:text-slate-400">Información institucional, enlaces y recursos para el profesorado y coordinación.</p>
         </div>
-        {isSub && (
-          <button onClick={startNew} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 text-white hover:bg-amber-600">
-            <Plus className="w-4 h-4" /> Nueva entrada
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {canPersonalize && (
+            <>
+              <button onClick={()=>setPersonalizeMode(s=>!s)} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border ${personalizeMode? 'bg-blue-600 text-white border-blue-600':'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>{personalizeMode? 'Salir de personalización':'Personalizar'}</button>
+              {personalizeMode && (
+                <button onClick={()=>{ const cleared: UserPrefs = { order: [], colors: {}, version: 1 }; setPrefs(cleared); savePrefs(cleared); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border bg-white text-slate-700 border-slate-300 hover:bg-slate-50">Restablecer</button>
+              )}
+            </>
+          )}
+          {isSub && (
+            <button onClick={startNew} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 text-white hover:bg-amber-600">
+              <Plus className="w-4 h-4" /> Nueva entrada
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Editor para Subdirección */}
@@ -675,63 +772,31 @@ const Intranet: React.FC<Props> = ({ currentUser }) => {
         <div className="p-8 text-center rounded-xl bg-slate-50 dark:bg-slate-800 border dark:border-slate-700">Aún no hay entradas publicadas.</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {entries.sort((a, b) => (Number(!!b.destacado) - Number(!!a.destacado))).map((e) => <FeedCard key={e.id} e={e} />)}
+          {(() => {
+            const base = entries.slice().sort((a,b)=> Number(!!b.destacado) - Number(!!a.destacado));
+            if (canPersonalize) {
+              // Orden efectivo por usuario
+              const idsOrder = prefs.order.filter(id => base.find(x=>x.id===id));
+              const rest = base.filter(x => !idsOrder.includes(x.id));
+              const ordered: IntranetEntry[] = [...idsOrder.map(id => base.find(x=>x.id===id)!).filter(Boolean), ...rest];
+              return ordered.map((e, idx) => <FeedCard key={e.id} e={e} index={idx} />);
+            }
+            return base.map((e, idx) => <FeedCard key={e.id} e={e} index={idx} />);
+          })()}
         </div>
       )}
 
       {/* Modal global de estilo de tarjeta */}
-      {isSub && styleEntry && styleLocal && (
+      {isSub && styleEntry && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeStyleModal} />
           <div className="relative w-full max-w-lg mx-4 bg-white rounded-xl shadow-xl border border-slate-200 p-4">
             <div className="flex items-center justify-between mb-3">
-              <h5 className="text-slate-800 font-semibold">Estilo de tarjeta</h5>
+              <h5 className="text-slate-800 font-semibold">Apariencia de tarjeta (icono)</h5>
               <button onClick={closeStyleModal} className="p-1 rounded hover:bg-slate-100" aria-label="Cerrar">
                 <X className="w-4 h-4" />
               </button>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <p className="text-xs font-medium text-slate-600 mb-1">Presets</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {gradientPresets.map(p => (
-                    <button key={p.id}
-                      onClick={() => setStyleLocal({ presetId: p.id, from: p.from, to: p.to, angle: p.angle })}
-                      className={`h-10 rounded-md border ${styleLocal.presetId===p.id?'border-slate-900':'border-slate-200'} ring-1 ring-black/5`}
-                      style={{ background: `linear-gradient(${p.angle}deg, ${p.from}, ${p.to})` }}
-                      aria-label={`Preset ${p.id}`}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-slate-600 mb-1">Personalizado</p>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-slate-600 w-14">Desde</label>
-                    <input type="color" value={styleLocal.from} onChange={(e)=>setStyleLocal(prev=>prev?{...prev, from: e.target.value, presetId: undefined }:prev)} />
-                    <input type="text" value={styleLocal.from} onChange={(e)=>setStyleLocal(prev=>prev?{...prev, from: e.target.value, presetId: undefined }:prev)} className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-slate-600 w-14">Hasta</label>
-                    <input type="color" value={styleLocal.to} onChange={(e)=>setStyleLocal(prev=>prev?{...prev, to: e.target.value, presetId: undefined }:prev)} />
-                    <input type="text" value={styleLocal.to} onChange={(e)=>setStyleLocal(prev=>prev?{...prev, to: e.target.value, presetId: undefined }:prev)} className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-slate-600 w-14">Ángulo</label>
-                    <input type="range" min={0} max={360} value={styleLocal.angle} onChange={(e)=>setStyleLocal(prev=>prev?{...prev, angle: Number(e.target.value), presetId: undefined }:prev)} className="flex-1" />
-                    <span className="text-xs w-10 text-right">{styleLocal.angle}°</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <p className="text-xs font-medium text-slate-600 mb-1">Vista previa</p>
-              <div className="h-20 rounded-md border border-slate-200" style={{ background: `linear-gradient(${styleLocal.angle}deg, ${styleLocal.from}, ${styleLocal.to})` }} />
-            </div>
-
             {/* Selector de icono visual */}
             <div className="mt-4">
               <div className="flex items-center justify-between gap-2">
@@ -764,31 +829,16 @@ const Intranet: React.FC<Props> = ({ currentUser }) => {
                   })}
               </div>
             </div>
-
             <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button onClick={closeStyleModal} className="px-3 py-2 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200">Cancelar</button>
               <button
                 onClick={async () => {
                   if (!styleEntry) return;
                   try {
-                    await updateIntranetEntry(styleEntry.id, { gradiente: null as any });
+                    await updateIntranetEntry(styleEntry.id, { gradiente: null as any, iconId: styleIconId === 'auto' ? (null as any) : styleIconId });
                     closeStyleModal();
                   } catch (err: any) {
-                    alert(err?.message || 'No se pudo quitar el gradiente');
-                  }
-                }}
-                className="px-3 py-2 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200"
-              >
-                Quitar gradiente (blanco)
-              </button>
-              <button onClick={closeStyleModal} className="px-3 py-2 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200">Cancelar</button>
-              <button
-                onClick={async () => {
-                  if (!styleEntry || !styleLocal) return;
-                  try {
-                    await updateIntranetEntry(styleEntry.id, { gradiente: styleLocal, iconId: styleIconId === 'auto' ? (null as any) : styleIconId });
-                    closeStyleModal();
-                  } catch (err: any) {
-                    alert(err?.message || 'No se pudo guardar el gradiente');
+                    alert(err?.message || 'No se pudo guardar');
                   }
                 }}
                 className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"

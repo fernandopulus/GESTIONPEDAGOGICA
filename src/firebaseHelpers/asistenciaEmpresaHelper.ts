@@ -8,7 +8,8 @@ import {
   orderBy,
   Timestamp,
 } from 'firebase/firestore';
-import { db } from './config'; // Make sure the path to your config is correct
+// Unificamos el origen de Firebase para evitar inconsistencias entre instancias
+import { db } from '../firebase'; // Alineado con el resto de helpers
 import { AsistenciaDual } from '../../types';
 import { auth } from '../firebase';
 

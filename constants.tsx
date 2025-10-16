@@ -5,6 +5,7 @@ export const BuildingIcon = () => (
   </svg>
 );
 import React from 'react';
+import { Wrench, Cog as CogLucide } from 'lucide-react';
 import { Profile, Module, NivelPlanificacion, EstadoAccion, EventType, EvaluacionSubtype, TipoReunion, TipoInstrumento, EscalaCalificacion, PruebaItemTipo, NivelLogro, EstadoSeguimientoDual, TipoActividadRemota, DificultadAprendizaje, Insignia } from './types';
 
 // Ícono para evaluación de competencias
@@ -16,8 +17,9 @@ export const TargetIcon = () => (
 
 // --- Estilos base ---
 // --- Listas de asignaturas y niveles ---
-export const iconClass = "w-6 h-6";
-export const profileIconClass = "w-24 h-24";
+// Tamaños base más contenidos para evitar íconos desproporcionados
+export const iconClass = "w-5 h-5";
+export const profileIconClass = "w-16 h-16";
 
 // --- ÍCONOS ---
 export const MainLogo = () => (
@@ -28,8 +30,8 @@ export const MainLogo = () => (
     />
 );
 
-export const LirLogoIcon = () => (
-    <svg className="w-10 h-10 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+export const LirLogoIcon: React.FC<React.SVGProps<SVGSVGElement>> = ({ className, ...props }) => (
+    <svg className={className ?? "w-10 h-10 text-amber-400"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" {...props}>
         <path d="M9 18h6" />
         <path d="M10 22h4" />
         <path d="M12 2a7 7 0 0 0-7 7c0 3 2 5 2 7h10c0-2 2-4 2-7a7 7 0 0 0-7-7z" />
@@ -73,10 +75,7 @@ const ProfesoradoIcon = () => (
     </svg>
 );
 const CoordinacionTPIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={profileIconClass} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.43.992a6.759 6.759 0 010 1.255c-.008.378.137.75.43.99l1.004.828c.421.346.564.95.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.68 6.68 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.063-.374-.313-.686-.645-.87a6.68 6.68 0 01-.22-.127c-.325-.196-.72-.257-1.075-.124l-1.217.456a1.125 1.125 0 01-1.369-.491l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.759 6.759 0 010-1.255c.008-.378-.137-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.49l1.217.456c.355.133.75.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
+        <CogLucide className={profileIconClass} />
 );
 const EstudianteIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className={profileIconClass} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -99,7 +98,7 @@ const CogIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className={iconCla
 const AcademicCapIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 14v6" /></svg>;
 const CheckCircleIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
 const GlobeAltIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9V3m0 18a9 9 0 009-9m-9 9a9 9 0 00-9-9" /></svg>;
-const WrenchScrewdriverIcon = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={iconClass}><path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.528-1.036.94-2.197 1.088-3.386l-.7M11.42 15.17l-1.06-1.06a4.5 4.5 0 01-5.656-5.656l-1.06 1.06c-1.37.66-2.58 1.6-3.58 2.75a4.5 4.5 0 00-1.06 5.656l1.06 1.06c1.15.998 2.52 1.93 3.99 2.58l1.06-1.06a4.5 4.5 0 015.656-5.656l3.032 2.496m-3.582-2.58a4.5 4.5 0 00-5.656 5.656l1.06-1.06a4.5 4.5 0 015.656-5.656l1.06 1.06m-3.032-2.496a4.5 4.5 0 00-5.656 5.656l1.06-1.06a4.5 4.5 0 015.656-5.656l1.06 1.06" /></svg>;
+const WrenchScrewdriverIcon = () => <Wrench className={iconClass} />;
 const ClipboardCheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>;
 const ClipboardDocumentCheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={iconClass}><path strokeLinecap="round" strokeLinejoin="round" d="M10.125 2.25h-4.5c-1.125 0-2.25 1.125-2.25 2.25v15c0 1.125 1.125 2.25 2.25 2.25h11.25c1.125 0 2.25-1.125 2.25-2.25v-9.75M10.125 2.25c.621 0 1.125.504 1.125 1.125v3.375c0 .621-.504 1.125-1.125 1.125h-1.5c-.621 0-1.125-.504-1.125-1.125v-3.375c0-.621.504-1.125 1.125-1.125h1.5zM17.25 10.5h.375c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125h-.375m0-3.75V6.375c0-.621-.504-1.125-1.125-1.125h-1.5c-.621 0-1.125.504-1.125 1.125v3.375c0 .621.504 1.125 1.125 1.125h1.5c.621 0 1.125-.504 1.125-1.125v-1.5m-6.375 5.25v-1.5c0-.621.504-1.125 1.125-1.125h.375c.621 0 1.125.504 1.125 1.125v1.5m0 3.75V16.5c0-.621-.504-1.125-1.125-1.125h-.375a1.125 1.125 0 00-1.125 1.125v1.5m6.375 0V16.5c0-.621-.504-1.125-1.125-1.125h-.375a1.125 1.125 0 00-1.125 1.125v1.5" /></svg>;
 const SimceIcon = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={iconClass}><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0l-2.072-1.036A48.257 48.257 0 0112 10.045a48.258 48.258 0 0110.332-1.036l-2.072 1.036m-16.425 0a48.27 48.27 0 00-2.223 2.218c.958.056 1.91.118 2.857.185m16.425 0c.947-.067 1.9-.129 2.857-.185a48.27 48.27 0 00-2.223-2.218m-12.182 0A11.947 11.947 0 0112 8.636a11.947 11.947 0 014.09 1.511" /></svg>;

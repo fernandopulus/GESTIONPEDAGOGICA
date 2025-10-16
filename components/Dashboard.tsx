@@ -134,11 +134,9 @@ const Dashboard: React.FC<DashboardProps> = ({
       <div className="flex items-center h-20 px-4 border-b border-white/10 bg-[#121926]">
         <div className="flex items-center gap-3">
           {/* Círculo amarillo + ícono forzado a currentColor */}
-          <div className="w-10 h-10 rounded-full bg-amber-400 flex items-center justify-center shadow-inner">
+          <div className="w-9 h-9 rounded-full bg-amber-400 flex items-center justify-center shadow-inner">
             <span className="text-slate-900 inline-flex items-center justify-center">
-              {/* Si tu LirLogoIcon usa currentColor, tomará el color anterior.
-                 Además le pasamos className para tamaño controlado. */}
-              <LirLogoIcon className="w-5 h-5" />
+              <LirLogoIcon className="w-4 h-4" />
             </span>
           </div>
           {!isSidebarCollapsed && (
@@ -559,7 +557,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                   <Menu className="w-5 h-5" />
                 </button>
                 {activeModule?.icon && (
-                  <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-white dark:bg-slate-800 shadow">
+                  <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-white dark:bg-slate-800 shadow">
                     {activeModule.icon}
                   </span>
                 )}

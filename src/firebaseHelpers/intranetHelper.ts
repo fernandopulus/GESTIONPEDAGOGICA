@@ -41,7 +41,10 @@ export const createIntranetEntry = async (data: Omit<IntranetEntry, 'id' | 'crea
 };
 
 export const updateIntranetEntry = async (id: string, data: Partial<IntranetEntry>) => {
-  await updateDoc(doc(db, COLLECTION, id), { ...data, updatedAt: new Date().toISOString() });
+  const payload = { ...data, updatedAt: new Date().toISOString() } as any;
+  // Sanitizar: eliminar propiedades con valor undefined (incluye anidados)
+  const sanitized = JSON.parse(JSON.stringify(payload));
+  await updateDoc(doc(db, COLLECTION, id), sanitized);
 };
 
 export const deleteIntranetEntry = async (id: string) => {

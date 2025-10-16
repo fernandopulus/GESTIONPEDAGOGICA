@@ -41,6 +41,16 @@ interface Pregunta {
     tipo: 'seleccion_multiple' | 'verdadero_falso' | 'respuesta_corta';
 }
 
+// Metadata opcional enviada por el frontend para orientar generación
+interface PruebaMetadata {
+    nombre?: string;
+    asignatura?: string;
+    nivel?: string;
+    contenido?: string;
+    dificultad?: 'Fácil' | 'Intermedio' | 'Avanzado' | string;
+    nee?: string[];
+}
+
 
 // ==========================
 // Normalizador unificado → Pregunta para el frontend
@@ -292,7 +302,7 @@ export const generarDescriptorDimensionConGemini = onCall({ secrets: [geminiApiK
 export const generarPruebaConGemini = onCall({ secrets: [geminiApiKey] }, async (request) => {
     isAuthenticated(request);
 
-    const { objetivo, cantidadesPorTipo, contextoAdicional } = request.data;
+    const { objetivo, cantidadesPorTipo, contextoAdicional, metadata } = request.data as { objetivo?: string; cantidadesPorTipo: Record<string, number>; contextoAdicional?: string; metadata?: PruebaMetadata };
 
     if (!objetivo || !cantidadesPorTipo || typeof cantidadesPorTipo !== 'object') {
         throw new HttpsError("invalid-argument", "Faltan parámetros requeridos (objetivo, cantidadesPorTipo).");
@@ -304,7 +314,7 @@ export const generarPruebaConGemini = onCall({ secrets: [geminiApiKey] }, async 
         for (const tipo in cantidadesPorTipo) {
             const cantidad = cantidadesPorTipo[tipo];
             if (!cantidad || cantidad < 1) continue;
-            const preguntasGeneradas = await generateQuestionsForTipo(tipo, cantidad, objetivo, contextoAdicional);
+            const preguntasGeneradas = await generateQuestionsForTipo(tipo, cantidad, objetivo, contextoAdicional, metadata);
             todasLasPreguntas.push(...preguntasGeneradas);
         }
 
@@ -323,7 +333,7 @@ export const generarPruebaConGemini = onCall({ secrets: [geminiApiKey] }, async 
  * en llamadas pequeñas (una por una) y para Comprensión de lectura genera el texto
  * y luego sus preguntas.
  */
-async function generateQuestionsForTipo(tipo: string, cantidad: number, objetivo: string, contextoAdicional?: string): Promise<any[]> {
+async function generateQuestionsForTipo(tipo: string, cantidad: number, objetivo: string, contextoAdicional?: string, meta?: PruebaMetadata): Promise<any[]> {
     const results: any[] = [];
     const useFlash = tipo === 'Verdadero o Falso' || tipo === 'Desarrollo' || cantidad <= 3;
 
@@ -370,6 +380,29 @@ async function generateQuestionsForTipo(tipo: string, cantidad: number, objetivo
         const uniq = new Set(arr.map((x) => x.toLowerCase()));
         return uniq.size < 4;
     };
+    // Palabras prohibidas (artefactos de metadatos/logs que no deben aparecer en enunciados ni opciones)
+    const BANNED = [
+        'role', 'model', 'assistant', 'system', 'prompt', 'token', 'tokens',
+        'responseid', 'candidates', 'content.parts', 'finishreason', 'index',
+        'log', 'logs', 'json', '```', 'cloud run', 'cloudfunctions', 'firebase', 'api key'
+    ];
+    const hasBannedWord = (s: any): boolean => {
+        const t = String(s || '').toLowerCase();
+        if (!t) return false;
+        return BANNED.some((w) => t.includes(w));
+    };
+    const containsBannedInSM = (obj: any): boolean => {
+        if (hasBannedWord(obj?.pregunta)) return true;
+        const ops = Array.isArray(obj?.opciones) ? obj.opciones : [];
+        return ops.some((o: any) => hasBannedWord(o));
+    };
+    const containsBannedInVF = (obj: any): boolean => hasBannedWord(obj?.pregunta);
+    const containsBannedInDEV = (obj: any): boolean => hasBannedWord(obj?.pregunta);
+    const containsBannedInPareados = (obj: any): boolean => {
+        if (hasBannedWord(obj?.pregunta)) return true;
+        const pares = Array.isArray(obj?.pares) ? obj.pares : [];
+        return pares.some((p: any) => hasBannedWord(p?.concepto) || hasBannedWord(p?.definicion));
+    };
     const needsRepairPareados = (pares: any[]): boolean => {
         if (!Array.isArray(pares) || pares.length < 3) return true;
         for (const p of pares) {
@@ -377,8 +410,8 @@ async function generateQuestionsForTipo(tipo: string, cantidad: number, objetivo
         }
         return false;
     };
-    const tryRepairSM = async (obj: any, rcLetter: string): Promise<any | null> => {
-        const prompt = `Reescribe esta pregunta de selección múltiple con alternativas específicas y plausibles relacionadas al tema. No uses textos genéricos como "Opción A/B/C/D" ni letras sueltas. Mantén la letra de la respuesta correcta en "respuestaCorrecta": "${rcLetter}".
+        const tryRepairSM = async (obj: any, rcLetter: string): Promise<any | null> => {
+                const prompt = `Reescribe esta pregunta de selección múltiple con alternativas específicas y plausibles relacionadas al tema. No uses textos genéricos como "Opción A/B/C/D" ni letras sueltas. PROHIBIDO usar términos de metadatos o logs como: role, model, assistant, system, prompt, token(s), responseId, candidates, json, logs. Mantén la letra de la respuesta correcta en "respuestaCorrecta": "${rcLetter}".
 
 Tema: "${objetivo}"
 Pregunta original: ${obj.pregunta || ''}
@@ -395,11 +428,11 @@ Devuelve SOLO JSON válido con este esquema exacto:
         const { text } = await callGemini({ prompt, mode: 'flash', config: { maxOutputTokens: 600, temperature: 0.2 } });
         const parsed = parseJsonResponse(text);
         const rep = Array.isArray(parsed) ? parsed[0] : parsed;
-        if (rep && rep.opciones && !needsRepairSM(rep.opciones)) return rep;
+                if (rep && rep.opciones && !needsRepairSM(rep.opciones) && !containsBannedInSM(rep)) return rep;
         return null;
     };
     const tryRepairPareados = async (obj: any): Promise<any | null> => {
-        const prompt = `Genera una actividad de "Términos pareados" con conceptos y definiciones relevantes al tema. Evita textos genéricos como "Concepto 1" o "Definición 1". Devuelve entre 4 y 6 pares.
+                const prompt = `Genera una actividad de "Términos pareados" con conceptos y definiciones relevantes al tema. Evita textos genéricos como "Concepto 1" o "Definición 1". PROHIBIDO usar términos de metadatos o logs como: role, model, assistant, system, prompt, token(s), responseId, candidates, json, logs. Devuelve entre 4 y 6 pares.
 
 Tema: "${objetivo}"
 
@@ -413,18 +446,25 @@ Devuelve SOLO JSON válido:
         const { text } = await callGemini({ prompt, mode: 'flash', config: { maxOutputTokens: 600, temperature: 0.2 } });
         const parsed = parseJsonResponse(text);
         const rep = Array.isArray(parsed) ? parsed[0] : parsed;
-        if (rep && Array.isArray(rep.pares) && !needsRepairPareados(rep.pares)) return rep;
+                if (rep && Array.isArray(rep.pares) && !needsRepairPareados(rep.pares) && !containsBannedInPareados(rep)) return rep;
         return null;
     };
 
+    // Ajustes por dificultad para nivel Bloom y complejidad
+    const dif = String(meta?.dificultad || '').toLowerCase();
+    const bloomTarget = dif.includes('avanz') ? 'Evaluar|Crear' : dif.includes('fá') || dif.includes('facil') || dif.includes('fácil') ? 'Recordar|Comprender' : 'Aplicar|Analizar';
+    const neeHint = Array.isArray(meta?.nee) && meta!.nee!.length > 0 ? `Adaptar para NEE: ${meta!.nee!.join(', ')}. Usa lenguaje claro, menor extensión y evita ambigüedades.` : '';
+
     if (tipo === 'Comprensión de lectura') {
         // Paso 1: generar texto breve (acotar longitud para evitar truncamientos)
-    const promptText = `Eres diseñador de evaluaciones. Devuelve SOLO JSON válido, sin bloques de código ni texto adicional.
+    const promptText = `Eres diseñador de evaluaciones. Devuelve SOLO JSON válido, sin bloques de código ni texto adicional. PROHIBIDO usar términos de metadatos o logs como: role, model, assistant, system, prompt, token(s), responseId, candidates, json, logs.
 
 Esquema:
 { "texto": "120-180 palabras, original, adecuado al nivel, con información suficiente para formular preguntas" }
 
 Tema: "${objetivo}"
+Asignatura: ${meta?.asignatura || ''}
+Nivel: ${meta?.nivel || ''}
 ${contextoAdicional ? `Contexto adicional: ${contextoAdicional}` : ''}`;
     const { text: textResp } = await callGemini({ prompt: promptText, mode: 'flash', config: { maxOutputTokens: 800 } });
     // Sanitizar posibles bloques de código
@@ -439,7 +479,7 @@ ${contextoAdicional ? `Contexto adicional: ${contextoAdicional}` : ''}`;
             let agregada = false;
             while (intentos < 2 && !agregada) {
                 intentos++;
-                                const promptQ = `Eres diseñador de evaluaciones. Devuelve SOLO JSON válido (un objeto), sin bloques de código.
+                                                                const promptQ = `Eres diseñador de evaluaciones. Devuelve SOLO JSON válido (un objeto), sin bloques de código. PROHIBIDO usar términos de metadatos o logs como: role, model, assistant, system, prompt, token(s), responseId, candidates, json, logs.
 
 Texto base:
 """
@@ -452,14 +492,14 @@ Genera 1 pregunta de opción múltiple basada EXCLUSIVAMENTE en el texto. Esquem
   "pregunta": "enunciado claro y breve (1 oración)",
   "opciones": ["alternativa A", "alternativa B", "alternativa C", "alternativa D"],
   "respuestaCorrecta": "A|B|C|D",
-    "puntaje": 1,
-    "habilidadBloom": "Recordar|Comprender|Aplicar|Analizar|Evaluar|Crear"
+        "puntaje": 1,
+        "habilidadBloom": "${bloomTarget}"
 }`;
                 try {
                     const { text: respQ } = await callGemini({ prompt: promptQ, mode: 'flash', config: { maxOutputTokens: 600 } });
                     const parsedQ = parseJsonResponse(clean(respQ));
                     let obj = Array.isArray(parsedQ) ? parsedQ[0] : parsedQ;
-                    if (obj && typeof obj === 'object') {
+                    if (obj && typeof obj === 'object' && !containsBannedInSM(obj)) {
                         // Validación y saneamiento mínimo
                         const opciones = Array.isArray(obj.opciones) ? obj.opciones.slice(0, 4) : [];
                         while (opciones.length < 4) opciones.push('');
@@ -480,8 +520,8 @@ Genera 1 pregunta de opción múltiple basada EXCLUSIVAMENTE en el texto. Esquem
                         // Fallback seguro para no abortar todo el conjunto
                         preguntasCL.push({
                             tipo: 'Selección múltiple',
-                            pregunta: 'Según el texto, ¿cuál de las siguientes opciones es correcta?',
-                            opciones: ['A', 'B', 'C', 'D'],
+                            pregunta: `Según el texto, responde al contenido disciplinar (evita metadatos).`,
+                            opciones: ['Opción A', 'Opción B', 'Opción C', 'Opción D'],
                             respuestaCorrecta: 'A',
                             puntaje: 1,
                             habilidadBloom: 'Comprender',
@@ -503,43 +543,50 @@ Genera 1 pregunta de opción múltiple basada EXCLUSIVAMENTE en el texto. Esquem
     const isValidDEV = (o: any) => o && /desarrollo|abierta|respuesta corta/i.test(String(o.tipo || '')) && isNonEmptyString(o.pregunta);
     const isValidPareados = (o: any) => o && /paread|emparejar|matching/i.test(String(o.tipo || '')) && Array.isArray(o.pares) && o.pares.length >= 3 && o.pares.every((p: any) => isNonEmptyString(p?.concepto) && isNonEmptyString(p?.definicion));
 
-    // Para otros tipos: generar de uno en uno con esquemas explícitos (respetando cantidad y evitando excesos)
+        // Para otros tipos: generar de uno en uno con esquemas explícitos (respetando cantidad y evitando excesos)
     for (let i = 0; i < Math.max(1, Math.min(50, cantidad)); i++) {
         let esquema = '';
-        if (tipo === 'Selección múltiple') {
+                if (tipo === 'Selección múltiple') {
             esquema = `{
   "tipo": "Selección múltiple",
   "pregunta": "enunciado claro y contextualizado",
   "opciones": ["alternativa A", "alternativa B", "alternativa C", "alternativa D"],
   "respuestaCorrecta": "A|B|C|D",
-  "puntaje": 1
+    "puntaje": 1,
+    "habilidadBloom": "${bloomTarget}"
 }`;
         } else if (tipo === 'Verdadero o Falso') {
             esquema = `{
   "tipo": "Verdadero o Falso",
   "pregunta": "afirmación que pueda evaluarse como verdadera o falsa",
-  "respuestaCorrecta": true,
-  "puntaje": 1
+    "respuestaCorrecta": true,
+    "puntaje": 1,
+    "habilidadBloom": "${bloomTarget}"
 }`;
         } else if (tipo === 'Desarrollo') {
             esquema = `{
   "tipo": "Desarrollo",
   "pregunta": "pregunta abierta que requiera explicación o justificación",
-  "puntaje": 1
+    "puntaje": 1,
+    "habilidadBloom": "${bloomTarget}"
 }`;
         } else if (tipo === 'Términos pareados') {
             esquema = `{
   "tipo": "Términos pareados",
   "pregunta": "instrucción breve para emparejar conceptos y definiciones",
   "pares": [ { "concepto": "...", "definicion": "..." }, { "concepto": "...", "definicion": "..." } ],
-  "puntaje": 1
+    "puntaje": 1,
+    "habilidadBloom": "${bloomTarget}"
 }`;
         }
 
-    const promptQ = `Eres diseñador de evaluaciones. Genera SOLO JSON válido sin bloques de código ni texto adicional.
+                const promptQ = `Eres diseñador de evaluaciones. Genera SOLO JSON válido sin bloques de código ni texto adicional. PROHIBIDO usar términos de metadatos o logs como: role, model, assistant, system, prompt, token(s), responseId, candidates, json, logs.
 
 Tipo: ${tipo}
 Tema: "${objetivo}"
+Asignatura: ${meta?.asignatura || ''}
+Nivel: ${meta?.nivel || ''}
+${neeHint}
 ${contextoAdicional ? `Contexto adicional: ${contextoAdicional}` : ''}
 
 Usa exactamente este esquema:
@@ -553,10 +600,10 @@ ${esquema}`;
             if (!obj || typeof obj !== 'object') continue;
             // Validar según tipo
             let ok = false;
-            if (tipo === 'Selección múltiple') ok = isValidSM(obj);
-            else if (tipo === 'Verdadero o Falso') ok = isValidVF(obj);
-            else if (tipo === 'Desarrollo') ok = isValidDEV(obj);
-            else if (tipo === 'Términos pareados') ok = isValidPareados(obj);
+            if (tipo === 'Selección múltiple') ok = isValidSM(obj) && !containsBannedInSM(obj);
+            else if (tipo === 'Verdadero o Falso') ok = isValidVF(obj) && !containsBannedInVF(obj);
+            else if (tipo === 'Desarrollo') ok = isValidDEV(obj) && !containsBannedInDEV(obj);
+            else if (tipo === 'Términos pareados') ok = isValidPareados(obj) && !containsBannedInPareados(obj);
             if (!ok) continue;
             finalObj = obj;
             break;
@@ -567,37 +614,37 @@ ${esquema}`;
                 const repaired = await tryRepairSM({ pregunta: `Según el contenido: ${objetivo}, responde.`, opciones: [] }, 'A');
                 if (repaired && !needsRepairSM(repaired.opciones)) {
                     const opciones = repaired.opciones.slice(0,4);
-                    results.push({ tipo, pregunta: repaired.pregunta, opciones, respuestaCorrecta: String(repaired.respuestaCorrecta || 'A').toUpperCase(), puntaje: typeof repaired.puntaje === 'number' ? repaired.puntaje : 1 });
+                        results.push({ tipo, pregunta: repaired.pregunta, opciones, respuestaCorrecta: String(repaired.respuestaCorrecta || 'A').toUpperCase(), puntaje: typeof repaired.puntaje === 'number' ? repaired.puntaje : 1, habilidadBloom: bloomTarget.split('|')[0] });
                 }
                 continue;
             } else if (tipo === 'Verdadero o Falso') {
                 // Pequeño generador enfocado
-                const prompt = `Genera una afirmación breve (verdadera o falsa) relacionada con el tema y devuelve JSON {"tipo":"Verdadero o Falso","pregunta":"...","respuestaCorrecta":true|false,"puntaje":1}. Tema: "${objetivo}"`;
+                    const prompt = `Genera una afirmación breve (verdadera o falsa) relacionada con el tema y devuelve JSON {"tipo":"Verdadero o Falso","pregunta":"...","respuestaCorrecta":true|false,"puntaje":1,"habilidadBloom":"${bloomTarget}"}. Tema: "${objetivo}". ${neeHint} PROHIBIDO usar términos de metadatos o logs como: role, model, assistant, system, prompt, token(s), responseId, candidates, json, logs.`;
                 try {
                     const { text } = await callGemini({ prompt, mode: 'flash', config: { maxOutputTokens: 300, temperature: 0.2 } });
                     const parsed = parseJsonResponse(text);
                     const rep = Array.isArray(parsed) ? parsed[0] : parsed;
-                    if (rep && typeof rep.pregunta === 'string' && (typeof rep.respuestaCorrecta === 'boolean' || typeof rep.esVerdadero === 'boolean')) {
-                        results.push({ tipo, pregunta: rep.pregunta, respuestaCorrecta: typeof rep.respuestaCorrecta === 'boolean' ? rep.respuestaCorrecta : rep.esVerdadero, puntaje: typeof rep.puntaje === 'number' ? rep.puntaje : 1 });
+                    if (rep && typeof rep.pregunta === 'string' && (typeof rep.respuestaCorrecta === 'boolean' || typeof rep.esVerdadero === 'boolean') && !containsBannedInVF(rep)) {
+                            results.push({ tipo, pregunta: rep.pregunta, respuestaCorrecta: typeof rep.respuestaCorrecta === 'boolean' ? rep.respuestaCorrecta : rep.esVerdadero, puntaje: typeof rep.puntaje === 'number' ? rep.puntaje : 1, habilidadBloom: bloomTarget.split('|')[0] });
                     }
                 } catch {}
                 continue;
             } else if (tipo === 'Desarrollo') {
-                const prompt = `Genera una pregunta abierta de desarrollo relacionada con el tema y devuelve JSON {"tipo":"Desarrollo","pregunta":"...","puntaje":1}. Tema: "${objetivo}"`;
+                    const prompt = `Genera una pregunta abierta de desarrollo relacionada con el tema y devuelve JSON {"tipo":"Desarrollo","pregunta":"...","puntaje":1,"habilidadBloom":"${bloomTarget}"}. Tema: "${objetivo}". ${neeHint} PROHIBIDO usar términos de metadatos o logs como: role, model, assistant, system, prompt, token(s), responseId, candidates, json, logs.`;
                 try {
                     const { text } = await callGemini({ prompt, mode: 'flash', config: { maxOutputTokens: 300, temperature: 0.2 } });
                     const parsed = parseJsonResponse(text);
                     const rep = Array.isArray(parsed) ? parsed[0] : parsed;
-                    if (rep && typeof rep.pregunta === 'string') {
-                        results.push({ tipo, pregunta: rep.pregunta, puntaje: typeof rep.puntaje === 'number' ? rep.puntaje : 1 });
+                    if (rep && typeof rep.pregunta === 'string' && !containsBannedInDEV(rep)) {
+                            results.push({ tipo, pregunta: rep.pregunta, puntaje: typeof rep.puntaje === 'number' ? rep.puntaje : 1, habilidadBloom: bloomTarget.split('|')[0] });
                     }
                 } catch {}
                 continue;
             } else if (tipo === 'Términos pareados') {
                 try {
                     const repaired = await tryRepairPareados({});
-                    if (repaired && Array.isArray(repaired.pares)) {
-                        results.push({ tipo, pregunta: repaired.pregunta || 'Relaciona los términos', pares: repaired.pares, puntaje: typeof repaired.puntaje === 'number' ? repaired.puntaje : 1 });
+                    if (repaired && Array.isArray(repaired.pares) && !containsBannedInPareados(repaired)) {
+                            results.push({ tipo, pregunta: repaired.pregunta || 'Relaciona los términos', pares: repaired.pares, puntaje: typeof repaired.puntaje === 'number' ? repaired.puntaje : 1, habilidadBloom: bloomTarget.split('|')[0] });
                     }
                 } catch {}
                 continue;
@@ -614,12 +661,18 @@ ${esquema}`;
                     opciones = repaired.opciones.slice(0,4);
                 }
             }
-            results.push({ tipo, pregunta: finalObj.pregunta, opciones, respuestaCorrecta: rcLetter, puntaje: typeof finalObj.puntaje === 'number' ? finalObj.puntaje : 1 });
+            if (!containsBannedInSM({ pregunta: finalObj.pregunta, opciones })) {
+                results.push({ tipo, pregunta: finalObj.pregunta, opciones, respuestaCorrecta: rcLetter, puntaje: typeof finalObj.puntaje === 'number' ? finalObj.puntaje : 1, habilidadBloom: finalObj.habilidadBloom || bloomTarget.split('|')[0] });
+            }
         } else if (tipo === 'Verdadero o Falso') {
             let respBool = typeof finalObj.respuestaCorrecta === 'boolean' ? finalObj.respuestaCorrecta : (typeof finalObj.esVerdadero === 'boolean' ? finalObj.esVerdadero : String(finalObj.correcta||'').toUpperCase().startsWith('V'));
-            results.push({ tipo, pregunta: finalObj.pregunta, respuestaCorrecta: respBool, puntaje: typeof finalObj.puntaje === 'number' ? finalObj.puntaje : 1 });
+            if (!containsBannedInVF(finalObj)) {
+                results.push({ tipo, pregunta: finalObj.pregunta, respuestaCorrecta: respBool, puntaje: typeof finalObj.puntaje === 'number' ? finalObj.puntaje : 1, habilidadBloom: finalObj.habilidadBloom || bloomTarget.split('|')[0] });
+            }
         } else if (tipo === 'Desarrollo') {
-            results.push({ tipo, pregunta: finalObj.pregunta, puntaje: typeof finalObj.puntaje === 'number' ? finalObj.puntaje : 1 });
+            if (!containsBannedInDEV(finalObj)) {
+                results.push({ tipo, pregunta: finalObj.pregunta, puntaje: typeof finalObj.puntaje === 'number' ? finalObj.puntaje : 1, habilidadBloom: finalObj.habilidadBloom || bloomTarget.split('|')[0] });
+            }
         } else if (tipo === 'Términos pareados') {
             let pares = finalObj.pares;
             if (needsRepairPareados(pares)) {
@@ -628,7 +681,9 @@ ${esquema}`;
                     pares = repaired.pares;
                 }
             }
-            results.push({ tipo, pregunta: finalObj.pregunta || 'Relaciona los términos', pares, puntaje: typeof finalObj.puntaje === 'number' ? finalObj.puntaje : 1 });
+            if (!containsBannedInPareados(finalObj)) {
+                results.push({ tipo, pregunta: finalObj.pregunta || 'Relaciona los términos', pares, puntaje: typeof finalObj.puntaje === 'number' ? finalObj.puntaje : 1, habilidadBloom: finalObj.habilidadBloom || bloomTarget.split('|')[0] });
+            }
         }
     }
 
@@ -674,10 +729,10 @@ export const generarPruebaConGeminiHttp = onRequest({ timeoutSeconds: 300, cors:
     }
 
     try {
-        const { objetivo, cantidadesPorTipo, contextoAdicional } = req.body;
-        if (!objetivo || !cantidadesPorTipo) {
+        const { objetivo, cantidadesPorTipo, contextoAdicional, metadata } = req.body as { objetivo?: string; cantidadesPorTipo: Record<string, number>; contextoAdicional?: string; metadata?: PruebaMetadata };
+        if (!cantidadesPorTipo) {
             setCors();
-            res.status(400).json({ success: false, error: 'Missing objetivo or cantidadesPorTipo' });
+            res.status(400).json({ success: false, error: 'Missing cantidadesPorTipo' });
             return;
         }
 
@@ -698,19 +753,131 @@ export const generarPruebaConGeminiHttp = onRequest({ timeoutSeconds: 300, cors:
             return;
         }
 
-                // Reusar la misma lógica robusta que el onCall: generar por tipo con helper
+                // Si no viene objetivo, generar uno a partir de metadata (nivel, asignatura, contenido, dificultad, NEE)
+                let objetivoFinal = (objetivo || '').trim();
+                if (!objetivoFinal) {
+                    const meta: PruebaMetadata = metadata || {};
+                    const brief = `Nivel: ${meta.nivel || ''}. Asignatura: ${meta.asignatura || ''}. Contenido: ${meta.contenido || ''}. Dificultad: ${meta.dificultad || 'Intermedio'}. ${Array.isArray(meta.nee) && meta.nee.length ? `NEE: ${meta.nee.join(', ')}` : ''}`;
+                    // Primer intento: JSON estricto
+                    try {
+                        const promptOA1 = `Redacta un Objetivo de Aprendizaje (OA) claro, medible y alineado al currículum chileno para una evaluación.
+Debe:
+- Usar un verbo observable (p. ej., identificar, analizar, comparar, argumentar).
+- Incorporar el contenido indicado y la asignatura.
+- Ser una sola oración.
+- Adecuarse al nivel indicado.
+
+Contexto:
+${brief}
+
+Devuelve SOLO JSON válido con este esquema exacto:
+{ "objetivo": "Los estudiantes serán capaces de ..." }`;
+                        const { text } = await callGemini({ prompt: promptOA1, mode: 'flash', config: { maxOutputTokens: 300, temperature: 0.2 } });
+                        const s = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                        const m = s.match(/\{[\s\S]*\}/);
+                        const parsed = m && m[0] ? JSON.parse(m[0]) : JSON.parse(s);
+                        objetivoFinal = String(parsed?.objetivo || '').trim();
+                    } catch {}
+                    // Segundo intento: texto plano si el primero falló o quedó vacío
+                    if (!objetivoFinal) {
+                        try {
+                            const promptOA2 = `En una sola oración, redacta un Objetivo de Aprendizaje (OA) claro, medible y alineado al currículum chileno para:
+Asignatura: ${meta.asignatura || ''}
+Nivel: ${meta.nivel || ''}
+Contenido: ${meta.contenido || ''}
+Debe iniciar con: "Los estudiantes serán capaces de ..." y utilizar un verbo observable acorde a ${meta.dificultad || 'Intermedio'}.
+No incluyas comillas ni texto adicional.`;
+                            const { text } = await callGemini({ prompt: promptOA2, mode: 'flash', config: { maxOutputTokens: 160, temperature: 0.2 } });
+                            objetivoFinal = String(text || '').replace(/```/g, '').trim();
+                            // Sanitizar si viniera envuelto en comillas
+                            objetivoFinal = objetivoFinal.replace(/^"|"$/g, '');
+                        } catch {}
+                    }
+                    // Fallback determinístico si aún vacío
+                    if (!objetivoFinal) {
+                        const subj = meta.asignatura || 'Asignatura';
+                        const niv = meta.nivel || 'Nivel';
+                        const cont = meta.contenido || 'contenido indicado';
+                        objetivoFinal = `Los estudiantes serán capaces de analizar evidencias del tema "${cont}" en ${subj}, adecuadas a ${niv}.`;
+                    }
+                }
+
+                // Generar por tipo con helper
                 let todasLasPreguntas: any[] = [];
         for (const tipo in cantidadesPorTipo) {
-            const cantidad = cantidadesPorTipo[tipo];
-            if (!cantidad || cantidad < 1) continue;
-            const preguntasGeneradas = await generateQuestionsForTipo(tipo, cantidad, objetivo, contextoAdicional);
-            todasLasPreguntas.push(...preguntasGeneradas);
+            const cantidad = Math.max(0, Number(cantidadesPorTipo[tipo] || 0));
+            if (!cantidad) continue;
+            const preguntasGeneradas = await generateQuestionsForTipo(tipo, cantidad, objetivoFinal, contextoAdicional, metadata);
+            let lista = Array.isArray(preguntasGeneradas) ? preguntasGeneradas : [];
+
+            // Asegurar cantidad exacta con fallbacks determinísticos si faltan
+            const faltan = Math.max(0, cantidad - lista.length);
+            if (faltan > 0) {
+                for (let i = 0; i < faltan; i++) {
+                    if (tipo === 'Selección múltiple') {
+                        lista.push({
+                            tipo,
+                            pregunta: `Según el objetivo, selecciona la alternativa correcta (${i+1}/${faltan}).`,
+                            opciones: ['Opción A', 'Opción B', 'Opción C', 'Opción D'],
+                            respuestaCorrecta: 'A',
+                            puntaje: 1,
+                            habilidadBloom: 'Comprender'
+                        });
+                    } else if (tipo === 'Verdadero o Falso') {
+                        lista.push({
+                            tipo,
+                            pregunta: `De acuerdo al objetivo, esta afirmación es... (${i+1}/${faltan}).`,
+                            respuestaCorrecta: true,
+                            puntaje: 1,
+                            habilidadBloom: 'Comprender'
+                        });
+                    } else if (tipo === 'Desarrollo') {
+                        lista.push({
+                            tipo,
+                            pregunta: `Responde de forma breve justificando tu respuesta respecto al objetivo (${i+1}/${faltan}).`,
+                            puntaje: 1,
+                            habilidadBloom: 'Analizar'
+                        });
+                    } else if (tipo === 'Términos pareados') {
+                        lista.push({
+                            tipo,
+                            pregunta: 'Relaciona cada concepto con su definición.',
+                            pares: [
+                                { concepto: 'Concepto 1', definicion: 'Definición 1' },
+                                { concepto: 'Concepto 2', definicion: 'Definición 2' },
+                                { concepto: 'Concepto 3', definicion: 'Definición 3' },
+                                { concepto: 'Concepto 4', definicion: 'Definición 4' }
+                            ],
+                            puntaje: 1,
+                            habilidadBloom: 'Comprender'
+                        });
+                    } else if (tipo === 'Comprensión de lectura') {
+                        lista.push({
+                            tipo,
+                            texto: 'Lectura breve: párrafo informativo relacionado al objetivo para responder preguntas.',
+                            preguntas: [
+                                {
+                                    tipo: 'Selección múltiple',
+                                    pregunta: '¿Cuál es la idea principal del texto?',
+                                    opciones: ['A', 'B', 'C', 'D'],
+                                    respuestaCorrecta: 'A',
+                                    puntaje: 1,
+                                    habilidadBloom: 'Comprender'
+                                }
+                            ],
+                            puntaje: 1,
+                            habilidadBloom: 'Comprender'
+                        });
+                    }
+                }
+            }
+            todasLasPreguntas.push(...lista.slice(0, cantidad));
         }
                 // IMPORTANTE: devolver la estructura RAW que espera el frontend
                 // (incluye tipos: 'Selección múltiple', 'Verdadero o Falso', 'Desarrollo', 'Términos pareados', 'Comprensión de lectura')
                 // para que el normalizador del frontend construya los viewers adecuados.
                 setCors();
-                res.json({ success: true, prueba: { nombre: 'Prueba generada', objetivo, preguntas: todasLasPreguntas } });
+                res.json({ success: true, prueba: { nombre: metadata?.nombre || 'Prueba generada', objetivo: objetivoFinal, preguntas: todasLasPreguntas } });
     } catch (error: any) {
         console.error('Error en generarPruebaConGeminiHttp:', error);
         setCors();

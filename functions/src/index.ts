@@ -386,6 +386,76 @@ export const deleteUser = onCall(async (request) => {
   }
 });
 
+/**
+ * Cambio masivo de contraseñas por perfil y (opcional) curso si son estudiantes.
+ * Requiere claim SUBDIRECCION.
+ */
+export const bulkUpdatePasswords = onCall(async (request) => {
+  esSubdirector(request);
+
+  const { newPassword, profile, curso } = request.data || {};
+
+  if (!newPassword || typeof newPassword !== "string" || newPassword.length < 6) {
+    throw new HttpsError(
+      "invalid-argument",
+      "La nueva contraseña es obligatoria y debe tener al menos 6 caracteres."
+    );
+  }
+
+  if (!profile || typeof profile !== "string") {
+    throw new HttpsError(
+      "invalid-argument",
+      "El perfil es obligatorio."
+    );
+  }
+
+  try {
+    // Query base por perfil
+    let queryRef: admin.firestore.Query = db.collection("usuarios").where("profile", "==", profile);
+    // Si es estudiante y se indicó curso, filtrar por curso exacto
+    if (profile === "ESTUDIANTE" && typeof curso === "string" && curso.trim() !== "") {
+      queryRef = queryRef.where("curso", "==", curso);
+    }
+
+    const snap = await queryRef.get();
+    if (snap.empty) {
+      return { matched: 0, processed: 0, updated: 0, failed: 0, errors: [] as Array<{ email: string; error: string }> };
+    }
+
+    // Límite defensivo
+    const docs = snap.docs.slice(0, 500);
+    const errors: Array<{ email: string; error: string }> = [];
+    let updated = 0;
+
+    for (const d of docs) {
+      const data = d.data() as any;
+      const email = data?.email;
+      if (!email) {
+        errors.push({ email: "(sin email)", error: "Documento sin email" });
+        continue;
+      }
+      try {
+        const userRecord = await auth.getUserByEmail(email);
+        await auth.updateUser(userRecord.uid, { password: newPassword });
+        updated += 1;
+      } catch (e: any) {
+        errors.push({ email, error: e?.message || String(e) });
+      }
+    }
+
+    return {
+      matched: snap.size,
+      processed: docs.length,
+      updated,
+      failed: errors.length,
+      errors,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+    throw new HttpsError("unknown", errorMessage);
+  }
+});
+
 // Función de prueba para Gemini
 export {testGemini} from "./testGemini";
 

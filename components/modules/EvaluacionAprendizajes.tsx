@@ -72,8 +72,8 @@ const ITEM_QUANTITIES: Record<string, number[]> = {
   "Selección múltiple": [5, 10, 15],
   "Verdadero o Falso": [5, 10, 15],
   "Términos pareados": [5, 10, 15],
-  "Desarrollo": [1, 2, 3],
-  "Comprensión de lectura": [1, 2, 3]
+  "Desarrollo": [5, 10, 15],
+  "Comprensión de lectura": [5, 10, 15]
 };
 // -------------------------------------------------------------------
 // Submódulo: PruebaItemViewer
@@ -439,14 +439,9 @@ export const PruebaItemViewer: React.FC<{ item: PruebaItem; showAnswers?: boolea
       setError("Debes iniciar sesión para generar una evaluación.");
       return;
     }
-    if (
-      !formData.nombre.trim() ||
-      !formData.contenido.trim() ||
-      Object.keys(formData.tiposActividad).length === 0
-    ) {
-      setError(
-        'Nombre, Contenido y al menos un tipo de actividad son obligatorios.'
-      );
+  const totalSeleccionado = Object.values(formData.tiposActividad || {}).reduce<number>((acc: number, n: unknown) => acc + (Number(n) || 0), 0);
+    if (!formData.nombre.trim() || !formData.contenido.trim() || totalSeleccionado === 0) {
+      setError('Nombre, Contenido y al menos un tipo con cantidad (> 0) son obligatorios.');
       return;
     }
     setIsGenerating(true);
@@ -456,23 +451,26 @@ export const PruebaItemViewer: React.FC<{ item: PruebaItem; showAnswers?: boolea
       logApiCall('Evaluación - Pruebas', currentUser);
 
       // Nuevo formato: enviar cantidadesPorTipo
-      const cantidadesPorTipo = { ...formData.tiposActividad };
+      // Enviar solo los tipos con cantidad > 0
+      const cantidadesPorTipo = Object.entries(formData.tiposActividad).reduce((acc, [k, v]) => {
+        const n = Number(v) || 0;
+        if (n > 0) (acc as any)[k] = n;
+        return acc;
+      }, {} as Record<string, number>);
       // Preparar payload y endpoint
       const payload = {
-        objetivo: `Evaluar el siguiente contenido: "${formData.contenido}" para el nivel ${formData.nivel}.`,
+        objetivo: '',
         cantidadesPorTipo,
-        contextoAdicional: `
-          Nombre de la prueba: ${formData.nombre}
-          Asignatura: ${formData.asignatura}
-          Nivel de Dificultad General: ${formData.dificultad}. 'Fácil' implica preguntas directas y de recuerdo. 'Intermedio' incluye aplicación y análisis simple. 'Avanzado' requiere síntesis, evaluación y resolución de problemas complejos.
-          ${formData.isNee && formData.selectedNee.length > 0
-            ? `**Adaptación CRÍTICA para Necesidades Educativas Especiales (NEE):** Adapta esta prueba para estudiantes con las siguientes características: ${formData.selectedNee.join(', ')}. Esto implica usar un lenguaje claro, simple y directo, evitar preguntas complejas, usar textos más cortos y distractores claros.`
-            : ''
-          }
-          Directrices Generales: El vocabulario, la complejidad y el contexto de toda la prueba deben ser apropiados para el nivel educativo 'Educación Media' en Chile.
-          Formato de Salida: Tu respuesta DEBE ser un único objeto JSON válido sin texto introductorio, explicaciones, ni el bloque \`\`\`json.
-        `,
-      };
+        metadata: {
+          nombre: formData.nombre,
+          asignatura: formData.asignatura,
+          nivel: formData.nivel,
+          contenido: formData.contenido,
+          dificultad: formData.dificultad,
+          nee: formData.isNee ? formData.selectedNee : [],
+        },
+        contextoAdicional: `Directrices: vocabulario y contexto adecuados al nivel educativo en Chile. Si hay NEE, usar lenguaje claro, reducir complejidad, textos más cortos y distractores no ambiguos.`,
+      } as any;
 
       // URL base de funciones: permite ajustar a emulador o-prod
       const FUNCTIONS_BASE = process.env.REACT_APP_FUNCTIONS_BASE_URL || 'https://us-central1-plania-clase.cloudfunctions.net';
@@ -854,12 +852,22 @@ export const PruebaItemViewer: React.FC<{ item: PruebaItem; showAnswers?: boolea
         const mapTipo = (t: PruebaItemTipo): string => t; // mismos labels usados por backend
 
         // Reconstruir objetivo aproximado
-        const objetivo = currentPrueba.objetivo && currentPrueba.objetivo.trim().length > 0
-          ? currentPrueba.objetivo
-          : `Evaluar el siguiente contenido: "${currentPrueba.contenidoOriginal}" para el nivel ${currentPrueba.nivel}.`;
+        const objetivo = currentPrueba.objetivo && currentPrueba.objetivo.trim().length > 0 ? currentPrueba.objetivo : '';
 
         const cantidadesPorTipo: Record<string, number> = { [mapTipo(original.tipo)]: 1 };
-        const payload = { objetivo, cantidadesPorTipo, contextoAdicional: `Regenerar un ítem del tipo ${original.tipo} manteniendo el mismo nivel (${currentPrueba.nivel}) y asignatura (${currentPrueba.asignatura}).` };
+        const payload: any = { 
+          objetivo,
+          cantidadesPorTipo,
+          metadata: {
+            nombre: currentPrueba.nombre,
+            asignatura: currentPrueba.asignatura,
+            nivel: currentPrueba.nivel,
+            contenido: currentPrueba.contenidoOriginal,
+            dificultad: currentPrueba.dificultad || 'Intermedio',
+            nee: (currentPrueba as any).adaptacionNEE || [],
+          },
+          contextoAdicional: `Regenerar 1 ítem del tipo ${original.tipo} manteniendo nivel y asignatura indicados.`,
+        };
 
         const FUNCTIONS_BASE = process.env.REACT_APP_FUNCTIONS_BASE_URL || 'https://us-central1-plania-clase.cloudfunctions.net';
         const url = `${FUNCTIONS_BASE}/generarPruebaConGeminiHttp`;

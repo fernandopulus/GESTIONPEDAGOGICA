@@ -665,6 +665,8 @@ export interface AsistenciaDual {
     latitud: number;
     longitud: number;
   };
+  // origen opcional para depuración: nombre de la colección desde la que proviene
+  origen?: string;
 }
 
 // --- Archivos y Recursos (Refactorizado para claridad) ---

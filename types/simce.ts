@@ -16,7 +16,7 @@ export interface GeneracionSimceOptions {
   nivel?: string; // "1M" o "2M" para 1º o 2º medio
   opcionesPorPregunta?: number; // Fijo a 4 -> ["A", "B", "C", "D"]
   habilidadesLectura?: string[]; // ["Localizar información", "Relacionar información", "Interpretar", "Reflexionar y evaluar"]
-  ejesMatematica?: string[]; // ["Números", "Álgebra y Funciones", "Geometría", "Probabilidad y Estadística"]
+  ejesMatematica?: string[]; // ["Números", "Álgebra", "Probabilidad y estadística", "Geometría"]
   dificultad?: 'baja' | 'media' | 'alta'; // Si no se especifica, se usa "media"
   contextoCurricular?: string; // Texto breve del profesor (unidad/objetivo/contenidos)
   textoBaseLectura?: string; // Para Lectura: texto base para preguntas

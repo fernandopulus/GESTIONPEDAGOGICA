@@ -381,9 +381,9 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
     },
     ejesMatematica: {
       'Números': true,
-      'Álgebra y Funciones': true,
-      'Geometría': true,
-      'Probabilidad y Estadística': true
+      'Álgebra': true,
+      'Probabilidad y estadística': true,
+      'Geometría': true
     }
   });
 
@@ -423,7 +423,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
           .map(([eje]) => eje);
           
         if (ejesMatematica.length === 0) {
-          ejesMatematica = ['Números', 'Álgebra y Funciones', 'Geometría', 'Probabilidad y Estadística'];
+          ejesMatematica = ['Números', 'Álgebra', 'Probabilidad y estadística', 'Geometría'];
         }
       }
       
@@ -433,21 +433,20 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
         mensaje: `Generando ${opcionesGeneracion.cantidadPreguntas} preguntas de ${nuevaEvaluacion.asignatura}. Este proceso puede tardar unos segundos...`
       });
       
-      // Normalizar el valor de asignatura para la generación de preguntas
-      const asignaturaNormalizada = nuevaEvaluacion.asignatura
-        .toLowerCase()
-        .replace(/á/g, 'a')
-        .replace(/é/g, 'e')
-        .replace(/í/g, 'i')
-        .replace(/ó/g, 'o')
-        .replace(/ú/g, 'u')
-        .replace(/ñ/g, 'n')
-        .replace(/\s+/g, ' ')
-        .trim();
+      // Mapear asignatura de la UI a los canónicos esperados por los generadores
+      // Competencia Lectora -> Lectura | Pensamiento Lógico -> Matemática
+      const asignaturaCanonica: AsignaturaSimce = (() => {
+        const a = (nuevaEvaluacion.asignatura || '').toLowerCase();
+        if (a.includes('lectora') || a.includes('lectura')) return 'Lectura';
+        if (a.includes('lóg') || a.includes('log') || a.includes('matem')) return 'Matemática';
+        // fallback: usar el valor original si ya es canónico
+        const original = (nuevaEvaluacion.asignatura as string) || 'Lectura';
+        return (original === 'Lectura' || original === 'Matemática') ? original : 'Lectura';
+      })();
 
       // Crear las opciones para la generación de preguntas
       const opcionesGeneracionSimce = {
-        asignatura: asignaturaNormalizada,
+        asignatura: asignaturaCanonica,
         cantidad: parseInt(opcionesGeneracion.cantidadPreguntas), 
         opcionesPorPregunta: 4,
         habilidadesLectura,
@@ -1049,6 +1048,33 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
                 placeholder="Ej: Evaluación SIMCE 4° Básico - Competencia Lectora"
               />
             </div>
+            <div>
+              <label className="block mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Asignatura</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNuevaEvaluacion({ ...nuevaEvaluacion, asignatura: 'Competencia Lectora' })}
+                  className={`flex-1 px-3 py-2 rounded-md border text-sm transition-colors ${
+                    nuevaEvaluacion.asignatura === 'Competencia Lectora'
+                      ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700'
+                      : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600'
+                  }`}
+                >
+                  Competencia Lectora
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNuevaEvaluacion({ ...nuevaEvaluacion, asignatura: 'Pensamiento Lógico' })}
+                  className={`flex-1 px-3 py-2 rounded-md border text-sm transition-colors ${
+                    nuevaEvaluacion.asignatura === 'Pensamiento Lógico'
+                      ? 'bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-700'
+                      : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600'
+                  }`}
+                >
+                  Pensamiento Lógico
+                </button>
+              </div>
+            </div>
             
             <div className="md:col-span-2">
               <label className="block mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -1402,7 +1428,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
                   onChange={(e) => setPreguntaEnEdicion({...preguntaEnEdicion, estandarAprendizaje: e.target.value})}
                   className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800"
                 >
-                  {nuevaEvaluacion.asignatura === 'Lectura'
+                  {nuevaEvaluacion.asignatura === 'Competencia Lectora'
                     ? estandaresLectura.map((estandar, index) => (
                         <option key={index} value={estandar}>{estandar}</option>
                       ))
@@ -1527,7 +1553,7 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
               ) : (
                 <>
                   {/* Mostrar texto base global antes de las preguntas */}
-                  {nuevaEvaluacion.asignatura === 'Lectura' && nuevaEvaluacion.preguntas?.[0]?.textoBase && (
+                  {nuevaEvaluacion.asignatura === 'Competencia Lectora' && nuevaEvaluacion.preguntas?.[0]?.textoBase && (
                     <div className="p-5 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg border-2 border-blue-200 dark:border-blue-700 shadow-sm mb-6">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center">

@@ -1,3 +1,6 @@
+/* Tailwind v4: importar framework desde CSS */
+@import "tailwindcss";
+
 /* index.css básico para tu proyecto React */
 
 body {

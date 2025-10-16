@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../src/firebase'; // Ajusta la ruta según tu estructura
 import { User, Profile } from '../../types';
+import type { AsistenciaDual as AsistenciaDualType } from '../../types';
 import { CURSOS_DUAL } from '../../constants';
 import {
     subscribeToAsistenciaByMonth,
@@ -12,6 +13,7 @@ import {
     findAllAttendanceRecords,
     testDirectAccess,
 } from '../../src/firebaseHelpers/asistenciaDual';
+import { getAllUsers as getAllUsersFromAlt } from '../../src/firebaseHelpers/users';
 
 const normalizeCurso = (curso: string): string => {
     if (!curso) return '';
@@ -38,18 +40,19 @@ const ExitIcon: React.FC = () => (
 );
 
 interface AttendanceRecord {
-    entrada?: AsistenciaDual;
-    salida?: AsistenciaDual;
+    entrada?: AsistenciaDualType;
+    salida?: AsistenciaDualType;
 }
 
 const AsistenciaDual: React.FC = () => {
-    const [allRegistros, setAllRegistros] = useState<AsistenciaDual[]>([]);
+    const [allRegistros, setAllRegistros] = useState<AsistenciaDualType[]>([]);
     const [allStudents, setAllStudents] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedCurso, setSelectedCurso] = useState<string>('todos');
     const [studentFilter, setStudentFilter] = useState('');
+    const [includeAll, setIncludeAll] = useState(false);
 
     useEffect(() => {
         setLoading(true);
@@ -177,7 +180,7 @@ const AsistenciaDual: React.FC = () => {
             console.log('🔍 Debug info for users:', usersDebugInfo);
             
             // Si no hay usuarios, intentar otras colecciones comunes
-            if (!usersDebugInfo.exists || usersDebugInfo.totalDocs === 0) {
+            if (!usersDebugInfo.exists || ('totalDocs' in usersDebugInfo && usersDebugInfo.totalDocs === 0)) {
                 console.log('⚠️ Colección "users" vacía o no existe. Buscando alternativas...');
                 
                 // Intentar otras posibles colecciones de usuarios
@@ -206,10 +209,10 @@ const AsistenciaDual: React.FC = () => {
 
         try {
             console.log('Configurando suscripción a asistencia...');
-            const unsubAsistencia = subscribeToAsistenciaByMonth(
+            let unsubAsistencia = subscribeToAsistenciaByMonth(
                 year, 
                 month, 
-                (registros: AsistenciaDual[]) => {
+                (registros: AsistenciaDualType[]) => {
                     console.log('✅ Received registros:', registros.length);
                     
                     if (registros.length > 0) {
@@ -230,7 +233,7 @@ const AsistenciaDual: React.FC = () => {
                             if (!acc[dia]) acc[dia] = [];
                             acc[dia].push(registro);
                             return acc;
-                        }, {} as Record<number, AsistenciaDual[]>);
+                        }, {} as Record<number, AsistenciaDualType[]>);
                         
                         console.log('📅 Registros por día del mes:', Object.keys(registrosPorDia).map(dia => ({
                             dia: parseInt(dia),
@@ -259,11 +262,14 @@ const AsistenciaDual: React.FC = () => {
                     setError('Error al cargar datos de asistencia: ' + error.message);
                     asistenciaLoaded = true;
                     checkLoadingComplete();
-                }
+                },
+                { includeAll }
             );
 
             console.log('Configurando suscripción a usuarios...');
-            const unsubUsers = subscribeToAllUsersMultiCollection(
+            let unsubUsers: (() => void) | null = null;
+            let unsubUsersFallback: (() => void) | null = null;
+            unsubUsers = subscribeToAllUsersMultiCollection(
                 (users: User[]) => {
                     console.log('✅ Received users (multi-collection):', users.length);
                     if (users.length > 0) {
@@ -283,7 +289,7 @@ const AsistenciaDual: React.FC = () => {
                     
                     // Fallback: intentar con la función original
                     console.log('🔄 Intentando con función original de usuarios...');
-                    const fallbackUnsub = subscribeToAllUsers(
+                    unsubUsersFallback = subscribeToAllUsers(
                         (users: User[]) => {
                             console.log('✅ Received users (fallback):', users.length);
                             setAllStudents(users);
@@ -300,17 +306,45 @@ const AsistenciaDual: React.FC = () => {
                 }
             );
 
+            // Fallback adicional: si tras 4s no hay usuarios cargados, hacer una lectura directa desde colección "usuarios"
+            setTimeout(async () => {
+                if (!usersLoaded && allStudents.length === 0) {
+                    try {
+                        console.log('⏳ Timeout de usuarios: aplicando fallback getAllUsersFromAlt()...');
+                        const altUsers = await getAllUsersFromAlt();
+                        if (altUsers.length > 0) {
+                            console.log(`✅ Fallback cargó ${altUsers.length} usuarios desde colección "usuarios"`);
+                            setAllStudents(altUsers);
+                            // Marcar como cargado aunque venga vacío o con datos
+                            usersLoaded = true;
+                            checkLoadingComplete();
+                        } else {
+                            console.warn('⚠️ Fallback no encontró usuarios en "usuarios"');
+                            // Aún así debemos finalizar el loading para mostrar estado vacío
+                            usersLoaded = true;
+                            checkLoadingComplete();
+                        }
+                    } catch (e) {
+                        console.error('❌ Error en fallback getAllUsersFromAlt:', e);
+                        // No bloquear la UI si falla el fallback
+                        usersLoaded = true;
+                        checkLoadingComplete();
+                    }
+                }
+            }, 4000);
+
             return () => {
                 console.log('Limpiando suscripciones...');
                 if (unsubAsistencia) unsubAsistencia();
                 if (unsubUsers) unsubUsers();
+                if (unsubUsersFallback) unsubUsersFallback();
             };
         } catch (err) {
             console.error('❌ Error setting up subscriptions:', err);
             setError('Error al inicializar conexiones: ' + (err instanceof Error ? err.message : 'Error desconocido'));
             setLoading(false);
         }
-    }, [currentDate]);
+    }, [currentDate, includeAll]);
 
     const { monthDays, monthName, year } = useMemo(() => {
         const year = currentDate.getFullYear();
@@ -338,14 +372,14 @@ const AsistenciaDual: React.FC = () => {
         
         // Agregar estudiantes que tienen registros pero no están en la lista
         if (allRegistros.length > 0) {
-            const emailsEnRegistros = [...new Set(allRegistros.map(r => r.emailEstudiante).filter(Boolean))];
+            const emailsEnRegistros = [...new Set(allRegistros.map(r => r.emailEstudiante).filter((e): e is string => Boolean(e)))];
             const emailsDeEstudiantes = filteredStudents.map(s => s.email);
             const emailsFaltantes = emailsEnRegistros.filter(email => !emailsDeEstudiantes.includes(email));
             
             if (emailsFaltantes.length > 0) {
                 console.log('📝 Agregando estudiantes faltantes con registros:', emailsFaltantes);
                 
-                const estudiantesFaltantes = emailsFaltantes.map(email => {
+                const estudiantesFaltantes = emailsFaltantes.map((email: string) => {
                     const registro = allRegistros.find(r => r.emailEstudiante === email);
                     return {
                         id: email,
@@ -459,6 +493,21 @@ const AsistenciaDual: React.FC = () => {
         return data;
     }, [allRegistros]); // ← QUITAR studentsForCourse de las dependencias
 
+    // Contador de registros del período mostrado (mes actual en la vista)
+    const periodRecordsCount = useMemo(() => {
+        if (!allRegistros.length) return 0;
+        const y = currentDate.getFullYear();
+        const m = currentDate.getMonth();
+        return allRegistros.reduce((acc, r) => {
+            let d: Date | null = null;
+            if (r.fechaHora instanceof Date) d = r.fechaHora;
+            else if (r.fechaHora && typeof r.fechaHora === 'object' && 'toDate' in (r.fechaHora as any)) d = (r.fechaHora as any).toDate();
+            else if (typeof r.fechaHora === 'string') d = new Date(r.fechaHora);
+            if (!d || isNaN(d.getTime())) return acc;
+            return (d.getFullYear() === y && d.getMonth() === m) ? acc + 1 : acc;
+        }, 0);
+    }, [allRegistros, currentDate]);
+
     const changeMonth = (delta: number) => {
         setCurrentDate(prev => {
             const newDate = new Date(prev);
@@ -495,8 +544,7 @@ const AsistenciaDual: React.FC = () => {
                 <div className="flex items-center justify-center md:justify-start gap-2">
                     <button 
                         onClick={() => changeMonth(-1)} 
-                        disabled={loading}
-                        className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
                         aria-label="Mes anterior"
                     >
                         ←
@@ -506,13 +554,16 @@ const AsistenciaDual: React.FC = () => {
                     </h2>
                     <button 
                         onClick={() => changeMonth(1)} 
-                        disabled={loading}
-                        className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
                         aria-label="Mes siguiente"
                     >
                         →
                     </button>
                 </div>
+                <label className="flex items-center gap-2 justify-center md:justify-start">
+                    <input type="checkbox" checked={includeAll} onChange={e => setIncludeAll(e.target.checked)} disabled={loading} />
+                    <span className="text-slate-700 dark:text-slate-200 text-sm">Mostrar todo</span>
+                </label>
                 
                 <select 
                     value={selectedCurso} 
@@ -520,6 +571,11 @@ const AsistenciaDual: React.FC = () => {
                     disabled={loading}
                     className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 disabled:opacity-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
+                {/* Resumen de estado */}
+                <div className="text-center md:text-right text-sm text-slate-600 dark:text-slate-300">
+                    <span className="inline-block px-2 py-1 rounded bg-slate-100 dark:bg-slate-600/50 mr-2">Estudiantes: {studentsForCourse.length}</span>
+                    <span className="inline-block px-2 py-1 rounded bg-slate-100 dark:bg-slate-600/50">Registros del período: {periodRecordsCount}</span>
+                </div>
                     <option value="todos">Todos los Cursos</option>
                     {CURSOS_DUAL.map(curso => (
                         <option key={curso} value={curso}>{curso}</option>

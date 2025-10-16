@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { User, Anuncio, MensajeInterno, ReadStatus } from '../../types';
+import { User, Anuncio, MensajeInterno, ReadStatus } from '../types';
+import { Profile } from '../types';
 import { HomeIcon, BellIcon, MessageSquareIcon, MenuIcon } from '../constants';
 import Dropdown from './common/Dropdown';
 import ProfileModal from './modals/ProfileModal';
@@ -96,7 +97,9 @@ const TopBar: React.FC<TopBarProps> = ({
 
   // Suscripción realtime a notificaciones -> filtramos sólo las del módulo PIE
   useEffect(() => {
-    if (!currentUser?.email) return;
+    // Solo perfiles autorizados según reglas típicas (Subdirección/Profesorado) para minimizar permission-denied
+    const allowedProfile = currentUser?.profile === Profile.SUBDIRECCION || currentUser?.profile === Profile.PROFESORADO;
+    if (!allowedProfile || !currentUser?.email) return;
     const unsub = subscribeToNotificacionesParaUsuario(
       { email: currentUser.email, nombreCompleto: currentUser.nombreCompleto },
       (items) => {
@@ -107,7 +110,7 @@ const TopBar: React.FC<TopBarProps> = ({
       }
     );
     return () => unsub();
-  }, [currentUser?.email, currentUser?.nombreCompleto]);
+  }, [currentUser?.email, currentUser?.nombreCompleto, currentUser?.profile]);
 
   const handleOpenAnnouncements = () => {
     const readStatus = getReadStatus();
@@ -193,7 +196,8 @@ const TopBar: React.FC<TopBarProps> = ({
               </div>
             </Dropdown>
 
-            {/* PIE: notificaciones del módulo Inclusión */}
+            {/* PIE: notificaciones del módulo Inclusión (solo perfiles autorizados) */}
+            {(currentUser.profile === Profile.SUBDIRECCION || currentUser.profile === Profile.PROFESORADO) && (
             <Dropdown
               trigger={
                 <button
@@ -254,6 +258,7 @@ const TopBar: React.FC<TopBarProps> = ({
                 </ul>
               </div>
             </Dropdown>
+            )}
 
             {/* Mensajes */}
             <Dropdown

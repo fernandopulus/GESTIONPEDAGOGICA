@@ -383,11 +383,171 @@ Devuelve SOLO JSON válido con el formato:
 	]
 }`;
 
-		const texto = await generarConIA(prompt, 1, true);
-		let jsonText = texto;
-		const codeMatch = texto.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-		if (codeMatch && codeMatch[1]) jsonText = codeMatch[1];
-		const parsed = JSON.parse(jsonText) as RespuestaIA;
+
+		// Pedimos a la IA y robustecemos el parseo del JSON de respuesta
+		const texto = await generarConIA(prompt, 2, true, 'Horarios');
+
+		// DEBUG opcional
+		const isDebug = typeof window !== 'undefined' && typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_HORARIO_AI') === '1';
+		if (isDebug) {
+			try {
+				localStorage.setItem('HORARIO_AI_RAW', typeof texto === 'string' ? texto : String(texto));
+				console.debug('[HORARIO_AI] RAW respuesta IA guardada en localStorage.HORARIO_AI_RAW');
+			} catch {}
+		}
+
+		// Helper para extraer y parsear JSON de respuestas con o sin fences
+		const parseRespuesta = (raw: string): RespuestaIA => {
+			let candidate = raw?.trim() || '';
+			// 1) Extraer contenido dentro de ```json ... ``` si existe
+			const fence = candidate.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+			if (fence && fence[1]) candidate = fence[1].trim();
+			// 2) Si aún no parece JSON puro, intentar recortar desde primer { hasta último }
+			if (!(candidate.startsWith('{') && candidate.endsWith('}'))) {
+				const first = candidate.indexOf('{');
+				const last = candidate.lastIndexOf('}');
+				if (first !== -1 && last !== -1 && last > first) {
+					candidate = candidate.slice(first, last + 1);
+				}
+			}
+			// 3) Normalizaciones leves: comillas curvas, comas colgantes, comentarios
+			candidate = candidate
+				.replace(/[“”]/g, '"')
+				.replace(/[‘’]/g, "'")
+				.replace(/\/(\/[^\n]*\n)/g, '') // elimina // comentarios de línea (mejor esfuerzo)
+				.replace(/\/\*[\s\S]*?\*\//g, '') // elimina /* */
+				.replace(/,\s*([}\]])/g, '$1'); // elimina comas colgantes antes de } o ]
+
+			// DEBUG: guardar candidato
+			if (isDebug) {
+				try {
+					localStorage.setItem('HORARIO_AI_JSON_CANDIDATE', candidate);
+					console.debug('[HORARIO_AI] JSON candidato guardado en localStorage.HORARIO_AI_JSON_CANDIDATE');
+				} catch {}
+			}
+
+			const parsed: any = JSON.parse(candidate);
+
+			// Normalizadores/ayudas
+			const sinAcentos = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+			const normalizaDia = (d: any): string | null => {
+				if (!d || typeof d !== 'string') return null;
+				const base = sinAcentos(d.toLowerCase().trim());
+				const mapa: Record<string, string> = {
+					lunes: 'Lunes', martes: 'Martes', miercoles: 'Miércoles', jueves: 'Jueves', viernes: 'Viernes',
+					monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', thursday: 'Jueves', friday: 'Viernes',
+					lun: 'Lunes', mar: 'Martes', mie: 'Miércoles', mier: 'Miércoles', jue: 'Jueves', vie: 'Viernes'
+				};
+				return mapa[base] || null;
+			};
+			// Mapa de cursos válidos "normalizados" para fuzzy-match
+			const keyCurso = (s: string) => sinAcentos(s.toLowerCase().replace(/[º°]/g, '').replace(/\s+/g, ''));
+			const mapaCursos = new Map<string, string>();
+			(Array.isArray(cursos) ? cursos : []).forEach(c => mapaCursos.set(keyCurso(String(c)), String(c)));
+			const normalizaCurso = (c: any): string | null => {
+				if (!c || typeof c !== 'string') return null;
+				let s = c.trim();
+				s = s.replace('°', 'º'); // homogeneizar símbolo
+				s = s.replace(/º\s+/g, 'º'); // quitar espacio después de º
+				s = s.replace(/\s+/g, s.includes('º') ? '' : ' ');
+				// Fuzzy por clave
+				const k = keyCurso(s);
+				if (mapaCursos.has(k)) return mapaCursos.get(k)!;
+				// Intentar reconstruir patrón NºLetra
+				const m = s.match(/(\d{1,2})\s*º?\s*([A-Za-z])/);
+				if (m) {
+					const cand = `${m[1]}º${m[2].toUpperCase()}`;
+					const k2 = keyCurso(cand);
+					if (mapaCursos.has(k2)) return mapaCursos.get(k2)!;
+				}
+				return s;
+			};
+			const bloquesValidos = new Set(HORARIO_BLOQUES.map(b => b.bloque));
+			const cursosValidos = new Set<string>(Array.isArray(cursos) ? cursos : []);
+			const coerceSesiones = (root: any): SesionCurso[] => {
+				if (!root) return [];
+				let list: any[] = [];
+				if (Array.isArray(root)) list = root;
+				else if (Array.isArray(root.sesiones)) list = root.sesiones;
+				else if (root.horario && Array.isArray(root.horario.sesiones)) list = root.horario.sesiones;
+				else if (root.schedule && Array.isArray(root.schedule.sessions)) list = root.schedule.sessions;
+				else if (Array.isArray(root.clases)) list = root.clases;
+				else if (Array.isArray(root.asignaciones)) list = root.asignaciones;
+				else if (Array.isArray(root.data)) list = root.data;
+				else if (Array.isArray(root.output)) list = root.output;
+				else if (Array.isArray(root.result)) list = root.result;
+
+				// Si no es lista, intentar objetos tipo diccionario
+				const out: SesionCurso[] = [];
+				const pushItem = (it: any) => {
+					if (!it || typeof it !== 'object') return;
+					const curso = normalizaCurso(it.curso || it.cursoId || it.course || it.class || it.grupo);
+					const dia = normalizaDia(it.dia || it.día || it.day || it.weekday);
+					let bloque: any = it.bloque ?? it.block ?? it.slot ?? it.periodo ?? it.period;
+					if (typeof bloque === 'string') {
+						const m = bloque.match(/(\d{1,2})/);
+						if (m) bloque = parseInt(m[1], 10);
+					}
+					const asignatura = (it.asignatura || it.materia || it.subject || it.asig || '').toString();
+					const docente = (it.docente || it.profesor || it.teacher || it.profe || '').toString();
+					if (!curso || !dia || !bloque || !bloquesValidos.has(bloque)) return;
+					if (cursosValidos.size && !cursosValidos.has(curso)) return;
+					out.push({ curso, dia, bloque, asignatura, docente });
+				};
+
+				if (list.length > 0) {
+					for (const it of list) pushItem(it);
+				} else {
+					// Intentar formas anidadas: root.horario por día/bloque
+					if (root.horario && typeof root.horario === 'object') {
+						for (const diaKey of Object.keys(root.horario)) {
+							const diaN = normalizaDia(diaKey);
+							if (!diaN) continue;
+							const porBloque = root.horario[diaKey];
+							if (!porBloque || typeof porBloque !== 'object') continue;
+							for (const bkKey of Object.keys(porBloque)) {
+								let bkNum: any = bkKey;
+								if (typeof bkNum === 'string') {
+									const m = bkNum.match(/(\d{1,2})/);
+									if (m) bkNum = parseInt(m[1], 10);
+								}
+								if (!bloquesValidos.has(bkNum)) continue;
+								const val = porBloque[bkKey];
+								if (Array.isArray(val)) {
+									for (const it of val) pushItem({ ...(it || {}), dia: diaN, bloque: bkNum });
+								} else if (val && typeof val === 'object') {
+									// Puede ser dict curso -> { asignatura, docente }
+									for (const cursoKey of Object.keys(val)) {
+										const cNom = normalizaCurso(cursoKey);
+										const celda = val[cursoKey];
+										if (celda && typeof celda === 'object') {
+											pushItem({ curso: cNom, dia: diaN, bloque: bkNum, asignatura: celda.asignatura, docente: celda.docente || celda.profesor || celda.teacher });
+										}
+									}
+								}
+							}
+						}
+					}
+					// Como último recurso: buscar arrays de objetos que aparenten sesiones en profundidad 1
+					for (const k of Object.keys(root)) {
+						const v = root[k];
+						if (Array.isArray(v)) {
+							for (const it of v) pushItem(it);
+						}
+					}
+				}
+
+				return out;
+			};
+
+			const sesiones = coerceSesiones(parsed);
+			if (isDebug) {
+				try { localStorage.setItem('HORARIO_AI_SESIONES_COUNT', String(sesiones.length)); } catch {}
+			}
+			return { sesiones } as RespuestaIA;
+		};
+
+		const parsed = parseRespuesta(texto);
 		if (!parsed?.sesiones?.length) throw new Error('Respuesta IA sin sesiones');
 
 		const horarios = construirDesdeSesiones(parsed.sesiones, cursos);
