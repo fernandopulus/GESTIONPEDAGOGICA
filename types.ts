@@ -664,6 +664,7 @@ export interface AsistenciaDual {
   ubicacion: {
     latitud: number;
     longitud: number;
+    precision?: number; // en metros (opcional)
   };
   // origen opcional para depuración: nombre de la colección desde la que proviene
   origen?: string;
