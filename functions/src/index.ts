@@ -477,3 +477,90 @@ export { api } from "./api";
 
 // Exportar función genérica de IA basada en secreto (sin App Check)
 export { callGeminiAI as callGeminiGeneric } from './aiHelpers';
+
+// Documentación (Chatbot/wiki con RAG ligero)
+export { documentacionQuery, indexDocumentacionDoc } from './documentacion';
+
+// =====================
+// Seed de Competencias EMTP (tp_*)
+// =====================
+import { onRequest as onRequestV2 } from "firebase-functions/v2/https";
+
+export const seedCompetencias = onRequestV2({ timeoutSeconds: 120, cors: true }, async (req, res) => {
+  try {
+    const key = (req.query.key as string) || '';
+    const SEED_KEY = 'EMTP-SEED-2025-10';
+    if (key !== SEED_KEY) {
+      res.status(403).json({ ok: false, error: 'Forbidden' });
+      return;
+    }
+
+    const espCol = db.collection('tp_especialidades');
+    const modCol = db.collection('tp_modulos');
+    const raCol  = db.collection('tp_resultados_aprendizaje');
+    const ceCol  = db.collection('tp_criterios_evaluacion');
+
+    // Helper para obtener o crear especialidad por nombre
+    const getOrCreateEspecialidad = async (nombre: string) => {
+      const snap = await espCol.where('nombre', '==', nombre).limit(1).get();
+      if (!snap.empty) return { id: snap.docs[0].id, nombre };
+      const ref = await espCol.add({ nombre });
+      return { id: ref.id, nombre };
+    };
+
+    // Crear especialidades base
+    const espAuto = await getOrCreateEspecialidad('Mecánica Automotriz');
+    const espInd  = await getOrCreateEspecialidad('Mecánica Industrial');
+
+    // Helper para crear módulo si no existe por nombre+especialidad
+    const getOrCreateModulo = async (especialidadId: string, nombre: string, codigo?: string) => {
+      const snap = await modCol
+        .where('especialidadId', '==', especialidadId)
+        .where('nombre', '==', nombre)
+        .limit(1)
+        .get();
+      if (!snap.empty) return { id: snap.docs[0].id, nombre };
+      const ref = await modCol.add({ especialidadId, nombre, codigo: codigo || null });
+      return { id: ref.id, nombre };
+    };
+
+    // Automotriz 3º medio
+    const a3_01 = await getOrCreateModulo(espAuto.id, 'Módulo 01 – Ajuste de motores.', 'M01');
+    await getOrCreateModulo(espAuto.id, 'Módulo 02 – Lectura de planos y manuales técnicos.', 'M02');
+    await getOrCreateModulo(espAuto.id, 'Módulo 03 – Manejo de residuos y desechos automotrices.', 'M03');
+    await getOrCreateModulo(espAuto.id, 'Módulo 04 – Mantenimiento de sistemas de seguridad y confortabilidad.', 'M04');
+    await getOrCreateModulo(espAuto.id, 'Módulo 05 – Mantenimiento de sistemas eléctricos y electrónicos.', 'M05');
+
+    // Automotriz 4º medio TP
+    await getOrCreateModulo(espAuto.id, 'Módulo 00 – Emprendimiento y empleabilidad (mecánica automotriz).', 'M00');
+    await getOrCreateModulo(espAuto.id, 'Módulo 06 – Mantenimiento de motores.', 'M06');
+    await getOrCreateModulo(espAuto.id, 'Módulo 07 – Mantenimiento de sistemas hidráulicos y neumáticos.', 'M07');
+    await getOrCreateModulo(espAuto.id, 'Módulo 08 – Mantenimiento de los sistemas de transmisión y frenos.', 'M08');
+    await getOrCreateModulo(espAuto.id, 'Módulo 09 – Mantenimiento de sistemas de dirección y suspensión.', 'M09');
+
+    // Industrial
+  await getOrCreateModulo(espInd.id, 'Módulo 01 – Soldadura industrial.', 'I01');
+    await getOrCreateModulo(espInd.id, 'Módulo 02 – Mantenimiento de herramientas.', 'I02');
+    await getOrCreateModulo(espInd.id, 'Módulo 03 – Medición y verificación.', 'I03');
+    await getOrCreateModulo(espInd.id, 'Módulo 04 – Mecánica de banco.', 'I04');
+    await getOrCreateModulo(espInd.id, 'Módulo 05 – Lectura de manuales y planos.', 'I05');
+    await getOrCreateModulo(espInd.id, 'Módulo 06 – Emprendimiento y empleabilidad (mención Máquinas-Herramientas).', 'I06');
+    await getOrCreateModulo(espInd.id, 'Módulo 07 – Torneado de piezas y conjuntos mecánicos.', 'I07');
+    await getOrCreateModulo(espInd.id, 'Módulo 08 – Fresado de piezas y conjuntos mecánicos.', 'I08');
+    await getOrCreateModulo(espInd.id, 'Módulo 09 – Taladrado y rectificado de piezas mecánicas.', 'I09');
+    await getOrCreateModulo(espInd.id, 'Módulo 10 – Mecanizado con máquinas de control numérico computacional (CNC).', 'I10');
+
+    // Sembrar un RA/CE mínimo para validar flujo en UI (Automotriz M01)
+    const raSnap = await raCol.where('moduloId', '==', a3_01.id).limit(1).get();
+    let raId = raSnap.empty ? (await raCol.add({ moduloId: a3_01.id, codigo: 'RA1', enunciado: 'Demuestra ajuste de motores según especificaciones del fabricante.' })).id : raSnap.docs[0].id;
+    const ceSnap = await ceCol.where('raId','==', raId).limit(1).get();
+    if (ceSnap.empty) {
+      await ceCol.add({ raId, codigo: 'CE1', descriptor: 'Ajusta el motor respetando procedimientos y tolerancias', peso: 100 });
+    }
+
+    res.json({ ok: true, especialidades: [espAuto, espInd] });
+  } catch (err: any) {
+    console.error('Seed error:', err);
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});

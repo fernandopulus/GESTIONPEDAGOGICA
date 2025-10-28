@@ -5,9 +5,19 @@ import { PROFILES, MainLogo } from '../constants';
 interface ProfileSelectorProps {
   onSelectProfile: (profile: Profile) => void;
   isAdminView?: boolean;
+  /** Lista opcional de perfiles permitidos para mostrar en la selección */
+  allowedProfiles?: Profile[];
 }
 
-const ProfileSelector: React.FC<ProfileSelectorProps> = ({ onSelectProfile, isAdminView = false }) => {
+const ProfileSelector: React.FC<ProfileSelectorProps> = ({ onSelectProfile, isAdminView = false, allowedProfiles }) => {
+  // Construimos un mapa id -> item para evitar problemas de comparación y mantener orden deseado
+  const mapById = React.useMemo(() => new Map(PROFILES.map(p => [p.id, p])), []);
+  const items = React.useMemo(() => {
+    if (allowedProfiles && allowedProfiles.length > 0) {
+      return allowedProfiles.map(id => mapById.get(id)).filter(Boolean) as typeof PROFILES;
+    }
+    return PROFILES;
+  }, [allowedProfiles, mapById]);
   return (
     <div className="relative flex flex-col items-center justify-center min-h-screen p-6 overflow-hidden
                     bg-gradient-to-br from-blue-50 via-blue-100 to-yellow-50
@@ -43,7 +53,7 @@ const ProfileSelector: React.FC<ProfileSelectorProps> = ({ onSelectProfile, isAd
 
       {/* grid de perfiles con glassmorphism */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-6xl">
-        {PROFILES.map((p) => (
+        {items.map((p) => (
           <button
             key={p.id}
             onClick={() => onSelectProfile(p.id)}

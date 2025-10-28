@@ -97,8 +97,8 @@ const TopBar: React.FC<TopBarProps> = ({
 
   // Suscripción realtime a notificaciones -> filtramos sólo las del módulo PIE
   useEffect(() => {
-    // Solo perfiles autorizados según reglas típicas (Subdirección/Profesorado) para minimizar permission-denied
-    const allowedProfile = currentUser?.profile === Profile.SUBDIRECCION || currentUser?.profile === Profile.PROFESORADO;
+    // Solo perfiles autorizados según reglas típicas (Subdirección/Profesorado y Coordinación TP) para minimizar permission-denied
+    const allowedProfile = currentUser?.profile === Profile.SUBDIRECCION || currentUser?.profile === Profile.PROFESORADO || currentUser?.profile === Profile.COORDINACION_TP;
     if (!allowedProfile || !currentUser?.email) return;
     const unsub = subscribeToNotificacionesParaUsuario(
       { email: currentUser.email, nombreCompleto: currentUser.nombreCompleto },
@@ -197,7 +197,7 @@ const TopBar: React.FC<TopBarProps> = ({
             </Dropdown>
 
             {/* PIE: notificaciones del módulo Inclusión (solo perfiles autorizados) */}
-            {(currentUser.profile === Profile.SUBDIRECCION || currentUser.profile === Profile.PROFESORADO) && (
+            {(currentUser.profile === Profile.SUBDIRECCION || currentUser.profile === Profile.PROFESORADO || currentUser.profile === Profile.COORDINACION_TP) && (
             <Dropdown
               trigger={
                 <button

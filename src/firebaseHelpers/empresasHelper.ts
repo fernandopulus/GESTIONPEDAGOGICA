@@ -90,11 +90,49 @@ export const subscribeToEstudiantes = (callback: (data: User[]) => void) => {
 };
 
 export const subscribeToProfesores = (callback: (data: User[]) => void) => {
-  const q = query(collection(db, USERS_COLLECTION), where('profile', '==', 'PROFESORADO'), orderBy('nombreCompleto', 'asc'));
-  return onSnapshot(q, (snapshot) => {
-    const profesores = snapshot.docs.map(doc => convertFirestoreDoc<User>(doc));
-    callback(profesores);
-  }, (error) => console.error("Error al suscribirse a profesores:", error));
+  // Incluir PROFESORADO y COORDINACION_TP como potenciales supervisores
+  const qProfes = query(
+    collection(db, USERS_COLLECTION),
+    where('profile', '==', Profile.PROFESORADO),
+    orderBy('nombreCompleto', 'asc')
+  );
+  const qCoord = query(
+    collection(db, USERS_COLLECTION),
+    where('profile', '==', Profile.COORDINACION_TP),
+    orderBy('nombreCompleto', 'asc')
+  );
+
+  const map = new Map<string, User>();
+  const emit = () => {
+    const list = Array.from(map.values()).sort((a, b) =>
+      (a.nombreCompleto || '').localeCompare(b.nombreCompleto || '', 'es')
+    );
+    callback(list);
+  };
+
+  const applySnapshot = (snapshot: any) => {
+    snapshot.docChanges().forEach((change: any) => {
+      const id = change.doc.id;
+      if (change.type === 'removed') {
+        map.delete(id);
+      } else {
+        map.set(id, convertFirestoreDoc<User>(change.doc));
+      }
+    });
+    emit();
+  };
+
+  const unsubProfes = onSnapshot(qProfes, applySnapshot, (error) =>
+    console.error('Error al suscribirse a profesores:', error)
+  );
+  const unsubCoord = onSnapshot(qCoord, applySnapshot, (error) =>
+    console.error('Error al suscribirse a coordinación:', error)
+  );
+
+  return () => {
+    unsubProfes();
+    unsubCoord();
+  };
 };
 
 // --- GESTIÓN DE RUTAS DE SUPERVISIÓN ---

@@ -5,13 +5,20 @@ service cloud.firestore {
       return request.auth != null;
     }
     function userDoc() {
-      return get(/databases/$(database)/documents/usuarios/$(request.auth.token.email));
+      // Buscar doc de usuario por email (convención principal) o por UID (fallback)
+      let byEmailPath = /databases/$(database)/documents/usuarios/$(request.auth.token.email);
+      let byUidPath = /databases/$(database)/documents/usuarios/$(request.auth.uid);
+      return exists(byEmailPath) ? get(byEmailPath) : get(byUidPath);
     }
     function currentUserProfile() {
-      return isSignedIn() ? userDoc().data.profile : null;
+      return isSignedIn() ? (
+        userDoc().data.profile != null ? userDoc().data.profile : (
+          userDoc().data.perfil != null ? userDoc().data.perfil : request.auth.token.profile
+        )
+      ) : null;
     }
     function currentUserName() {
-      return isSignedIn() ? userDoc().data.nombreCompleto : null;
+      return isSignedIn() ? (userDoc().data.nombreCompleto != null ? userDoc().data.nombreCompleto : request.auth.token.name) : null;
     }
     function currentUserCourse() {
       return isSignedIn() ? userDoc().data.curso : null;
@@ -34,6 +41,47 @@ service cloud.firestore {
         (resourceData.docente != null && currentUserName() != null && resourceData.docente == currentUserName()) ||
         (resourceData.docenteInfo != null && currentUserName() != null && resourceData.docenteInfo == currentUserName())
       );
+    }
+
+    // =====================
+    // Evaluación por Competencias (EMTP)
+    // =====================
+    // Estructura Curricular (solo lectura para perfiles docentes/coord; edición reservada a Subdirección/Admin)
+    match /tp_especialidades/{id} {
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update, delete: if isAdminOrSubdir();
+    }
+    match /tp_modulos/{id} {
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update, delete: if isAdminOrSubdir();
+    }
+    match /tp_resultados_aprendizaje/{id} {
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update, delete: if isAdminOrSubdir();
+    }
+    match /tp_criterios_evaluacion/{id} {
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update, delete: if isAdminOrSubdir();
+    }
+    // Rúbricas (creadas/gestionadas por docentes; lectura para coordinación)
+    match /tp_rubricas/{id} {
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor();
+    }
+    // Evidencias (archivos y metadatos)
+    match /tp_evidencias/{id} {
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+    }
+    // Registros de evaluaciones
+    match /tp_evaluaciones_comp/{id} {
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+    }
+    // Configuración de evaluación
+    match /config_evaluacion/{docId} {
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update, delete: if isAdminOrSubdir();
     }
 
     // Intranet (blog interno)
@@ -68,10 +116,10 @@ service cloud.firestore {
     // - Staff (ADMINISTRADOR o SUBDIRECCION): full access
     // - Usuario autenticado: puede leer SOLO su propio documento (ID = su email)
     match /usuarios/{uid} {
-  // Lectura: Staff (ADMIN/Subdir) o perfiles operativos (Profesorado y Coordinación TP),
-  // o el propio usuario (por email como id de doc)
-  allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP' ||
-               (isSignedIn() && uid == request.auth.token.email);
+      // Lectura: Staff (ADMIN/Subdir) o perfiles operativos (Profesorado y Coordinación TP),
+      // o el propio usuario (por email como id de doc)
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP' ||
+                   (isSignedIn() && uid == request.auth.token.email);
       allow create, update, delete: if isAdminOrSubdir();
     }
 
@@ -101,19 +149,102 @@ service cloud.firestore {
       allow create, update, delete: if isAdminOrSubdir() || isProfesor();
     }
 
+    // =====================
+    // Evaluación por Competencias EMTP (tp_*)
+    // =====================
+    match /tp_especialidades/{id} {
+      // Lectura pública (metadatos curriculares no sensibles)
+      allow read: if true;
+      // Escritura: Staff/Admin, Profesorado o Coordinación TP (para siembra inicial controlada)
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+    }
+
+    match /tp_modulos/{id} {
+      // Lectura pública (metadatos curriculares no sensibles)
+      allow read: if true;
+      // Escritura: Staff/Admin, Profesorado o Coordinación TP (para siembra inicial controlada)
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+    }
+
+    match /tp_resultados_aprendizaje/{id} {
+      allow read: if isSignedIn() || isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+    }
+
+    match /tp_criterios_evaluacion/{id} {
+      allow read: if isSignedIn() || isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+    }
+
+    match /tp_rubricas/{id} {
+      // Lectura de rúbricas por usuarios autenticados (visibilidad curricular)
+      allow read: if isSignedIn() || isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      // Creación/Actualización: Staff/Admin, Profesorado o Coordinación TP (paridad)
+      allow create, update: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      // Eliminación: Staff/Admin, Profesorado o Coordinación TP
+      allow delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+    }
+
+    match /tp_evidencias/{id} {
+      // Lectura: usuarios autenticados (evidencias educativas internas)
+      allow read: if isSignedIn() || isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      // Escritura: Staff/Admin, Profesorado o Coordinación TP
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+    }
+
+    match /tp_evaluaciones_comp/{id} {
+      // Lectura: usuarios autenticados (resultados de competencia internos)
+      allow read: if isSignedIn() || isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      // Creación/Actualización/Eliminación: Staff/Admin, Profesorado o Coordinación TP
+      allow create: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow update, delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+    }
+
+    // Configuración de evaluación (documento único)
+    match /config_evaluacion/{docId} {
+      allow read: if isSignedIn() || isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update: if isAdminOrSubdir() || isProfesor();
+      allow delete: if isAdminOrSubdir();
+    }
+
+    // =====================
+    // Gestión de Empresas: empresas_practicas
+    // =====================
+    match /empresas_practicas/{id} {
+      // Lectura: Staff/Admin, Profesorado y Coordinación TP
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      // Escritura: Staff/Admin, Profesorado y Coordinación TP
+      allow create, update: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      // Eliminación: Staff/Admin o Profesorado
+      allow delete: if isAdminOrSubdir() || isProfesor();
+    }
+
     // Respuestas de Actividades (entregas de estudiantes)
     match /respuestas_actividades/{id} {
       // Lectura: staff/profe o estudiante dueño (por UID o email almacenado)
       allow read: if isAdminOrSubdir() || isProfesor() || (
-        isSignedIn() && (resource.data.estudianteId == request.auth.uid || resource.data.estudianteId == request.auth.token.email)
+        isSignedIn() && (
+          resource.data.estudianteId == request.auth.uid ||
+          resource.data.estudianteId == request.auth.token.email ||
+          // Compatibilidad con datos antiguos: si se guardó usando un identificador interno del documento de usuario
+          (userDoc().data.id != null && resource.data.estudianteId == userDoc().data.id)
+        )
       );
       // Creación: el estudiante dueño (acepta UID o email en estudianteId)
       allow create: if isSignedIn() && (
-        request.resource.data.estudianteId == request.auth.uid || request.resource.data.estudianteId == request.auth.token.email
+        request.resource.data.estudianteId == request.auth.uid ||
+        request.resource.data.estudianteId == request.auth.token.email ||
+        // Compatibilidad con datos antiguos
+        (userDoc().data.id != null && request.resource.data.estudianteId == userDoc().data.id)
       );
       // Actualización: staff/profe o el estudiante dueño (p.ej., corrección o reintento controlado)
       allow update: if isAdminOrSubdir() || isProfesor() || (
-        isSignedIn() && (resource.data.estudianteId == request.auth.uid || resource.data.estudianteId == request.auth.token.email)
+        isSignedIn() && (
+          resource.data.estudianteId == request.auth.uid ||
+          resource.data.estudianteId == request.auth.token.email ||
+          // Compatibilidad con datos antiguos
+          (userDoc().data.id != null && resource.data.estudianteId == userDoc().data.id)
+        )
       );
       // Eliminación: solo staff
       allow delete: if isAdminOrSubdir();
@@ -342,6 +473,45 @@ service cloud.firestore {
       );
       // Escritura: Staff/profe
       allow create, update, delete: if isAdminOrSubdir() || isProfesor();
+    }
+
+    // =====================
+    // Rutas de Supervisión (gestión de empresas)
+    // =====================
+    match /rutas_supervision/{id} {
+      // Lectura: Staff/Admin, Profesorado y Coordinación TP
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      // Escritura: Staff/Admin, Profesorado y Coordinación TP
+      allow create, update: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      // Eliminación: Staff/Admin o Profesorado
+      allow delete: if isAdminOrSubdir() || isProfesor();
+    }
+
+    // =====================
+    // Notas de práctica (post-it por estudiante)
+    // =====================
+    match /notas_practica/{id} {
+      // Lectura: Staff/Admin, Profesorado y Coordinación TP
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      // Creación/Actualización: Staff/Admin, Profesorado y Coordinación TP
+      allow create, update: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      // Eliminación: Staff/Admin, Profesorado, Coordinación TP o el autor de la nota
+      allow delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP' || (
+        isSignedIn() && (
+          resource.data.autorId == request.auth.uid ||
+          resource.data.autorId == request.auth.token.email
+        )
+      );
+    }
+
+    // =====================
+    // Documentación institucional (RAG): documentacion_docs
+    // =====================
+    match /documentacion_docs/{id} {
+      // Lectura: cualquier usuario autenticado puede consultar documentos
+      allow read: if isSignedIn();
+      // Escritura: sólo Subdirección puede crear/editar/eliminar
+      allow create, update, delete: if isSubdirOnly();
     }
   }
 }

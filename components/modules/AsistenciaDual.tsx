@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../src/firebase'; // Ajusta la ruta según tu estructura
-import { User, Profile } from '../../types';
+import { User, Profile, Empresa } from '../../types';
+import { useAuth } from '../../src/hooks/useAuth';
 import type { AsistenciaDual as AsistenciaDualType } from '../../types';
 import { CURSOS_DUAL } from '../../constants';
 import {
@@ -14,6 +15,19 @@ import {
     testDirectAccess,
 } from '../../src/firebaseHelpers/asistenciaDual';
 import { getAllUsers as getAllUsersFromAlt } from '../../src/firebaseHelpers/users';
+import { subscribeToEmpresas } from '../../src/firebaseHelpers/empresasHelper';
+import {
+    ResponsiveContainer,
+    AreaChart,
+    Area,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip as ReTooltip,
+    BarChart,
+    Bar,
+    Legend
+} from 'recharts';
 
 const normalizeCurso = (curso: string): string => {
     if (!curso) return '';
@@ -47,12 +61,46 @@ interface AttendanceRecord {
 const AsistenciaDual: React.FC = () => {
     const [allRegistros, setAllRegistros] = useState<AsistenciaDualType[]>([]);
     const [allStudents, setAllStudents] = useState<User[]>([]);
+    const [empresas, setEmpresas] = useState<Empresa[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedCurso, setSelectedCurso] = useState<string>('todos');
     const [studentFilter, setStudentFilter] = useState('');
     const [includeAll, setIncludeAll] = useState(false);
+
+    // Umbral de desviación configurable y persistente por usuario
+    const { currentUser } = useAuth();
+    const getThresholdKey = (email?: string | null) => `asistenciaDual.threshold.${email || 'default'}`;
+    const [thresholdMeters, setThresholdMeters] = useState<number>(() => {
+        try {
+            const raw = localStorage.getItem(getThresholdKey(null));
+            const n = raw ? parseInt(raw, 10) : NaN;
+            return Number.isFinite(n) && n > 0 ? n : 200;
+        } catch {
+            return 200;
+        }
+    });
+    useEffect(() => {
+        try {
+            const key = getThresholdKey(currentUser?.email);
+            const raw = localStorage.getItem(key);
+            if (raw) {
+                const n = parseInt(raw, 10);
+                if (Number.isFinite(n) && n > 0) setThresholdMeters(n);
+            }
+        } catch {}
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentUser?.email]);
+    useEffect(() => {
+        try {
+            const key = getThresholdKey(currentUser?.email);
+            localStorage.setItem(key, String(thresholdMeters));
+        } catch {}
+    }, [thresholdMeters, currentUser?.email]);
+
+    // Vista: tabla o dashboard
+    const [view, setView] = useState<'tabla' | 'dashboard'>('tabla');
 
     useEffect(() => {
         setLoading(true);
@@ -346,6 +394,12 @@ const AsistenciaDual: React.FC = () => {
         }
     }, [currentDate, includeAll]);
 
+    // Suscripción a empresas (para obtener coordenadas y asignación estudiantes)
+    useEffect(() => {
+        const unsub = subscribeToEmpresas(setEmpresas);
+        return () => unsub && unsub();
+    }, []);
+
     const { monthDays, monthName, year } = useMemo(() => {
         const year = currentDate.getFullYear();
         const month = currentDate.getMonth();
@@ -524,6 +578,245 @@ const AsistenciaDual: React.FC = () => {
 
     const weekDays = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
 
+    // Mapa auxiliar: estudianteId -> Empresa asignada
+    const empresaPorEstudianteId = useMemo(() => {
+        const map = new Map<string, Empresa>();
+        empresas.forEach(emp => {
+            (emp.estudiantesAsignados || []).forEach(stId => {
+                if (stId) map.set(stId, emp);
+            });
+        });
+        return map;
+    }, [empresas]);
+
+    // Utilidad: calcular distancia Haversine en metros
+    const haversineMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+        const toRad = (v: number) => (v * Math.PI) / 180;
+        const R = 6371000; // m
+        const dLat = toRad(lat2 - lat1);
+        const dLon = toRad(lon2 - lon1);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    };
+
+    // Resumen de desviaciones por estudiante durante el mes visible
+    const getDeviationSummary = (student: User) => {
+        const emailKey = student.email;
+        const mapDias = attendanceData.get(emailKey);
+        const empresa = empresaPorEstudianteId.get(student.id);
+        const coords = empresa?.coordenadas;
+        if (!mapDias || !coords || coords.lat == null || coords.lng == null) {
+            return { hasData: !!mapDias, undetermined: true, anyDeviation: false, count: 0, max: 0 };
+        }
+        let count = 0;
+        let max = 0;
+        for (let d = 1; d <= monthDays; d++) {
+            const rec = mapDias.get(d);
+            if (!rec) continue;
+            const check = (u?: { latitud: number; longitud: number } | null) => {
+                if (!u || u.latitud == null || u.longitud == null) return;
+                const dist = haversineMeters(u.latitud, u.longitud, coords.lat, coords.lng);
+                if (dist > thresholdMeters) {
+                    count += 1;
+                }
+                if (dist > max) max = dist;
+            };
+            if (rec.entrada) check(rec.entrada.ubicacion);
+            if (rec.salida) check(rec.salida.ubicacion);
+        }
+        return { hasData: true, undetermined: false, anyDeviation: count > 0, count, max };
+    };
+
+    // Filtro: Solo con desviaciones, persistente por usuario
+    const [onlyDeviations, setOnlyDeviations] = useState<boolean>(() => {
+        try {
+            const raw = localStorage.getItem(`asistenciaDual.onlyDeviations.default`);
+            return raw === '1';
+        } catch { return false; }
+    });
+    useEffect(() => {
+        try {
+            const key = `asistenciaDual.onlyDeviations.${currentUser?.email || 'default'}`;
+            const raw = localStorage.getItem(key);
+            if (raw != null) setOnlyDeviations(raw === '1');
+        } catch {}
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentUser?.email]);
+    useEffect(() => {
+        try {
+            const key = `asistenciaDual.onlyDeviations.${currentUser?.email || 'default'}`;
+            localStorage.setItem(key, onlyDeviations ? '1' : '0');
+        } catch {}
+    }, [onlyDeviations, currentUser?.email]);
+
+    // Lista visible de estudiantes acorde al filtro de desviaciones
+    const visibleStudents = useMemo(() => {
+        if (!onlyDeviations) return studentsForCourse;
+        return studentsForCourse.filter(st => {
+            const s = getDeviationSummary(st);
+            return s.hasData && !s.undetermined && s.anyDeviation;
+        });
+    }, [studentsForCourse, onlyDeviations, attendanceData, empresaPorEstudianteId, monthDays]);
+
+    // Agregados para dashboard
+    const dashboardData = useMemo(() => {
+        // Estudiantes en alcance (aplican filtros de curso/nombre ya en studentsForCourse)
+        const estudiantes = visibleStudents;
+        const emailsSet = new Set(estudiantes.map(e => e.email));
+
+        // Totales por día (E = entradas)
+        const dailyEntries: Array<{ day: number; entradas: number }> = [];
+        for (let d = 1; d <= monthDays; d++) {
+            let entradas = 0;
+            emailsSet.forEach(email => {
+                const rec = attendanceData.get(email)?.get(d);
+                if (rec?.entrada) entradas += 1;
+            });
+            dailyEntries.push({ day: d, entradas });
+        }
+
+        // Totales por día de semana (todas las entradas)
+        const byWeekday: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+        dailyEntries.forEach(({ day, entradas }) => {
+            const dt = new Date(year, currentDate.getMonth(), day);
+            const w = dt.getDay();
+            byWeekday[w] += entradas;
+        });
+        const weekdaySeries = [0, 1, 2, 3, 4, 5, 6].map(w => ({ nombre: weekDays[w], registros: byWeekday[w] }));
+
+        // Promedio de días con entrada por estudiante
+        let sumDiasPorEstudiante = 0;
+        estudiantes.forEach(st => {
+            const mapDias = attendanceData.get(st.email);
+            if (!mapDias) return;
+            let dias = 0;
+            for (let d = 1; d <= monthDays; d++) if (mapDias.get(d)?.entrada) dias += 1;
+            sumDiasPorEstudiante += dias;
+        });
+        const avgDiasConEntrada = estudiantes.length ? (sumDiasPorEstudiante / estudiantes.length) : 0;
+
+        // Desviaciones totales y top 5
+        const desvPorEstudiante = estudiantes.map(st => {
+            const s = getDeviationSummary(st);
+            return { id: st.id, nombre: st.nombreCompleto, count: s.count, any: s.anyDeviation };
+        });
+        const totalDesviaciones = desvPorEstudiante.reduce((a, b) => a + (b.count || 0), 0);
+        const topDesviadores = desvPorEstudiante
+            .filter(x => x.count > 0)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5);
+
+        // Si se ve "Todos los cursos", agregamos barra por curso
+        let porCurso: Array<{ curso: string; promedioDias: number; estudiantes: number }> = [];
+        if (selectedCurso === 'todos') {
+            const grupos = new Map<string, User[]>();
+            estudiantes.forEach(st => {
+                const c = st.curso || '—';
+                if (!grupos.has(c)) grupos.set(c, []);
+                grupos.get(c)!.push(st);
+            });
+            porCurso = Array.from(grupos.entries()).map(([curso, sts]) => {
+                let sum = 0;
+                sts.forEach(st => {
+                    const mapDias = attendanceData.get(st.email);
+                    if (!mapDias) return;
+                    let dias = 0;
+                    for (let d = 1; d <= monthDays; d++) if (mapDias.get(d)?.entrada) dias += 1;
+                    sum += dias;
+                });
+                const promedioDias = sts.length ? sum / sts.length : 0;
+                return { curso, promedioDias, estudiantes: sts.length };
+            }).sort((a, b) => a.curso.localeCompare(b.curso, 'es'));
+        }
+
+        return {
+            estudiantesCount: estudiantes.length,
+            dailyEntries,
+            weekdaySeries,
+            avgDiasConEntrada,
+            totalDesviaciones,
+            topDesviadores,
+            porCurso,
+        };
+    }, [visibleStudents, attendanceData, monthDays, year, currentDate, selectedCurso]);
+
+    // --- Utilidades CSV locales ---
+    const csvEscape = (value: any): string => {
+        if (value === null || value === undefined) return '';
+        let str = String(value);
+        // Escapar comillas dobles y envolver en comillas si contiene separadores o saltos de línea
+        const needsQuotes = /[",\n]/.test(str);
+        str = str.replace(/"/g, '""');
+        return needsQuotes ? `"${str}"` : str;
+    };
+
+    const downloadCSV = (filename: string, rows: string[][]) => {
+        const csv = rows.map(r => r.map(csvEscape).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const exportarInformeCSV = () => {
+        try {
+            // Encabezados: Estudiante, Curso, 1..N, Ingresos, Salidas
+            const headers: string[] = ['Estudiante', 'Curso'];
+            for (let d = 1; d <= monthDays; d++) headers.push(String(d));
+            headers.push('Ingresos', 'Salidas', 'Desv', 'DesvEventos', 'DesvMax(m)');
+
+            const rows: string[][] = [headers];
+
+            visibleStudents.forEach(student => {
+                const mapDias = attendanceData.get(student.email);
+                let totalIngresos = 0;
+                let totalSalidas = 0;
+                const dayMarks: string[] = [];
+
+                for (let d = 1; d <= monthDays; d++) {
+                    const rec = mapDias?.get(d);
+                    const hasE = !!rec?.entrada;
+                    const hasS = !!rec?.salida;
+                    if (hasE) totalIngresos += 1;
+                    if (hasS) totalSalidas += 1;
+                    if (hasE && hasS) dayMarks.push('E/S');
+                    else if (hasE) dayMarks.push('E');
+                    else if (hasS) dayMarks.push('S');
+                    else dayMarks.push('');
+                }
+
+                const dev = getDeviationSummary(student);
+                const devLabel = !dev.hasData ? '' : (dev.undetermined ? 'N/D' : (dev.anyDeviation ? 'Sí' : 'No'));
+
+                rows.push([
+                    student.nombreCompleto || '',
+                    student.curso || '',
+                    ...dayMarks,
+                    String(totalIngresos),
+                    String(totalSalidas),
+                    devLabel,
+                    dev.hasData && !dev.undetermined ? String(dev.count) : '',
+                    dev.hasData && !dev.undetermined ? String(Math.round(dev.max)) : ''
+                ]);
+            });
+
+            const mes = currentDate.toLocaleString('es-CL', { month: 'long' });
+            const fileSafeMes = mes.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/\s+/g, '_');
+            const fileSafeCurso = selectedCurso === 'todos' ? 'Todos' : selectedCurso.replace(/[^A-Za-z0-9º]/g, '_');
+            const filename = `asistencia_dual_${fileSafeCurso}_${fileSafeMes}_${year}${onlyDeviations ? '_solo_desv' : ''}.csv`;
+            downloadCSV(filename, rows);
+        } catch (e) {
+            console.error('Error al exportar CSV:', e);
+            alert('No se pudo generar el informe. Intenta nuevamente.');
+        }
+    };
+
     if (error) {
         return (
             <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
@@ -540,7 +833,7 @@ const AsistenciaDual: React.FC = () => {
                 Asistencia Dual Mensual
             </h1>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border rounded-lg bg-slate-50 dark:bg-slate-700/50 dark:border-slate-700">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border rounded-lg bg-slate-50 dark:bg-slate-700/50 dark:border-slate-700">
                 <div className="flex items-center justify-center md:justify-start gap-2">
                     <button 
                         onClick={() => changeMonth(-1)} 
@@ -571,11 +864,6 @@ const AsistenciaDual: React.FC = () => {
                     disabled={loading}
                     className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 disabled:opacity-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                {/* Resumen de estado */}
-                <div className="text-center md:text-right text-sm text-slate-600 dark:text-slate-300">
-                    <span className="inline-block px-2 py-1 rounded bg-slate-100 dark:bg-slate-600/50 mr-2">Estudiantes: {studentsForCourse.length}</span>
-                    <span className="inline-block px-2 py-1 rounded bg-slate-100 dark:bg-slate-600/50">Registros del período: {periodRecordsCount}</span>
-                </div>
                     <option value="todos">Todos los Cursos</option>
                     {CURSOS_DUAL.map(curso => (
                         <option key={curso} value={curso}>{curso}</option>
@@ -590,12 +878,148 @@ const AsistenciaDual: React.FC = () => {
                     disabled={loading}
                     className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 disabled:opacity-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
+
+                {/* Resumen de estado */}
+                <div className="text-center md:text-right text-sm text-slate-600 dark:text-slate-300">
+                    <span className="inline-block px-2 py-1 rounded bg-slate-100 dark:bg-slate-600/50 mr-2">Estudiantes: {studentsForCourse.length}</span>
+                    <span className="inline-block px-2 py-1 rounded bg-slate-100 dark:bg-slate-600/50">Registros del período: {periodRecordsCount}</span>
+                </div>
+
+                {/* Acción: Descargar informe + Toggle Dashboard */}
+                <div className="flex flex-wrap items-center justify-center md:justify-end gap-2">
+                    <button
+                        onClick={() => setView(prev => prev === 'tabla' ? 'dashboard' : 'tabla')}
+                        className="px-4 py-2 rounded-md bg-emerald-600 text-white font-medium hover:bg-emerald-700 w-full sm:w-auto min-w-[140px]"
+                        title="Alternar entre Tabla y Dashboard"
+                    >
+                        {view === 'tabla' ? 'Ver Dashboard' : 'Ver Tabla'}
+                    </button>
+                    <div className="flex items-center gap-2">
+                        <label className="text-sm text-slate-600 dark:text-slate-300" title="Umbral de desviación geográfica">Umbral</label>
+                        <select
+                            value={thresholdMeters}
+                            onChange={(e) => setThresholdMeters(parseInt(e.target.value) || 200)}
+                            className="border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm px-2 py-1 w-full sm:w-[120px]"
+                        >
+                            <option value={100}>100 m</option>
+                            <option value={200}>200 m</option>
+                            <option value={300}>300 m</option>
+                            <option value={500}>500 m</option>
+                        </select>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                        <input type="checkbox" checked={onlyDeviations} onChange={(e) => setOnlyDeviations(e.target.checked)} />
+                        Solo con desviaciones
+                    </label>
+                    <button
+                        onClick={exportarInformeCSV}
+                        disabled={loading || visibleStudents.length === 0}
+                        title="Descargar informe mensual (CSV)"
+                        className="px-4 py-2 rounded-md bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto min-w-[160px]"
+                    >
+                        Descargar informe
+                    </button>
+                </div>
             </div>
 
             {loading ? (
                 <div className="text-center text-amber-600 py-10">
                     <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mb-4"></div>
                     <div>Cargando datos de asistencia...</div>
+                </div>
+            ) : view === 'dashboard' ? (
+                <div className="space-y-6">
+                    {/* KPIs */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="p-4 rounded-xl bg-gradient-to-tr from-indigo-500 to-indigo-400 text-white shadow-md">
+                            <div className="text-xs opacity-90">Estudiantes</div>
+                            <div className="text-2xl font-bold">{dashboardData.estudiantesCount}</div>
+                        </div>
+                        <div className="p-4 rounded-xl bg-gradient-to-tr from-cyan-500 to-cyan-400 text-white shadow-md">
+                            <div className="text-xs opacity-90">Registros (mes)</div>
+                            <div className="text-2xl font-bold">{periodRecordsCount}</div>
+                        </div>
+                        <div className="p-4 rounded-xl bg-gradient-to-tr from-emerald-500 to-emerald-400 text-white shadow-md">
+                            <div className="text-xs opacity-90">Promedio días con entrada</div>
+                            <div className="text-2xl font-bold">{dashboardData.avgDiasConEntrada.toFixed(1)}</div>
+                        </div>
+                        <div className="p-4 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-400 text-white shadow-md">
+                            <div className="text-xs opacity-90">Desviaciones (mes)</div>
+                            <div className="text-2xl font-bold">{dashboardData.totalDesviaciones}</div>
+                        </div>
+                    </div>
+
+                    {/* Gráfico: Entradas por día */}
+                    <div className="p-4 border rounded-xl bg-white dark:bg-slate-900">
+                        <h3 className="font-bold mb-3">Entradas por día del mes</h3>
+                        <ResponsiveContainer width="100%" height={260}>
+                            <AreaChart data={dashboardData.dailyEntries} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
+                                <defs>
+                                    <linearGradient id="gradEntradas" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#22C55E" stopOpacity={0.8} />
+                                        <stop offset="100%" stopColor="#22C55E" stopOpacity={0.1} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 12 }} />
+                                <YAxis allowDecimals={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                                <ReTooltip />
+                                <Area dataKey="entradas" name="Entradas" type="monotone" stroke="#22C55E" fill="url(#gradEntradas)" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    {/* Gráfico: Registros por día de semana */}
+                    <div className="p-4 border rounded-xl bg-white dark:bg-slate-900">
+                        <h3 className="font-bold mb-3">Registros por día de semana</h3>
+                        <ResponsiveContainer width="100%" height={260}>
+                            <BarChart data={dashboardData.weekdaySeries} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis dataKey="nombre" tick={{ fill: '#64748b', fontSize: 12 }} />
+                                <YAxis allowDecimals={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                                <ReTooltip />
+                                <Bar dataKey="registros" name="Entradas" fill="#6366F1" radius={[6, 6, 0, 0]} />
+                                <Legend />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    {/* Top desviaciones */}
+                    <div className="p-4 border rounded-xl bg-white dark:bg-slate-900">
+                        <h3 className="font-bold mb-3">Top 5 con más desviaciones</h3>
+                        {dashboardData.topDesviadores.length === 0 ? (
+                            <div className="text-sm text-slate-500">Sin desviaciones registradas en el mes.</div>
+                        ) : (
+                            <ul className="divide-y">
+                                {dashboardData.topDesviadores.map((t, idx) => (
+                                    <li key={t.id} className="py-2 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-sm font-semibold text-slate-600">{idx + 1}</div>
+                                            <span className="font-medium">{t.nombre}</span>
+                                        </div>
+                                        <span className="font-bold text-red-600">{t.count}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+
+                    {/* Promedio por curso (si Todos) */}
+                    {selectedCurso === 'todos' && (
+                        <div className="p-4 border rounded-xl bg-white dark:bg-slate-900">
+                            <h3 className="font-bold mb-3">Promedio de días con entrada por curso</h3>
+                            <ResponsiveContainer width="100%" height={260}>
+                                <BarChart data={dashboardData.porCurso} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                    <XAxis dataKey="curso" tick={{ fill: '#64748b', fontSize: 12 }} />
+                                    <YAxis allowDecimals={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                                    <ReTooltip />
+                                    <Bar dataKey="promedioDias" name="Prom. días con entrada" fill="#0ea5e9" radius={[6, 6, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                            <div className="text-xs text-slate-500 mt-2">Entre 0 y {monthDays} días posibles</div>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div className="overflow-x-auto">
@@ -621,11 +1045,21 @@ const AsistenciaDual: React.FC = () => {
                                         </th>
                                     );
                                 })}
+                                {/* Nuevas últimas columnas: Ingresos y Salidas */}
+                                <th className="p-2 border-r border-b border-slate-200 dark:border-slate-600 text-xs w-20 text-center">
+                                    Ingresos
+                                </th>
+                                <th className="p-2 border-r border-b border-slate-200 dark:border-slate-600 text-xs w-20 text-center">
+                                    Salidas
+                                </th>
+                                <th className="p-2 border-r border-b border-slate-200 dark:border-slate-600 text-xs w-24 text-center" title={`Marcajes fuera de ${thresholdMeters} m de la empresa`}>
+                                    Desv.
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
-                            {studentsForCourse.length > 0 ? (
-                                studentsForCourse.map(student => (
+                            {visibleStudents.length > 0 ? (
+                                visibleStudents.map(student => (
                                     <tr key={student.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
                                         <td className="sticky left-0 bg-white dark:bg-slate-800 z-10 p-2 border-r border-b border-slate-200 dark:border-slate-600 text-sm font-medium whitespace-nowrap">
                                             {student.nombreCompleto}
@@ -656,43 +1090,122 @@ const AsistenciaDual: React.FC = () => {
                                                     }`}
                                                 >
                                                     <div className="flex justify-center items-center gap-1.5 h-full">
-                                                        {studentDayRecords?.entrada && (
-                                                            <div
-                                                                className="group relative cursor-pointer"
-                                                                onClick={() => handleLocationClick(studentDayRecords.entrada?.ubicacion)}
-                                                            >
-                                                                <EntryIcon />
-                                                                <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-max px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
-                                                                    {new Date(studentDayRecords.entrada.fechaHora).toLocaleTimeString('es-CL', { 
-                                                                        hour: '2-digit', 
-                                                                        minute: '2-digit' 
-                                                                    })}
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                        {studentDayRecords?.salida && (
-                                                            <div
-                                                                className="group relative cursor-pointer"
-                                                                onClick={() => handleLocationClick(studentDayRecords.salida?.ubicacion)}
-                                                            >
-                                                                <ExitIcon />
-                                                                <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-max px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
-                                                                    {new Date(studentDayRecords.salida.fechaHora).toLocaleTimeString('es-CL', { 
-                                                                        hour: '2-digit', 
-                                                                        minute: '2-digit' 
-                                                                    })}
-                                                                </span>
-                                                            </div>
-                                                        )}
+                                                        {(() => {
+                                                            if (!studentDayRecords?.entrada) return null;
+                                                            const empresa = empresaPorEstudianteId.get(student.id);
+                                                            const coords = empresa?.coordenadas;
+                                                            let distE: number | null = null;
+                                                            let isDevE = false;
+                                                            if (coords && studentDayRecords.entrada.ubicacion?.latitud != null && studentDayRecords.entrada.ubicacion?.longitud != null) {
+                                                                distE = haversineMeters(
+                                                                    studentDayRecords.entrada.ubicacion.latitud,
+                                                                    studentDayRecords.entrada.ubicacion.longitud,
+                                                                    coords.lat,
+                                                                    coords.lng
+                                                                );
+                                                                isDevE = distE > thresholdMeters;
+                                                            }
+                                                            return (
+                                                                <div
+                                                                    className={`group relative cursor-pointer ${isDevE ? 'ring-2 ring-red-400 rounded-full' : ''}`}
+                                                                    onClick={() => handleLocationClick(studentDayRecords.entrada?.ubicacion)}
+                                                                >
+                                                                    <EntryIcon />
+                                                                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-max px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+                                                                        {new Date(studentDayRecords.entrada.fechaHora).toLocaleTimeString('es-CL', { 
+                                                                            hour: '2-digit', 
+                                                                            minute: '2-digit' 
+                                                                        })}{distE != null ? ` • ${Math.round(distE)} m` : ''}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                        {(() => {
+                                                            if (!studentDayRecords?.salida) return null;
+                                                            const empresa = empresaPorEstudianteId.get(student.id);
+                                                            const coords = empresa?.coordenadas;
+                                                            let distS: number | null = null;
+                                                            let isDevS = false;
+                                                            if (coords && studentDayRecords.salida.ubicacion?.latitud != null && studentDayRecords.salida.ubicacion?.longitud != null) {
+                                                                distS = haversineMeters(
+                                                                    studentDayRecords.salida.ubicacion.latitud,
+                                                                    studentDayRecords.salida.ubicacion.longitud,
+                                                                    coords.lat,
+                                                                    coords.lng
+                                                                );
+                                                                isDevS = distS > thresholdMeters;
+                                                            }
+                                                            return (
+                                                                <div
+                                                                    className={`group relative cursor-pointer ${isDevS ? 'ring-2 ring-red-400 rounded-full' : ''}`}
+                                                                    onClick={() => handleLocationClick(studentDayRecords.salida?.ubicacion)}
+                                                                >
+                                                                    <ExitIcon />
+                                                                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-max px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+                                                                        {new Date(studentDayRecords.salida.fechaHora).toLocaleTimeString('es-CL', { 
+                                                                            hour: '2-digit', 
+                                                                            minute: '2-digit' 
+                                                                        })}{distS != null ? ` • ${Math.round(distS)} m` : ''}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </div>
                                                 </td>
                                             );
                                         })}
+                                        {/* Celdas de totales separados */}
+                                        <td className="p-1 border-r border-b border-slate-200 dark:border-slate-600 text-center align-middle font-semibold">
+                                            {(() => {
+                                                const mapDias = attendanceData.get(student.email);
+                                                if (!mapDias) return 0;
+                                                let totalIngresos = 0;
+                                                for (let d = 1; d <= monthDays; d++) {
+                                                    const rec = mapDias.get(d);
+                                                    if (!rec) continue;
+                                                    if (rec.entrada) totalIngresos += 1;
+                                                }
+                                                return totalIngresos;
+                                            })()}
+                                        </td>
+                                        <td className="p-1 border-r border-b border-slate-200 dark:border-slate-600 text-center align-middle font-semibold">
+                                            {(() => {
+                                                const mapDias = attendanceData.get(student.email);
+                                                if (!mapDias) return 0;
+                                                let totalSalidas = 0;
+                                                for (let d = 1; d <= monthDays; d++) {
+                                                    const rec = mapDias.get(d);
+                                                    if (!rec) continue;
+                                                    if (rec.salida) totalSalidas += 1;
+                                                }
+                                                return totalSalidas;
+                                            })()}
+                                        </td>
+                                        {/* Columna de desviación */}
+                                        <td className="p-1 border-r border-b border-slate-200 dark:border-slate-600 text-center align-middle">
+                                            {(() => {
+                                                const summary = getDeviationSummary(student);
+                                                if (!summary.hasData) return '—';
+                                                if (summary.undetermined) return (
+                                                    <span className="text-xs text-slate-500" title="Sin empresa asignada o sin coordenadas">N/D</span>
+                                                );
+                                                const label = summary.anyDeviation ? 'Sí' : 'No';
+                                                const color = summary.anyDeviation ? 'text-red-600' : 'text-emerald-600';
+                                                return (
+                                                    <span
+                                                        className={`text-sm font-semibold ${color}`}
+                                                        title={`Eventos fuera de umbral: ${summary.count}\nDistancia máxima: ${Math.round(summary.max)} m`}
+                                                    >
+                                                        {label}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </td>
                                     </tr>
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={monthDays + 1} className="text-center p-8 text-slate-500">
+                                    <td colSpan={monthDays + 4} className="text-center p-8 text-slate-500">
                                         No hay estudiantes en el curso seleccionado o que coincidan con la búsqueda.
                                     </td>
                                 </tr>

@@ -41,6 +41,7 @@ import Multicopias from './modules/Multicopias';
 import EvaluacionEnsayo from './modules/EvaluacionEnsayo';
 import HorarioSemanalLiceo from './modules/HorarioSemanalLiceo';
 import Intranet from './modules/Intranet';
+import Documentacion from './modules/Documentacion';
 
 // UI
 import { Menu, ChevronLeft, ChevronRight, GraduationCap, ChevronDown } from 'lucide-react';
@@ -103,6 +104,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   sd_planificacion: true,
   sd_reflexion: true,
   sd_herramientas: true,
+  coord_gestion: true,
+  coord_formacion: true,
+  coord_utilidades: true,
   });
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -153,7 +157,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         </button>
       </div>
 
-      {/* Navegación: agrupada para PROFESORADO, plana para otros perfiles */}
+      {/* Navegación: agrupada para PROFESORADO, SUBDIRECCIÓN y COORDINACIÓN TP; plana para otros perfiles o colapsado */}
       <nav className="flex-1 overflow-y-auto p-3 bg-[#1B2433]">
         {profile === Profile.PROFESORADO && !isSidebarCollapsed ? (
           <div className="space-y-3">
@@ -176,7 +180,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               {
                 id: 'herramientas',
                 title: 'Herramientas',
-                items: ['Muro de Anuncios', 'Mensajería Interna', 'Generador de Actas'],
+                items: ['Documentación', 'Muro de Anuncios', 'Mensajería Interna', 'Generador de Actas'],
               },
             ].map((grp) => {
               const isOpen = !!expandedSidebarGroups[grp.id];
@@ -274,7 +278,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               {
                 id: 'sd_planificacion',
                 title: 'Planificación',
-                items: ['Seguimiento Curricular', 'Interdisciplinario', 'Inclusión'],
+                items: ['Planificación', 'Seguimiento Curricular', 'Interdisciplinario', 'Inclusión'],
               },
               {
                 id: 'sd_reflexion',
@@ -284,7 +288,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               {
                 id: 'sd_herramientas',
                 title: 'Herramientas',
-                items: ['Calendario Académico', 'Muro de Anuncios', 'Mensajería Interna', 'Generador de Actas'],
+                items: ['Documentación', 'Calendario Académico', 'Muro de Anuncios', 'Mensajería Interna', 'Generador de Actas'],
               },
             ].map((grp) => {
               const isOpen = !!expandedSidebarGroups[grp.id];
@@ -384,6 +388,83 @@ const Dashboard: React.FC<DashboardProps> = ({
               </div>
             )}
           </div>
+        ) : profile === Profile.COORDINACION_TP && !isSidebarCollapsed ? (
+          <div className="space-y-3">
+            {[
+              {
+                id: 'coord_gestion',
+                title: 'Gestión',
+                items: [
+                  'Seguimiento Dual',
+                  'Asistencia Dual',
+                  'Gestión de Empresas',
+                  'Pañol',
+                ],
+              },
+              {
+                id: 'coord_formacion',
+                title: 'Formación',
+                items: [
+                  'Alternancia TP',
+                  'Desarrollo Profesional',
+                  'Evaluación de Ensayo',
+                  'SIMCE',
+                ],
+              },
+              {
+                id: 'coord_utilidades',
+                title: 'Utilidades',
+                items: [
+                  'Documentación',
+                  'Mensajería Interna',
+                  'Muro de Anuncios',
+                  'Calendario Académico',
+                  'Generador de Actas',
+                  'Multicopias',
+                ],
+              },
+            ].map((grp) => {
+              const isOpen = !!expandedSidebarGroups[grp.id];
+              const groupModules = grp.items
+                .map((name) => modules.find((m) => m.name === name))
+                .filter(Boolean) as Module[];
+
+              if (groupModules.length === 0) return null;
+
+              return (
+                <div key={grp.id} className="rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/10 transition"
+                    onClick={() => setExpandedSidebarGroups((p) => ({ ...p, [grp.id]: !p[grp.id] }))}
+                    aria-expanded={isOpen}
+                  >
+                    <span className="text-sm font-semibold text-white/90">{grp.title}</span>
+                    <ChevronDown className={`w-4 h-4 text-white/70 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isOpen && (
+                    <div className="px-2 pb-2">
+                      {groupModules.map((mod) => {
+                        const isActive = activeModule?.name === mod.name;
+                        return (
+                          <button
+                            key={mod.name}
+                            onClick={() => handleModuleSelect(mod)}
+                            className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-xl transition-all mt-1
+                              ${isActive ? 'bg-amber-400 text-slate-900 font-bold shadow' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                            title={mod.name}
+                          >
+                            <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>{mod.icon}</span>
+                            <span className="text-[0.98rem] leading-tight text-left">{mod.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         ) : (
           // Lista plana (colapsado o no PROFESORADO)
           <div
@@ -438,6 +519,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
     // ===== Módulos comunes =====
   if (activeModule.name === 'Intranet') return <Intranet currentUser={currentUser} />;
+    if (activeModule.name === 'Documentación') return <Documentacion currentUser={currentUser} />;
     if (activeModule.name === 'Calendario Académico') return <CalendarioAcademico profile={profile} />;
     if (activeModule.name === 'Muro de Anuncios') return <MuroAnuncios currentUser={currentUser} />;
     if (activeModule.name === 'Mensajería Interna') return <MensajeriaInterna currentUser={currentUser} refreshUnreadCount={refreshUnreadCount} />;
@@ -449,6 +531,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (activeModule.name === 'Dashboard') return <DashboardSubdireccion currentUser={currentUser} />;
       if (activeModule.name === 'Administración') return <Administracion />;
   if (activeModule.name === 'Horario del liceo') return <HorarioSemanalLiceo />;
+      if (activeModule.name === 'Planificación') return <PlanificacionDocente currentUser={currentUser} />;
       if (activeModule.name === 'Multicopias') return <Multicopias currentUser={currentUser} />;
       if (activeModule.name === 'Evaluación de Ensayo') return <EvaluacionEnsayo currentUser={currentUser} />;
       if (activeModule.name === 'Seguimiento Curricular') return <SeguimientoCurricular currentUser={currentUser} />;

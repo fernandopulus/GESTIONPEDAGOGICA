@@ -231,6 +231,10 @@ import {
   saveActividad,
   subscribeToActividades
 } from '../../src/firebaseHelpers/planificacionHelper';
+// Documentación institucional (reutilizamos el backend de Documentación con tag "planificacion")
+import { subscribeDocs, createDocMeta, uploadFileForDoc, indexDocument, deleteDocMeta, type DocuMeta } from '../../src/firebaseHelpers/documentacion';
+import { storage } from '../../src/firebase';
+import { ref as storageRef, getDownloadURL } from 'firebase/storage';
 
 // Función de logging simple
 const logApiCall = (action: string) => {
@@ -1364,9 +1368,17 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   const [editingPlanificacion, setEditingPlanificacion] = useState<PlanificacionUnidad | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'unidad' | 'clase' | 'calendario' | 'materiales'>('unidad');
+  const [activeTab, setActiveTab] = useState<'unidad' | 'clase' | 'calendario' | 'materiales' | 'config'>('unidad');
   const [viewingClassPlan, setViewingClassPlan] = useState<PlanificacionClase | null>(null);
   const [editingLesson, setEditingLesson] = useState<{ planId: string; lessonIndex: number; lessonData: DetalleLeccion } | null>(null);
+  // Documentos institucionales para planificación (tag: 'planificacion')
+  const [planDocs, setPlanDocs] = useState<DocuMeta[]>([]);
+  const [selectedPlanDocIds, setSelectedPlanDocIds] = useState<string[]>([]);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadDesc, setUploadDesc] = useState('');
+  const [uploadTags, setUploadTags] = useState<string>('planificacion');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   
   const handleOpenEditModal = (lessonIndex: number, lessonData: DetalleLeccion) => {
     if (editingPlanificacion) {
@@ -1447,8 +1459,27 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     }));
   };
 
+  // Suscribirse a Documentación y filtrar por tag 'planificacion'
+  useEffect(() => {
+    const unsub = subscribeDocs((docs) => {
+      const filtered = docs.filter(d => Array.isArray(d.tags) && d.tags.includes('planificacion'));
+      setPlanDocs(filtered);
+    });
+    return () => {
+      try { if (typeof unsub === 'function') unsub(); } catch {}
+    };
+  }, []);
+
+  const toggleSelectPlanDoc = (id: string) => {
+    setSelectedPlanDocIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
   const buildUnidadPrompt = () => {
     const { asignatura, nivel, nombreUnidad, contenidos, cantidadClases, observaciones, ideasParaUnidad } = unidadFormData;
+    const selectedDocs = planDocs.filter(d => selectedPlanDocIds.includes(d.id));
+    const docsContext = selectedDocs.length > 0
+      ? `\n\nDocumentos institucionales a considerar (Subdirección):\n${selectedDocs.map(d => `- ${d.title}${d.description ? `: ${d.description}` : ''}`).join('\n')}\n\nUsa estas referencias para alinear la planificación con los lineamientos institucionales.`
+      : '';
 
     return `Eres un experto diseñador curricular para la educación media técnico profesional en Chile. Tu tarea es generar una planificación de unidad didáctica siguiendo fielmente las bases curriculares y los objetivos de aprendizaje del Currículum Nacional Chileno (MINEDUC) para ${asignatura} en ${nivel}. La planificación debe presentarse en formato JSON estructurado.
 
@@ -1478,7 +1509,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         - **actividades**: Sugiere 1 o 2 actividades concretas, indicando el número de clase entre paréntesis (ej: "Debate grupal (Clase 1)").
         - **asignaturasInterdisciplinariedad**: Sugiere una asignatura con la que se podría realizar un trabajo interdisciplinario.
 
-    Asegúrate de que el contenido generado sea coherente, pedagógicamente sólido y esté directamente relacionado con los contenidos clave proporcionados por el docente. El nombre de la unidad debe ser exactamente el proporcionado.`;
+    Asegúrate de que el contenido generado sea coherente, pedagógicamente sólido y esté directamente relacionado con los contenidos clave proporcionados por el docente. El nombre de la unidad debe ser exactamente el proporcionado.${docsContext}`;
   };
 
   const handleGenerateUnidad = async (e: FormEvent) => {
@@ -1523,6 +1554,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         objetivosAprendizaje: generatedData.objetivosAprendizaje,
         indicadoresEvaluacion: generatedData.indicadoresEvaluacion,
         detallesLeccion: generatedData.detallesLeccion,
+        documentosInstitucionales: planDocs.filter(d => selectedPlanDocIds.includes(d.id)).map(d => ({ id: d.id, title: d.title })),
       };
       if (editingPlanificacion) {
         await updatePlan(editingPlanificacion.id, newPlan);
@@ -2012,6 +2044,141 @@ const renderUnidadTab = () => (
       </div>
     );
   };
+
+  // Panel de Configuración (Subdirección): subir y gestionar documentos institucionales de planificación
+  const renderConfigTab = () => {
+    const isSubdir = currentUser?.profile === 'SUBDIRECCION';
+    if (!isSubdir) {
+      return (
+        <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
+          <p className="text-slate-500 dark:text-slate-400">Esta sección está disponible solo para Subdirección.</p>
+        </div>
+      );
+    }
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const f = e.target.files?.[0] || null;
+      setUploadFile(f);
+    };
+
+    const handleUpload = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!uploadFile || !uploadTitle.trim()) return;
+      setUploading(true);
+      try {
+        const tags = uploadTags.split(',').map(t => t.trim()).filter(Boolean);
+        if (!tags.includes('planificacion')) tags.push('planificacion');
+        const docId = await createDocMeta(uploadTitle.trim(), uploadDesc.trim(), tags);
+        const { storagePath, contentType } = await uploadFileForDoc(docId, uploadFile);
+        await indexDocument(docId, storagePath, uploadTitle.trim(), uploadDesc.trim(), tags, contentType);
+        setUploadTitle('');
+        setUploadDesc('');
+        setUploadTags('planificacion');
+        setUploadFile(null);
+        alert('Documento subido e indexado correctamente.');
+      } catch (err) {
+        console.error('Error subiendo documento de planificación:', err);
+        alert('No se pudo subir/indexar el documento.');
+      } finally {
+        setUploading(false);
+      }
+    };
+
+    const handleReindex = async (doc: DocuMeta) => {
+      try {
+        if (!doc.storagePath) return alert('El documento no tiene archivo asociado.');
+        await indexDocument(doc.id, doc.storagePath, doc.title, doc.description || '', doc.tags || ['planificacion'], doc.contentType);
+        alert('Reindexación encolada.');
+      } catch (e) {
+        console.error('Error reindexando:', e);
+        alert('Error reindexando el documento.');
+      }
+    };
+
+    const handleOpen = async (doc: DocuMeta) => {
+      try {
+        if (!doc.storagePath) return alert('No hay archivo asociado.');
+        const url = await getDownloadURL(storageRef(storage, doc.storagePath));
+        window.open(url, '_blank');
+      } catch (e) {
+        console.error('Error obteniendo URL:', e);
+        alert('No se pudo abrir el documento.');
+      }
+    };
+
+    const handleDelete = async (doc: DocuMeta) => {
+      if (!confirm(`¿Eliminar "${doc.title}"? Esta acción no se puede deshacer.`)) return;
+      try {
+        await deleteDocMeta(doc.id);
+      } catch (e) {
+        console.error('Error eliminando documento:', e);
+        alert('No se pudo eliminar el documento.');
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
+          <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">Repositorio institucional para Planificación</h2>
+          <p className="text-slate-600 dark:text-slate-400 mb-4">Suba documentos (PDF/TXT/DOCX) que el profesorado podrá seleccionar al planificar. Se etiquetarán con <strong>planificacion</strong>.</p>
+          <form onSubmit={handleUpload} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-1">
+              <label className="block text-sm font-medium mb-1">Título</label>
+              <input value={uploadTitle} onChange={e=>setUploadTitle(e.target.value)} className={inputStyles} placeholder="Ej: PEI 2025" required />
+            </div>
+            <div className="md:col-span-1">
+              <label className="block text-sm font-medium mb-1">Tags (coma)</label>
+              <input value={uploadTags} onChange={e=>setUploadTags(e.target.value)} className={inputStyles} />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Descripción</label>
+              <textarea value={uploadDesc} onChange={e=>setUploadDesc(e.target.value)} rows={2} className={inputStyles} placeholder="Breve descripción" />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Archivo</label>
+              <input type="file" accept=".pdf,.txt,.docx,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handleFileChange} className="block w-full"/>
+            </div>
+            <div className="md:col-span-2 flex justify-end">
+              <button disabled={uploading || !uploadFile || !uploadTitle.trim()} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg disabled:opacity-50 flex items-center gap-2">
+                {uploading ? <RefreshCcw className="w-4 h-4 animate-spin"/> : <Plus className="w-4 h-4"/>}
+                <span>Subir e indexar</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
+          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">Documentos disponibles</h3>
+          {planDocs.length === 0 ? (
+            <p className="text-slate-500 dark:text-slate-400">Aún no hay documentos institucionales con la etiqueta "planificacion".</p>
+          ) : (
+            <div className="space-y-3">
+              {planDocs.map(d => (
+                <div key={d.id} className="p-4 rounded-lg border dark:border-slate-700 flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-slate-800 dark:text-slate-100">{d.title}</p>
+                    {d.description && <p className="text-sm text-slate-500 dark:text-slate-400">{d.description}</p>}
+                    {Array.isArray(d.tags) && d.tags.length>0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {d.tags.map(t => (
+                          <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{t}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={()=>handleOpen(d)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm">Abrir</button>
+                    <button onClick={()=>handleReindex(d)} className="text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300 text-sm">Reindexar</button>
+                    <button onClick={()=>handleDelete(d)} className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm">Eliminar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
   
   // Verificar datos de planificaciones
   useEffect(() => {
@@ -2210,13 +2377,50 @@ const renderUnidadTab = () => (
             <PresentationIcon className="w-4 h-4" />
             <span>Mis Materiales</span>
           </button>
+          {currentUser?.profile === 'SUBDIRECCION' && (
+            <button 
+              onClick={() => setActiveTab('config')} 
+              className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
+                activeTab === 'config' 
+                  ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
+                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/50'
+              }`}
+            >
+              <FileEdit className="w-4 h-4" />
+              <span>Configuración</span>
+            </button>
+          )}
         </nav>
       </div>
 
-      {activeTab === 'unidad' && renderUnidadTab()}
+      {activeTab === 'unidad' && (
+        <div className="space-y-6">
+          {/* Filtro/selector de documentos institucionales */}
+          <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-3">Documentación institucional (opcional)</h3>
+            {planDocs.length === 0 ? (
+              <p className="text-slate-500 dark:text-slate-400">Subdirección aún no ha cargado documentos. Cuando existan, podrás seleccionarlos aquí para considerar en la generación.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {planDocs.map(doc => (
+                  <label key={doc.id} className="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer">
+                    <input type="checkbox" className="mt-1" checked={selectedPlanDocIds.includes(doc.id)} onChange={()=>toggleSelectPlanDoc(doc.id)} />
+                    <div>
+                      <p className="font-medium text-slate-800 dark:text-slate-100">{doc.title}</p>
+                      {doc.description && <p className="text-sm text-slate-500 dark:text-slate-400">{doc.description}</p>}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          {renderUnidadTab()}
+        </div>
+      )}
       {activeTab === 'clase' && renderClaseTab()}
       {activeTab === 'calendario' && <ActividadesCalendarioSubmodule userId={userId} />}
       {activeTab === 'materiales' && <MaterialesDidacticosSubmodule userId={userId} planificaciones={planificaciones} />}
+      {activeTab === 'config' && renderConfigTab()}
 
       {editingLesson && (
         <EditLessonModal

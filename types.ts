@@ -373,6 +373,8 @@ export interface PlanificacionUnidad extends PlanificacionBase {
   ideasParaUnidad?: string;
   progreso?: number; // Porcentaje de avance de la unidad (0-100)
   reflexionUnidad?: ReflexionUnidad;
+  // Documentos institucionales seleccionados para esta planificación (opcional)
+  documentosInstitucionales?: { id: string; title: string }[];
 }
 
 export interface ConceptoRelevante {
@@ -1150,6 +1152,16 @@ export interface PresentacionDidactica {
 
 // --- Gestión de Empresas y Prácticas TP (Refactorizado) ---
 
+// Ruta de supervisión (para visitas a empresas)
+export interface RutaSupervision {
+  id?: string;
+  nombre: string;
+  startPoint: { label: string; coords: { lat: number; lng: number } };
+  empresas: { id: string; nombre: string; coordenadas?: { lat: number; lng: number } | null }[];
+  travelMode: 'DRIVING' | 'TRANSIT';
+  createdAt?: any;
+}
+
 export interface CalificacionItem {
   elemento: string; // Ej: "Cumplimiento legal y formalidad"
   score: 1 | 2 | 3 | null; // 1: Insatisfactorio, 2: Regular, 3: Óptimo
@@ -1162,10 +1174,13 @@ export interface Empresa {
   rut: string;
   direccion: string;
   contacto: string;
+  email?: string;
   cupos: number;
+  area?: string;
   coordenadas?: { lat: number; lng: number } | null;
   calificaciones: CalificacionItem[];
   estudiantesAsignados: string[];
+  docenteSupervisor?: { id: string; nombreCompleto: string };
   createdAt: any;
 }
 
@@ -1205,4 +1220,19 @@ export interface SolicitudMulticopia {
   // Timestamps (ISO en frontend)
   createdAt?: string;
   updatedAt?: string;
+}
+
+// --- Notas de Práctica (Post-it por estudiante) ---
+export interface NotaPractica {
+  id: string;
+  estudianteId: string;
+  estudianteNombre?: string;
+  curso?: string;
+  empresaId?: string;
+  empresaNombre?: string;
+  autorId: string;
+  autorNombre?: string;
+  texto: string;
+  color?: 'yellow' | 'pink' | 'green' | 'blue';
+  createdAt?: any; // serverTimestamp()
 }

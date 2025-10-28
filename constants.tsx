@@ -116,6 +116,8 @@ export const PROFILES = [
 export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
     [Profile.SUBDIRECCION]: [
         { name: 'Intranet', icon: <HomeIcon /> },
+        { name: 'Planificación', icon: <BookOpenIcon /> },
+        { name: 'Documentación', icon: <DocumentTextIcon /> },
         { name: 'Dashboard', icon: <ChartBarIcon /> },
         { name: 'Administración', icon: <CogIcon /> },
         { name: 'Horario del liceo', icon: <ClockIcon /> },
@@ -137,6 +139,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
     ],
     [Profile.PROFESORADO]: [
         { name: 'Intranet', icon: <HomeIcon /> },
+        { name: 'Documentación', icon: <DocumentTextIcon /> },
         { name: 'Planificación', icon: <BookOpenIcon /> },
         { name: 'Mis Acompañamientos', icon: <CheckCircleIcon /> },
         { name: 'Recursos de Aprendizaje', icon: <PuzzleIcon /> },
@@ -158,6 +161,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
     ],
     [Profile.COORDINACION_TP]: [
         { name: 'Intranet', icon: <HomeIcon /> },
+        { name: 'Documentación', icon: <DocumentTextIcon /> },
         { name: 'Seguimiento Dual', icon: <TrendingUpIcon /> },
         { name: 'Asistencia Dual', icon: <ClockIcon /> },
         { name: 'Pañol', icon: <WrenchScrewdriverIcon /> },
@@ -173,6 +177,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Generador de Actas', icon: <DocumentTextIcon /> },
     ],
     [Profile.ESTUDIANTE]: [
+        { name: 'Documentación', icon: <DocumentTextIcon /> },
         { name: 'Auto-aprendizaje', icon: <BookOpenIcon /> },
         { name: 'Evaluación Formativa', icon: <TrendingUpIcon /> },
         { name: 'SIMCE', icon: <SimceIcon /> },

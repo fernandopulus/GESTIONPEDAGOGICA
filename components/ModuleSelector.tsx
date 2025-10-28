@@ -30,6 +30,7 @@ import {
   Shield,
   Target,
   FileQuestion,
+  Copy
 } from 'lucide-react';
 
 /**
@@ -83,6 +84,8 @@ const ICONS: Record<string, React.ReactNode> = {
   evaluacion_formativa: <LineChart className="w-5 h-5" aria-hidden />,
   tareas_interdisciplinarias: <Layers3 className="w-5 h-5" aria-hidden />,
   desarrollo_profesional: <Shield className="w-5 h-5" aria-hidden />,
+  evaluacion_ensayo: <FileText className="w-5 h-5" aria-hidden />,
+  multicopias: <Copy className="w-5 h-5" aria-hidden />,
 };
 
 /** Gradientes por módulo (ligeros, accesibles) */
@@ -114,6 +117,8 @@ const ACCENTS: Record<string, string> = {
   tareas_interdisciplinarias: 'from-blue-500/20 to-indigo-500/10',
   muro: 'from-amber-500/20 to-yellow-500/10',
   calendario: 'from-indigo-500/20 to-blue-500/10',
+  evaluacion_ensayo: 'from-purple-500/20 to-violet-500/10',
+  multicopias: 'from-slate-500/20 to-slate-400/10',
 };
 
 /** Etiqueta legible del perfil */
@@ -178,17 +183,20 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'pañol', name: 'Pañol', icon: ICONS.pañol, accent: ACCENTS.pañol },
         { id: 'gestion_empresas', name: 'Gestión de Empresas', icon: ICONS.gestion_empresas, accent: ACCENTS.gestion_empresas },
         { id: 'desarrollo_profesional', name: 'Desarrollo Profesional', icon: ICONS.desarrollo_profesional, accent: ACCENTS.desarrollo_profesional },
+        { id: 'evaluacion_ensayo', name: 'Evaluación de Ensayo', icon: ICONS.evaluacion_ensayo, accent: ACCENTS.evaluacion_ensayo },
         { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
         { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
         ...commonModules,
         { id: 'mensajeria', name: 'Mensajería Interna', icon: ICONS.mensajeria, accent: ACCENTS.mensajeria },
         { id: 'actas', name: 'Generador de Actas', icon: ICONS.actas, accent: ACCENTS.actas },
+        { id: 'multicopias', name: 'Multicopias', icon: ICONS.multicopias, accent: ACCENTS.multicopias },
       ];
 
     case Profile.SUBDIRECCION:
       return [
         { id: 'selector_completo', name: 'Vista Completa (Dashboard)', icon: ICONS.selector_completo, accent: ACCENTS.selector_completo, description: 'Acceso a todos los módulos con navegación lateral' },
         alternanciaTPModule,
+        { id: 'planificacion', name: 'Planificación', icon: ICONS.planificacion, accent: ACCENTS.planificacion },
         { id: 'administracion', name: 'Administración', icon: ICONS.administracion, accent: ACCENTS.administracion },
         { id: 'seguimiento_curricular', name: 'Seguimiento Curricular', icon: ICONS.seguimiento_curricular, accent: ACCENTS.seguimiento_curricular },
         { id: 'acompañamiento_docente', name: 'Acompañamiento Docente', icon: <Users className="w-6 h-6" />, accent: ACCENTS.seguimiento_dual },
@@ -392,6 +400,65 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
       .filter((g) => g.modules.length > 0);
   }, [currentUser.profile, allModules, query]);
 
+  // Grupos para COORDINACIÓN TP
+  const coordGroups = useMemo(() => {
+    if (currentUser.profile !== Profile.COORDINACION_TP) return [] as Array<{ id: string; title: string; icon: React.ReactNode; modules: Module[] }>;
+
+    const map: Record<string, Module | undefined> = Object.fromEntries(allModules.map((m) => [m.id, m] as const));
+    const pick = (id: string, nameOverride?: string): Module | null => {
+      const base = map[id];
+      if (!base) return null;
+      return { ...base, name: nameOverride ?? base.name };
+    };
+
+    const groups = [
+      {
+        id: 'coord_gestion',
+        title: 'Gestión',
+        icon: ICONS.gestion_empresas,
+        modules: [
+          pick('seguimiento_dual', 'Seguimiento Dual'),
+          pick('asistencia_dual', 'Asistencia Dual'),
+          pick('gestion_empresas', 'Gestión de empresas'),
+          pick('pañol', 'Pañol'),
+        ].filter(Boolean) as Module[],
+      },
+      {
+        id: 'coord_formacion',
+        title: 'Formación',
+        icon: ICONS.desarrollo_profesional,
+        modules: [
+          pick('alternancia_tp', 'Alternancia TP'),
+          pick('desarrollo_profesional', 'Desarrollo Profesional'),
+          pick('evaluacion_ensayo', 'Evaluación de Ensayo'),
+          pick('simce', 'SIMCE'),
+        ].filter(Boolean) as Module[],
+      },
+      {
+        id: 'coord_utilidades',
+        title: 'Utilidades',
+        icon: ICONS.mensajeria,
+        modules: [
+          pick('mensajeria', 'Mensajería Interna'),
+          pick('muro', 'Muro de Anuncios'),
+          pick('calendario', 'Calendario Académico'),
+          pick('actas', 'Generador de Actas'),
+          pick('multicopias', 'Multicopias'),
+        ].filter(Boolean) as Module[],
+      },
+    ];
+
+    const q = query.trim().toLowerCase();
+    if (!q) return groups;
+    return groups
+      .map((g) => {
+        const titleMatch = g.title.toLowerCase().includes(q);
+        const mods = g.modules.filter((m) => (m.name + ' ' + (m.description ?? '') + ' ' + m.id).toLowerCase().includes(q));
+        return { ...g, modules: titleMatch ? g.modules : mods };
+      })
+      .filter((g) => g.modules.length > 0);
+  }, [currentUser.profile, allModules, query]);
+
   const onKeyShortcuts = useCallback((e: KeyboardEvent) => {
     // Ctrl/Cmd+K para buscar
     if ((e.ctrlKey || (e as any).metaKey) && e.key.toLowerCase() === 'k') {
@@ -453,8 +520,8 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
           </div>
         </div>
 
-        {currentUser.profile === Profile.PROFESORADO ? (
-          profGroups.length === 0 ? (
+        {currentUser.profile === Profile.PROFESORADO || currentUser.profile === Profile.COORDINACION_TP ? (
+          (currentUser.profile === Profile.PROFESORADO ? profGroups : coordGroups).length === 0 ? (
             <div className="text-center py-16">
               <div className="text-6xl mb-4">🚫</div>
               <h3 className="text-xl font-semibold text-slate-600 dark:text-slate-300 mb-2">Sin módulos disponibles</h3>
@@ -462,7 +529,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
             </div>
           ) : (
             <div className="space-y-5">
-              {profGroups.map((group, gidx) => {
+              {(currentUser.profile === Profile.PROFESORADO ? profGroups : coordGroups).map((group, gidx) => {
                 const isOpen = !!expandedGroups[group.id];
                 return (
                   <div key={group.id} className="rounded-2xl border border-slate-200/70 dark:border-slate-700/60 bg-white/70 dark:bg-slate-800/60 overflow-hidden">
@@ -498,7 +565,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
               })}
 
               {/* Acceso a vista completa/otros (opcional) */}
-              {filtered.some((m) => ![
+              {currentUser.profile === Profile.PROFESORADO && filtered.some((m) => ![
                 'planificacion','recursos','interdisciplinario','inclusion',
                 'evaluacion_aprendizajes','evaluaciones_formativas','evaluacion_competencias','actividades_remotas','simce',
                 'taxonomico','acompañamientos','desarrollo_profesional',

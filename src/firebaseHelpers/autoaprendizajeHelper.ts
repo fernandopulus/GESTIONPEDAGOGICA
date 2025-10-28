@@ -454,16 +454,99 @@ export const checkActividadCompletada = async (
   estudianteId: string
 ): Promise<RespuestaEstudianteActividad | null> => {
   return withRetry(async () => {
-    const q = query(
-      collection(db, RESPUESTAS_COLLECTION),
-      where('actividadId', '==', actividadId),
-      where('estudianteId', '==', estudianteId)
-    );
-    
-    const querySnapshot = await getDocs(q);
-    if (querySnapshot.docs.length > 0) {
-      return convertFirestoreDoc<RespuestaEstudianteActividad>(querySnapshot.docs[0]);
+    // 1) Campos directos habituales
+    const candidateFields = ['actividadId', 'idActividad', 'actividadID'] as const;
+    for (const field of candidateFields) {
+      try {
+        const q1 = query(
+          collection(db, RESPUESTAS_COLLECTION),
+          where(field as any, '==', actividadId),
+          where('estudianteId', '==', estudianteId)
+        );
+        const snap = await getDocs(q1);
+        if (snap.docs.length > 0) {
+          return convertFirestoreDoc<RespuestaEstudianteActividad>(snap.docs[0]);
+        }
+      } catch (err: any) {
+        // Si requiere índice, lo anotamos y seguimos con otros intentos
+        if (err?.code === 'failed-precondition' && err?.message?.includes('requires an index')) {
+          console.warn(`⚠️ Falta índice para ${field}+estudianteId; probando otras variantes...`);
+        } else {
+          console.debug(`ℹ️ Consulta por ${field} no retornó resultados o falló:`, err?.code || '');
+        }
+      }
     }
+
+    // 2) Referencia a documento (actividadRef == doc('actividades_remotas', actividadId))
+    try {
+      const actividadRef = doc(db, ACTIVIDADES_COLLECTION, actividadId);
+      try {
+        const q2 = query(
+          collection(db, RESPUESTAS_COLLECTION),
+          where('actividadRef', '==', actividadRef),
+          where('estudianteId', '==', estudianteId)
+        );
+        const snap2 = await getDocs(q2);
+        if (snap2.docs.length > 0) {
+          return convertFirestoreDoc<RespuestaEstudianteActividad>(snap2.docs[0]);
+        }
+      } catch (errAny: any) {
+        if (errAny?.code === 'failed-precondition' && errAny?.message?.includes('requires an index')) {
+          // Fallback: consultar solo por actividadRef y filtrar en cliente
+          console.warn('⚠️ Falta índice para actividadRef+estudianteId; usando fallback con filtro en memoria.');
+          const q2b = query(
+            collection(db, RESPUESTAS_COLLECTION),
+            where('actividadRef', '==', actividadRef)
+          );
+          const snap2b = await getDocs(q2b);
+          const match = snap2b.docs
+            .map(d => convertFirestoreDoc<RespuestaEstudianteActividad>(d))
+            .find(r => r.estudianteId === estudianteId);
+          if (match) return match;
+        }
+      }
+    } catch {}
+
+    // 3) Campo anidado actividad.id (map antiguo)
+    try {
+      const q3 = query(
+        collection(db, RESPUESTAS_COLLECTION),
+        where('actividad.id' as any, '==', actividadId),
+        where('estudianteId', '==', estudianteId)
+      );
+      const snap3 = await getDocs(q3);
+      if (snap3.docs.length > 0) {
+        return convertFirestoreDoc<RespuestaEstudianteActividad>(snap3.docs[0]);
+      }
+    } catch (err: any) {
+      if (err?.code === 'failed-precondition' && err?.message?.includes('requires an index')) {
+        console.warn('⚠️ Falta índice para actividad.id+estudianteId; omitiendo este intento.');
+      }
+    }
+
+    // 4) Campo actividadPath con la ruta completa
+    const potentialPaths = [
+      `${ACTIVIDADES_COLLECTION}/${actividadId}`,
+      `/${ACTIVIDADES_COLLECTION}/${actividadId}`
+    ];
+    for (const p of potentialPaths) {
+      try {
+        const q4 = query(
+          collection(db, RESPUESTAS_COLLECTION),
+          where('actividadPath', '==', p),
+          where('estudianteId', '==', estudianteId)
+        );
+        const snap4 = await getDocs(q4);
+        if (snap4.docs.length > 0) {
+          return convertFirestoreDoc<RespuestaEstudianteActividad>(snap4.docs[0]);
+        }
+      } catch (err: any) {
+        if (err?.code === 'failed-precondition' && err?.message?.includes('requires an index')) {
+          console.warn('⚠️ Falta índice para actividadPath+estudianteId; probando siguiente variante...');
+        }
+      }
+    }
+
     return null;
   }, 2, `verificación de actividad completada ${actividadId}`);
 };

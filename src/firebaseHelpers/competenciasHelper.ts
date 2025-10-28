@@ -85,9 +85,17 @@ export const createEspecialidad = (data: Omit<EspecialidadTP,'id'>) =>
 
 export const subscribeEspecialidades = (cb: (items: (EspecialidadTP & {id:string})[]) => void) => {
   const q = query(collection(db, COL_ESPECIALIDADES), orderBy('nombre'));
-  return onSnapshot(q, snap => {
-    cb(snap.docs.map(d => ({id: d.id, ...(d.data() as any)})));
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    },
+    (err) => {
+      // Log explícito para depurar permisos o reglas
+      console.error('[competenciasHelper] subscribeEspecialidades error:', err);
+      cb([]);
+    }
+  );
 };
 
 export const createModulo = (data: Omit<ModuloTP,'id'>) =>
@@ -152,9 +160,16 @@ export const saveEvidencia = (data: Omit<Evidencia,'id'>) =>
 
 export const subscribeEvidenciasByRA = (raId: string, cb: (items: (Evidencia & {id:string})[]) => void) => {
   const q = query(collection(db, COL_EVIDENCIAS), where('raId','==', raId), orderBy('fecha','desc'));
-  return onSnapshot(q, snap => {
-    cb(snap.docs.map(d => ({id: d.id, ...(d.data() as any)})));
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    },
+    (err) => {
+      console.error('[competenciasHelper] subscribeEvidenciasByRA error:', err, 'raId=', raId);
+      cb([]);
+    }
+  );
 };
 
 /** ============================
@@ -175,16 +190,30 @@ export const saveEvaluacion = async (data: Omit<EvaluacionRegistro,'id'|'puntaje
 
 export const subscribeEvaluacionesByRA = (raId: string, cb: (items: (EvaluacionRegistro & {id:string})[]) => void) => {
   const q = query(collection(db, COL_EVALUACIONES), where('raId','==', raId), orderBy('fecha','desc'));
-  return onSnapshot(q, snap => {
-    cb(snap.docs.map(d => ({id: d.id, ...(d.data() as any)})));
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    },
+    (err) => {
+      console.error('[competenciasHelper] subscribeEvaluacionesByRA error:', err, 'raId=', raId);
+      cb([]);
+    }
+  );
 };
 
 export const subscribeEvaluacionesByCurso = (curso: string, cb: (items: (EvaluacionRegistro & {id:string})[]) => void) => {
   const q = query(collection(db, COL_EVALUACIONES), where('curso','==', curso), orderBy('fecha','desc'));
-  return onSnapshot(q, snap => {
-    cb(snap.docs.map(d => ({id: d.id, ...(d.data() as any)})));
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    },
+    (err) => {
+      console.error('[competenciasHelper] subscribeEvaluacionesByCurso error:', err, 'curso=', curso);
+      cb([]);
+    }
+  );
 };
 
 /** ============================

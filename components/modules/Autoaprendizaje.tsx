@@ -15,6 +15,7 @@ import {
   subscribeToRespuestasEstudiante,
   saveRespuestaActividad,
   debugRespuestasEstudiante,
+  checkActividadCompletada,
 } from '../../src/firebaseHelpers/autoaprendizajeHelper';
 import { calcularNota60 } from '../../src/utils/grades';
 import { auth } from '../../src/firebase';
@@ -246,6 +247,34 @@ const UltraSafeRenderer = ({ content, context = 'unknown' }: { content: any; con
     return <span>[Error al mostrar contenido]</span>;
   }
 };
+
+// Helper defensivo: extrae el identificador de actividad desde una respuesta, contemplando variantes antiguas
+function extractActividadIdFromRespuesta(resp: any): string | null {
+  try {
+    // Normalizador: convierte a string, recorta, lowercase y toma el último segmento si viene como ruta
+    const normalizeId = (v: any): string | null => {
+      if (v == null) return null;
+      const s = String(v).trim();
+      if (!s) return null;
+      const last = s.includes('/') ? s.split('/').filter(Boolean).pop()! : s;
+      return last.toLowerCase();
+    };
+
+    const candidates = [
+      resp?.actividadId,
+      resp?.actividadID,
+      resp?.idActividad,
+      resp?.actividad?.id,
+      resp?.actividadRef?.id, // referencia de Firestore
+      resp?.actividadPath,     // ruta completa guardada
+    ];
+    for (const c of candidates) {
+      const n = normalizeId(c);
+      if (n) return n;
+    }
+  } catch {}
+  return null;
+}
 
 // Funciones de normalización (mantenidas igual)
 function ultraSafeNormalizeLectura(content: any): { texto: string; preguntas: QuizQuestion[] } {
@@ -832,6 +861,7 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
   const [lastResult, setLastResult] = useState<RespuestaEstudianteActividad | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [mostrarSoloPendientes, setMostrarSoloPendientes] = useState<boolean>(false);
 
   // MEJORADO: Estado de conexión más robusto
   useEffect(() => {
@@ -936,7 +966,8 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
     console.log('🔍 Iniciando actividad:', actividad.asignatura);
     
     // Verificar si la actividad ya ha sido completada anteriormente
-    if (completedActivityIds.has(actividad.id)) {
+    const normalizedActId = String(actividad.id).trim().toLowerCase();
+    if (completedActivityIds.has(normalizedActId)) {
       // Si ya fue completada, mostrar mensaje de error y no permitir iniciarla nuevamente
       setError("Esta actividad ya ha sido completada. No es posible realizarla nuevamente.");
       return;
@@ -949,7 +980,9 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
 
   const handleViewResult = (respuesta: RespuestaEstudianteActividad) => {
     console.log('🔍 Viendo resultado:', respuesta.actividadId);
-    const actividadOriginal = actividades.find(a => a.id === respuesta.actividadId);
+    // normalizar IDs para el match
+    const respActId = extractActividadIdFromRespuesta(respuesta as any);
+    const actividadOriginal = actividades.find(a => String(a.id).trim().toLowerCase() === (respActId || String(respuesta.actividadId).trim().toLowerCase()));
     if (actividadOriginal) {
       setSelectedActividad(actividadOriginal);
       setLastResult(respuesta);
@@ -972,6 +1005,29 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
       puntaje: submission.puntaje,
       nota: submission.nota
     });
+
+    // Verificación robusta: impedir repetir si ya existe una respuesta para esta actividad
+    try {
+      const candidates = Array.from(new Set([
+        auth.currentUser?.uid,
+        auth.currentUser?.email,
+        currentUser.email,
+        currentUser.id
+      ].filter(Boolean))) as string[];
+
+      for (const cand of candidates) {
+        const existente = await checkActividadCompletada(String(selectedActividad.id), String(cand));
+        if (existente) {
+          console.warn('⛔ Intento de repetir actividad detectado. Redirigiendo a resultados existentes.');
+          setError('Esta actividad ya fue respondida anteriormente. Te mostramos tus resultados.');
+          setLastResult(existente);
+          setView('result');
+          return;
+        }
+      }
+    } catch (chkErr) {
+      console.warn('⚠️ No se pudo verificar si la actividad ya estaba respondida. Continuando con precaución.', chkErr);
+    }
 
     setView('result');
     setIsGeneratingFeedback(true);
@@ -1029,18 +1085,29 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
   // Esta función mantiene un registro de las actividades que ya han sido completadas
   const completedActivityIds = useMemo(() => {
     if (respuestas.length === 0) return new Set<string>();
-    
-    const ids = new Set(respuestas.map(r => r.actividadId));
-    console.log('🎯 IDs completados calculados:', ids.size);
+
+    // Normaliza a string y contempla variantes de nombre/caso para compatibilidad con registros antiguos
+    const ids = new Set<string>();
+    for (const r of respuestas as any[]) {
+      const id = extractActividadIdFromRespuesta(r);
+      if (id) ids.add(id);
+    }
+    console.log('🎯 IDs completados calculados (normalizados):', ids.size);
     return ids;
   }, [respuestas]);
 
   // Esta función filtra las actividades para mostrar solo las que NO han sido completadas
   const actividadesPendientes = useMemo(() => {
     if (actividades.length === 0) return [];
-    
-    // Solo muestra actividades que NO están en el conjunto de IDs completados
-    const pendientes = actividades.filter(act => !completedActivityIds.has(act.id));
+    // IDs de diagnóstico (muestra algunos para comparar)
+    try {
+      const sampleActs = actividades.slice(0, 5).map(a => String(a.id).trim());
+      const sampleDone = Array.from(completedActivityIds).slice(0, 5);
+      console.log('🔎 Diagnóstico IDs - Actividades:', sampleActs, 'Completadas:', sampleDone);
+    } catch {}
+
+    // Solo muestra actividades que NO están en el conjunto de IDs completados (normalizando a string)
+    const pendientes = actividades.filter(act => !completedActivityIds.has(String(act.id).trim().toLowerCase()));
     console.log('⏳ Actividades pendientes:', pendientes.length);
     return pendientes;
   }, [actividades, completedActivityIds]);
@@ -1050,7 +1117,8 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
     
     const completadas = respuestas
       .map(resp => {
-        const actividad = actividades.find(a => a.id === resp.actividadId);
+        const respActId = extractActividadIdFromRespuesta(resp as any);
+        const actividad = actividades.find(a => String(a.id).trim().toLowerCase() === (respActId || String(resp.actividadId).trim().toLowerCase()));
         return { 
           ...resp, 
           asignatura: actividad?.asignatura || 'Actividad no disponible', 
@@ -1062,6 +1130,28 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
     console.log('📖 Historial preparado:', completadas.length);
     return completadas;
   }, [respuestas, actividades]);
+
+  // Mapa: actividadId normalizado -> respuesta completada (para acceder rápido al resultado existente)
+  const respuestasPorActividad = useMemo(() => {
+    const map = new Map<string, RespuestaEstudianteActividad>();
+    for (const r of respuestas as any[]) {
+      const id = extractActividadIdFromRespuesta(r);
+      if (id) map.set(id, r as RespuestaEstudianteActividad);
+    }
+    return map;
+  }, [respuestas]);
+
+  // Lista a mostrar según toggle (todas vs solo pendientes)
+  const actividadesParaMostrar = useMemo(() => {
+    return mostrarSoloPendientes ? actividadesPendientes : actividades;
+  }, [actividades, actividadesPendientes, mostrarSoloPendientes]);
+
+  const resumenConteo = useMemo(() => {
+    const total = actividades.length;
+    const comp = completedActivityIds.size;
+    const pend = Math.max(total - comp, 0);
+    return { total, comp, pend };
+  }, [actividades.length, completedActivityIds]);
 
   // Promedios por asignatura (para la pestaña "Promedios Remotos")
   const promediosPorAsignatura = useMemo(() => {
@@ -1363,8 +1453,24 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
       {listTab === 'actividades' && (
         <div className="space-y-4">
           <div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">Actividades Pendientes</h2>
-            <p className="text-slate-500 mb-2">Completa las actividades asignadas por tus profesores.</p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-800 mb-1">Actividades</h2>
+                <p className="text-slate-500">
+                  {resumenConteo.total} en total — {resumenConteo.comp} completadas, {resumenConteo.pend} pendientes
+                </p>
+              </div>
+              <label className="inline-flex items-center gap-2 text-sm select-none">
+                <input
+                  type="checkbox"
+                  checked={mostrarSoloPendientes}
+                  onChange={(e) => setMostrarSoloPendientes(e.target.checked)}
+                  className="h-4 w-4 accent-slate-700"
+                />
+                Mostrar solo pendientes
+              </label>
+            </div>
+            <p className="text-slate-500 mt-2">Completa las actividades asignadas por tus profesores.</p>
             <p className="text-amber-600 text-sm font-medium mb-6">
               <span className="bg-amber-100 p-1 rounded inline-flex items-center">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1373,32 +1479,67 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
                 Importante: Cada actividad solo puede ser respondida una vez.
               </span>
             </p>
-            
+
             <div className="space-y-4">
-              {actividadesPendientes.length > 0 ? (
-                actividadesPendientes.map(act => (
-                  <div key={act.id} className="p-4 border rounded-lg bg-slate-50 flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:bg-slate-100 transition-colors">
-                    <div>
-                      <p className="font-bold text-slate-800">
-                        <UltraSafeRenderer content={act.asignatura} context={`actividad-asignatura-${act.id}`} /> - {act.tipos.join(', ')}
-                      </p>
-                      <p className="text-sm text-slate-500">
-                        Plazo: <UltraSafeRenderer content={typeof act.plazoEntrega === 'string' ? act.plazoEntrega : ''} context={`actividad-plazo-${act.id}`} />
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handleStartActivity(act)}
-                      className="bg-amber-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-amber-600 w-full sm:w-auto transition-colors"
+              {actividadesParaMostrar.length > 0 ? (
+                actividadesParaMostrar.map(act => {
+                  const normId = String(act.id).trim().toLowerCase();
+                  const yaRealizada = completedActivityIds.has(normId);
+                  const respExistente = respuestasPorActividad.get(normId);
+                  return (
+                    <div
+                      key={act.id}
+                      className={`p-4 border rounded-lg flex flex-col sm:flex-row justify-between sm:items-center gap-4 transition-colors ${
+                        yaRealizada ? 'bg-green-50 hover:bg-green-100 border-green-200' : 'bg-slate-50 hover:bg-slate-100 border-slate-200'
+                      }`}
                     >
-                      Comenzar
-                    </button>
-                  </div>
-                ))
+                      <div>
+                        <p className="font-bold text-slate-800 flex items-center gap-2">
+                          <span>
+                            <UltraSafeRenderer content={act.asignatura} context={`actividad-asignatura-${act.id}`} /> - {act.tipos.join(', ')}
+                          </span>
+                          <span
+                            className={`text-xs font-semibold px-2 py-0.5 rounded-full inline-block ${
+                              yaRealizada ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                            }`}
+                            title={yaRealizada ? 'Esta actividad ya fue realizada' : 'Actividad pendiente'}
+                          >
+                            {yaRealizada ? 'Completada' : 'Pendiente'}
+                          </span>
+                        </p>
+                        <p className="text-sm text-slate-500">
+                          Plazo: <UltraSafeRenderer content={typeof act.plazoEntrega === 'string' ? act.plazoEntrega : ''} context={`actividad-plazo-${act.id}`} />
+                        </p>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                        <button
+                          onClick={() => handleStartActivity(act)}
+                          disabled={yaRealizada}
+                          className={`font-bold py-2 px-6 rounded-lg w-full sm:w-auto transition-colors ${
+                            yaRealizada
+                              ? 'bg-slate-300 text-slate-600 cursor-not-allowed'
+                              : 'bg-amber-500 text-white hover:bg-amber-600'
+                          }`}
+                        >
+                          {yaRealizada ? 'Ya realizada' : 'Comenzar'}
+                        </button>
+                        {yaRealizada && respExistente && (
+                          <button
+                            onClick={() => handleViewResult(respExistente)}
+                            className="bg-sky-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-sky-700 w-full sm:w-auto transition-colors"
+                          >
+                            Ver resultados
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
               ) : (
                 <div className="text-center py-12 border-2 border-dashed rounded-lg">
                   <div className="text-6xl mb-4">🎉</div>
-                  <h3 className="text-xl font-semibold text-slate-700">¡Todo al día!</h3>
-                  <p className="text-slate-500 mt-1">No tienes actividades pendientes.</p>
+                  <h3 className="text-xl font-semibold text-slate-700">{mostrarSoloPendientes ? '¡Todo al día!' : 'Sin actividades disponibles'}</h3>
+                  <p className="text-slate-500 mt-1">{mostrarSoloPendientes ? 'No tienes actividades pendientes.' : 'Revisa más tarde o consulta con tu profesor(a).'}</p>
                 </div>
               )}
             </div>

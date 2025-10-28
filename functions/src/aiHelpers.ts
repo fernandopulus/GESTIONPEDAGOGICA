@@ -221,6 +221,85 @@ export async function callGemini({
 }
 
 /**
+ * Obtiene un embedding para un texto usando el modelo de embeddings de Google.
+ * Por defecto usa text-embedding-005.
+ */
+export async function getTextEmbedding(text: string, {
+  model,
+}: { model?: string } = {}): Promise<{ embedding: number[]; modelUsed: string }> {
+  const apiKey = getGeminiApiKey();
+  // Estrategia de fallback:
+  // - Modelos preferidos: text-embedding-004, text-embedding-005, embedding-001 (legacy)
+  // - Versiones API: v1 (preferida), v1beta (fallback)
+  // - Métodos: embedContent (preferido), embedText (fallback para modelos legacy)
+  const modelCandidates = [
+    model || 'text-embedding-004',
+    'text-embedding-005',
+    'embedding-001',
+  ];
+  const apiVersions = ['v1', 'v1beta'];
+  const methods = [
+    { name: 'embedContent', body: (t: string) => ({ content: { parts: [{ text: t }] } }) },
+    { name: 'embedText', body: (t: string) => ({ text: t }) },
+  ];
+
+  let lastErr: string | null = null;
+
+  for (const ver of apiVersions) {
+    const baseUrl = `https://generativelanguage.googleapis.com/${ver}/models`;
+    for (const m of modelCandidates) {
+      for (const method of methods) {
+        try {
+          const url = `${baseUrl}/${m}:${method.name}?key=${apiKey}`;
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(method.body(text)),
+          });
+          if (!resp.ok) {
+            const errText = await resp.text();
+            lastErr = `[${ver}] ${m}:${method.name} -> ${resp.status} ${errText.slice(0, 300)}`;
+            console.warn('[Embedding] Intento fallido:', lastErr);
+            // Si 404, probar siguiente combinación
+            if (resp.status === 404) continue;
+            // Si 400 por método, continuar con siguiente método
+            if (resp.status === 400) continue;
+            // Otros errores: intentar siguiente candidato
+            continue;
+          }
+          const data = await resp.json() as any;
+          const vector = (data?.embedding?.values || data?.embedding || data?.vector) as number[] | undefined;
+          if (!Array.isArray(vector) || vector.length === 0) {
+            lastErr = `[${ver}] ${m}:${method.name} -> vector vacío`;
+            console.warn('[Embedding] Vector vacío con', m, 'en', ver, 'método', method.name);
+            continue;
+          }
+          return { embedding: vector, modelUsed: `${m}@${ver}` };
+        } catch (e: any) {
+          lastErr = `${m}:${method.name} error ${(e?.message || String(e)).slice(0, 200)}`;
+          console.warn('[Embedding] Excepción en intento:', lastErr);
+          continue;
+        }
+      }
+    }
+  }
+
+  // Como diagnóstico final, listar modelos disponibles (truncado)
+  try {
+    const listV1 = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`);
+    const listText = await listV1.text();
+    console.error('[Embedding] Ningún candidato funcionó. ListModels v1 (truncado):', listText.slice(0, 1500));
+  } catch {}
+  try {
+    const listV1b = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    const listText = await listV1b.text();
+    console.error('[Embedding] ListModels v1beta (truncado):', listText.slice(0, 1500));
+  } catch {}
+
+  throw new Error(`No se pudo obtener embedding. Último error: ${lastErr || 'desconocido'}`);
+}
+
+/**
  * Cloud Function onCall para solicitud general a Gemini.
  * @return {Promise<object>} Objeto con resultado, respuesta IA y metadata.
  */

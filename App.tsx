@@ -20,6 +20,9 @@ const App: React.FC = () => {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isAdminSelectingProfile, setIsAdminSelectingProfile] = useState(false);
   const [adminProfile, setAdminProfile] = useState<Profile | null>(null);
+  // Permitir a Coordinación TP alternar vista con Profesorado
+  const [isCoordSelectingProfile, setIsCoordSelectingProfile] = useState(false);
+  const [coordProfile, setCoordProfile] = useState<Profile | null>(null);
   const [oauthSuccess, setOauthSuccess] = useState<string | null>(null);
 
   // Verificar parámetros de OAuth al cargar
@@ -52,6 +55,16 @@ const App: React.FC = () => {
             setFirestoreUser(userProfile);
             if (userProfile.profile === Profile.SUBDIRECCION) {
               setIsAdminSelectingProfile(true);
+            } else if (userProfile.profile === Profile.COORDINACION_TP) {
+              // Para coordinación TP, restaurar última vista efectiva si existe
+              const saved = localStorage.getItem(`lir-effective-profile-${user.email}`) as Profile | null;
+              if (saved === Profile.PROFESORADO || saved === Profile.COORDINACION_TP) {
+                setCoordProfile(saved);
+                setIsCoordSelectingProfile(false);
+              } else {
+                // Ofrecer selector entre Coordinación y Profesorado al primer ingreso
+                setIsCoordSelectingProfile(true);
+              }
             }
           } else {
             setLoginError("Usuario no encontrado en la base de datos. Contacte al administrador.");
@@ -66,7 +79,9 @@ const App: React.FC = () => {
         setFirestoreUser(null);
         setAdminProfile(null);
         setIsAdminSelectingProfile(false);
-        setLoginError(null);
+  setLoginError(null);
+  setIsCoordSelectingProfile(false);
+  setCoordProfile(null);
       }
       setAuthLoading(false);
     });
@@ -119,8 +134,13 @@ const App: React.FC = () => {
   };
 
   const handleChangeProfile = () => {
-    setIsAdminSelectingProfile(true);
-    setAdminProfile(null);
+    if (firestoreUser?.profile === Profile.SUBDIRECCION) {
+      setIsAdminSelectingProfile(true);
+      setAdminProfile(null);
+    } else if (firestoreUser?.profile === Profile.COORDINACION_TP) {
+      setIsCoordSelectingProfile(true);
+      setCoordProfile(null);
+    }
   };
 
   const handleLogout = async () => {
@@ -150,8 +170,13 @@ const App: React.FC = () => {
   if (isAdminSelectingProfile && firestoreUser.profile === Profile.SUBDIRECCION) {
     return <ProfileSelector onSelectProfile={handleProfileSelectForAdmin} isAdminView={true} />;
   }
+  // Selector para Coordinación TP: restringido a Coordinación y Profesorado
+  if (isCoordSelectingProfile && firestoreUser.profile === Profile.COORDINACION_TP) {
+    const allowed: Profile[] = [Profile.COORDINACION_TP, Profile.PROFESORADO];
+    return <ProfileSelector onSelectProfile={(p) => { setCoordProfile(p); setIsCoordSelectingProfile(false); if (currentUser?.email) localStorage.setItem(`lir-effective-profile-${currentUser.email}`, p); }} isAdminView={true} allowedProfiles={allowed} />;
+  }
   
-  const effectiveProfile = adminProfile || firestoreUser.profile;
+  const effectiveProfile = adminProfile || coordProfile || firestoreUser.profile;
   return (
     <>
       {/* Notificación de éxito de OAuth */}
@@ -165,8 +190,8 @@ const App: React.FC = () => {
       <Dashboard
         currentUser={{ ...firestoreUser, profile: effectiveProfile }}
         onLogout={handleLogout}
-        onChangeProfile={firestoreUser.profile === Profile.SUBDIRECCION ? handleChangeProfile : undefined}
-        canChangeProfile={firestoreUser.profile === Profile.SUBDIRECCION}
+        onChangeProfile={(firestoreUser.profile === Profile.SUBDIRECCION || firestoreUser.profile === Profile.COORDINACION_TP) ? handleChangeProfile : undefined}
+        canChangeProfile={firestoreUser.profile === Profile.SUBDIRECCION || firestoreUser.profile === Profile.COORDINACION_TP}
       />
     </>
   );
