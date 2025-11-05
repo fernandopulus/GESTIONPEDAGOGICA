@@ -2332,10 +2332,10 @@ const renderUnidadTab = () => (
       </div>
       
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-2">
-        <nav className="flex space-x-2" aria-label="Tabs">
+        <nav className="flex gap-2 overflow-x-auto" aria-label="Tabs">
           <button 
             onClick={() => setActiveTab('unidad')} 
-            className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
+            className={`shrink-0 flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
               activeTab === 'unidad' 
                 ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
                 : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/50'
@@ -2346,7 +2346,7 @@ const renderUnidadTab = () => (
           </button>
           <button 
             onClick={() => setActiveTab('clase')} 
-            className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
+            className={`shrink-0 flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
               activeTab === 'clase' 
                 ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
                 : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/50'
@@ -2357,7 +2357,7 @@ const renderUnidadTab = () => (
           </button>
           <button 
             onClick={() => setActiveTab('calendario')} 
-            className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
+            className={`shrink-0 flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
               activeTab === 'calendario' 
                 ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
                 : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/50'
@@ -2368,7 +2368,7 @@ const renderUnidadTab = () => (
           </button>
           <button 
             onClick={() => setActiveTab('materiales')} 
-            className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
+            className={`shrink-0 flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
               activeTab === 'materiales' 
                 ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
                 : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/50'
@@ -2380,7 +2380,7 @@ const renderUnidadTab = () => (
           {currentUser?.profile === 'SUBDIRECCION' && (
             <button 
               onClick={() => setActiveTab('config')} 
-              className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
+              className={`shrink-0 flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
                 activeTab === 'config' 
                   ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
                   : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/50'
@@ -2395,6 +2395,12 @@ const renderUnidadTab = () => (
 
       {activeTab === 'unidad' && (
         <div className="space-y-6">
+          {currentUser?.profile === 'SUBDIRECCION' && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-center justify-between">
+              <div className="text-sm text-amber-800 dark:text-amber-200">Puede cargar o gestionar documentos institucionales desde la pestaña <strong>Configuración</strong>.</div>
+              <button onClick={() => setActiveTab('config')} className="text-sm px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white">Ir a Configuración</button>
+            </div>
+          )}
           {/* Filtro/selector de documentos institucionales */}
           <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
             <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-3">Documentación institucional (opcional)</h3>

@@ -2,7 +2,6 @@ import React, { useMemo, useState, useEffect, useCallback, KeyboardEvent } from 
 import { Profile, User } from '../types';
 import TopBar from './TopBar';
 import {
-  Bell,
   CalendarDays,
   Building2,
   LayoutDashboard,
@@ -56,7 +55,6 @@ interface ModuleSelectorProps {
 
 /** Mapa de íconos por id para mantener el código ordenado */
 const ICONS: Record<string, React.ReactNode> = {
-  muro: <Bell className="w-5 h-5" aria-hidden />,
   calendario: <CalendarDays className="w-5 h-5" aria-hidden />,
   selector_completo: <LayoutDashboard className="w-5 h-5" aria-hidden />,
   alternancia_tp: <Building2 className="w-5 h-5" aria-hidden />,
@@ -71,7 +69,6 @@ const ICONS: Record<string, React.ReactNode> = {
   evaluaciones_formativas: <LineChart className="w-5 h-5" aria-hidden />,
   evaluacion_competencias: <Target className="w-5 h-5" aria-hidden />,
   simce: <FileQuestion className="w-5 h-5" aria-hidden />,
-  actas: <FileText className="w-5 h-5" aria-hidden />,
   mensajeria: <MessageSquare className="w-5 h-5" aria-hidden />,
   seguimiento_dual: <UserCheck className="w-5 h-5" aria-hidden />,
   asistencia_dual: <Clock4 className="w-5 h-5" aria-hidden />,
@@ -102,7 +99,6 @@ const ACCENTS: Record<string, string> = {
   simce: 'from-purple-500/20 to-violet-500/10',
   evaluacion_aprendizajes: 'from-purple-500/20 to-indigo-500/10',
   evaluaciones_formativas: 'from-cyan-500/20 to-sky-500/10',
-  actas: 'from-slate-500/20 to-slate-400/10',
   mensajeria: 'from-teal-500/20 to-emerald-500/10',
   seguimiento_dual: 'from-lime-500/20 to-green-500/10',
   asistencia_dual: 'from-red-500/20 to-rose-500/10',
@@ -115,7 +111,6 @@ const ACCENTS: Record<string, string> = {
   auto_aprendizaje: 'from-emerald-500/20 to-teal-500/10',
   evaluacion_formativa: 'from-cyan-500/20 to-sky-500/10',
   tareas_interdisciplinarias: 'from-blue-500/20 to-indigo-500/10',
-  muro: 'from-amber-500/20 to-yellow-500/10',
   calendario: 'from-indigo-500/20 to-blue-500/10',
   evaluacion_ensayo: 'from-purple-500/20 to-violet-500/10',
   multicopias: 'from-slate-500/20 to-slate-400/10',
@@ -140,7 +135,6 @@ const getProfileDisplayName = (profile: Profile): string => {
 /** Crea el array de módulos por perfil (manteniendo tu lógica original) */
 const getModulesForProfile = (profile: Profile): Module[] => {
   const commonModules: Module[] = [
-    { id: 'muro', name: 'Muro de Anuncios', icon: ICONS.muro, accent: ACCENTS.muro },
     { id: 'calendario', name: 'Calendario Académico', icon: ICONS.calendario, accent: ACCENTS.calendario },
   ];
 
@@ -170,8 +164,6 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
         { id: 'desarrollo_profesional', name: 'Desarrollo Profesional', icon: ICONS.desarrollo_profesional, accent: ACCENTS.desarrollo_profesional },
         ...commonModules,
-        { id: 'actas', name: 'Generador de Actas', icon: ICONS.actas, accent: ACCENTS.actas },
-        { id: 'mensajeria', name: 'Mensajería Interna', icon: ICONS.mensajeria, accent: ACCENTS.mensajeria },
       ];
 
     case Profile.COORDINACION_TP:
@@ -187,8 +179,6 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
         { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
         ...commonModules,
-        { id: 'mensajeria', name: 'Mensajería Interna', icon: ICONS.mensajeria, accent: ACCENTS.mensajeria },
-        { id: 'actas', name: 'Generador de Actas', icon: ICONS.actas, accent: ACCENTS.actas },
         { id: 'multicopias', name: 'Multicopias', icon: ICONS.multicopias, accent: ACCENTS.multicopias },
       ];
 
@@ -219,7 +209,6 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'tareas_interdisciplinarias', name: 'Tareas Interdisciplinarias', icon: ICONS.tareas_interdisciplinarias, accent: ACCENTS.tareas_interdisciplinarias },
         { id: 'simce', name: 'Práctica SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Práctica y evaluación para SIMCE' },
         ...commonModules,
-        { id: 'mensajeria', name: 'Mensajería Interna', icon: ICONS.mensajeria, accent: ACCENTS.mensajeria },
       ];
 
     default:
@@ -254,7 +243,8 @@ const ModuleCard: React.FC<{
   onClick: () => void;
   index: number;
 }> = ({ module, onClick, index }) => {
-  const accent = module.accent ?? 'from-slate-500/10 to-slate-400/10';
+  // Estilo minimalista: fondo claro, borde sutil y hover suave
+  const accent = module.accent ?? '';
 
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -270,19 +260,17 @@ const ModuleCard: React.FC<{
       aria-label={`Abrir módulo ${module.name}`}
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      className="group relative rounded-2xl border border-slate-200/70 dark:border-slate-700/60 overflow-hidden bg-white/70 dark:bg-slate-800/60 backdrop-blur transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      className="group rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 transition-all duration-150 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
     >
-      <div className={`absolute inset-0 bg-gradient-to-br ${accent}`} />
-      <div className="relative p-5 flex flex-col h-full">
+      <div className="p-5 flex flex-col h-full">
         <div className="flex items-center justify-between">
-          <div className="inline-flex items-center justify-center rounded-xl bg-white/80 dark:bg-slate-900/50 ring-1 ring-slate-200 dark:ring-slate-700 w-12 h-12">
+          <div className="inline-flex items-center justify-center rounded-lg bg-slate-50 dark:bg-slate-900 ring-1 ring-slate-200 dark:ring-slate-700 w-12 h-12 text-slate-700 dark:text-slate-200">
             {typeof module.icon === 'string' ? (
               <span className="text-2xl">{module.icon}</span>
             ) : (
               module.icon
             )}
           </div>
-          <ArrowRight className="w-5 h-5 opacity-0 translate-x-[-4px] group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
         </div>
 
         <div className="mt-4">
@@ -296,10 +284,8 @@ const ModuleCard: React.FC<{
           )}
         </div>
 
-        <div className="mt-5">
-          <span className="inline-flex text-xs text-slate-600 dark:text-slate-400">
-            Click para acceder
-          </span>
+        <div className="mt-5 text-xs text-slate-500 dark:text-slate-400">
+          Click para acceder
         </div>
       </div>
     </div>
@@ -376,16 +362,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
           pick('desarrollo_profesional', 'Desarrollo Profesional'),
         ].filter(Boolean) as Module[],
       },
-      {
-        id: 'grp_herramientas',
-        title: 'Herramientas',
-        icon: ICONS.mensajeria,
-        modules: [
-          pick('muro', 'Muro de Anuncios'),
-          pick('mensajeria', 'Mensajería Interna'),
-          pick('actas', 'Generador de Actas'),
-        ].filter(Boolean) as Module[],
-      },
+    
     ];
 
     // Filtro por búsqueda: si hay query, mantener solo grupos con coincidencias; dentro, filtrar módulos coincidentes
@@ -439,10 +416,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
         title: 'Utilidades',
         icon: ICONS.mensajeria,
         modules: [
-          pick('mensajeria', 'Mensajería Interna'),
-          pick('muro', 'Muro de Anuncios'),
           pick('calendario', 'Calendario Académico'),
-          pick('actas', 'Generador de Actas'),
           pick('multicopias', 'Multicopias'),
         ].filter(Boolean) as Module[],
       },
@@ -528,19 +502,19 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
               <p className="text-slate-500 dark:text-slate-400">Ajusta tu búsqueda.</p>
             </div>
           ) : (
-            <div className="space-y-5">
+              <div className="space-y-5">
               {(currentUser.profile === Profile.PROFESORADO ? profGroups : coordGroups).map((group, gidx) => {
                 const isOpen = !!expandedGroups[group.id];
                 return (
-                  <div key={group.id} className="rounded-2xl border border-slate-200/70 dark:border-slate-700/60 bg-white/70 dark:bg-slate-800/60 overflow-hidden">
+                  <div key={group.id} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
                     <button
                       type="button"
                       onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.id]: !prev[group.id] }))}
-                      className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50/70 dark:hover:bg-slate-800/70 transition"
+                      className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition"
                       aria-expanded={isOpen}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="inline-flex items-center justify-center rounded-xl bg-white/80 dark:bg-slate-900/50 ring-1 ring-slate-200 dark:ring-slate-700 w-10 h-10">
+                        <div className="inline-flex items-center justify-center rounded-lg bg-slate-50 dark:bg-slate-900 ring-1 ring-slate-200 dark:ring-slate-700 w-10 h-10 text-slate-700 dark:text-slate-200">
                           {group.icon}
                         </div>
                         <div className="text-left">
@@ -548,7 +522,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
                           <p className="text-xs text-slate-500 dark:text-slate-400">{group.modules.length} módulos</p>
                         </div>
                       </div>
-                      <ArrowRight className={`w-5 h-5 text-slate-500 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                      <ArrowRight className={`w-5 h-5 text-slate-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
                     </button>
 
                     {isOpen && (
@@ -569,7 +543,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
                 'planificacion','recursos','interdisciplinario','inclusion',
                 'evaluacion_aprendizajes','evaluaciones_formativas','evaluacion_competencias','actividades_remotas','simce',
                 'taxonomico','acompañamientos','desarrollo_profesional',
-                'muro','mensajeria','actas',
+                'actas',
               ].includes(m.id)) && (
                 <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-4 text-sm text-slate-600 dark:text-slate-300">
                   ¿No encuentras algo? Prueba la <button className="underline hover:no-underline" onClick={() => onModuleSelect('selector_completo')}>Vista completa</button>.
@@ -585,7 +559,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
               <p className="text-slate-500 dark:text-slate-400">Ajusta tu búsqueda o cambia de perfil para ver más opciones.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filtered.map((m, idx) => (
                 <ModuleCard key={m.id} module={m} index={idx} onClick={() => onModuleSelect(m.id)} />
               ))}

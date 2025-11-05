@@ -21,7 +21,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(
   cors({
     origin: ["https://plania-clase.web.app"],
-    methods: ["POST", "OPTIONS"],
+    methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     maxAge: 86400,
   })
@@ -117,6 +117,45 @@ apiRouter.post("/generarTexto", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("generarTexto error:", error);
     return res.status(500).json({ error: "IA call failed" });
+  }
+});
+
+// --- Proxy para Google Static Maps ---
+// Permite obtener la imagen del mapa desde el backend para evitar CORS en el navegador.
+// Uso: GET /api/staticMap?u=<URL_COMPLETA_STATICMAPS_URL_codificada>
+// Ejemplo de 'u': encodeURIComponent("https://maps.googleapis.com/maps/api/staticmap?...&key=XXX")
+apiRouter.get("/staticMap", async (req: Request, res: Response) => {
+  try {
+    const u = req.query.u as string | undefined;
+    if (!u) return res.status(400).json({ error: "Parámetro 'u' requerido" });
+
+    // Validación básica: solo permitir dominio de Google Static Maps
+    const decodedUrl = decodeURIComponent(u);
+    try {
+      const parsed = new URL(decodedUrl);
+      const isGoogleStatic = parsed.hostname.endsWith("googleapis.com") && parsed.pathname.includes("/maps/api/staticmap");
+      if (!isGoogleStatic) {
+        return res.status(400).json({ error: "URL no permitida" });
+      }
+    } catch {
+      return res.status(400).json({ error: "URL inválida" });
+    }
+
+    const response = await fetch(decodedUrl);
+    if (!response.ok) {
+      return res.status(502).json({ error: `Static Maps HTTP ${response.status}` });
+    }
+    const contentType = response.headers.get("content-type") || "image/png";
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=300");
+    // Permitir CORS hacia hosting
+    res.setHeader("Access-Control-Allow-Origin", "https://plania-clase.web.app");
+    return res.status(200).send(buffer);
+  } catch (err: any) {
+    console.error("/api/staticMap error:", err);
+    return res.status(500).json({ error: "Proxy falló", details: err?.message || String(err) });
   }
 });
 

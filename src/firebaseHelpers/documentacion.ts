@@ -52,9 +52,9 @@ export async function indexDocument(docId: string, storagePath: string, title: s
   return res.data as any;
 }
 
-export async function askDocumentacion(question: string, topK = 3, tags?: string[]) {
+export async function askDocumentacion(question: string, topK = 3, tags?: string[], history?: Array<{ role: 'user' | 'assistant'; text: string }>) {
   const callable = httpsCallable(functions, 'documentacionQuery');
-  const res = await callable({ question, topK, tags });
+  const res = await callable({ question, topK, tags, history });
   return res.data as { ok: boolean; answer: string; modelUsed: string; citations: Array<{ index: number; id: string; title: string; storagePath: string }>; };
 }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Empresa, CalificacionItem, User, RutaSupervision } from '../../types';
+import { Empresa, CalificacionItem, User, RutaSupervision, Profile } from '../../types';
 import { 
     subscribeToEmpresas, 
     saveEmpresa, 
@@ -83,7 +83,8 @@ const GoogleMapView: React.FC<{
     empresas: Empresa[]; 
     isLoaded: boolean;
     route?: google.maps.DirectionsResult | null;
-}> = ({ empresas, isLoaded, route }) => {
+    heightPx?: number;
+}> = ({ empresas, isLoaded, route, heightPx }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<google.maps.Map | null>(null);
     const markersRef = useRef<google.maps.Marker[]>([]);
@@ -94,84 +95,79 @@ const GoogleMapView: React.FC<{
     useEffect(() => {
         if (!isLoaded || !mapRef.current || !window.google) return;
 
+        // Inicializar mapa si no existe
         if (!mapInstanceRef.current) {
             mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
                 center: { lat: -33.4489, lng: -70.6693 },
                 zoom: 11,
             });
         }
-        
-        if (!directionsRendererRef.current) {
-            directionsRendererRef.current = new window.google.maps.DirectionsRenderer();
-        }
-        
-        markersRef.current.forEach(marker => marker.setMap(null));
-        markersRef.current = [];
-        directionsRendererRef.current.setMap(null);
 
-        if (route) {
+        // Inicializar renderer de direcciones
+        if (!directionsRendererRef.current) {
+            directionsRendererRef.current = new window.google.maps.DirectionsRenderer({
+                map: mapInstanceRef.current,
+                suppressMarkers: false,
+                preserveViewport: false,
+            });
+        } else if (directionsRendererRef.current.getMap() == null) {
             directionsRendererRef.current.setMap(mapInstanceRef.current);
+        }
+
+        // Limpiar marcadores previos
+        markersRef.current.forEach(m => m.setMap(null));
+        markersRef.current = [];
+
+        // Agregar marcadores
+        for (const emp of empresasConCoordenadas) {
+            const marker = new window.google.maps.Marker({
+                position: emp.coordenadas as google.maps.LatLngLiteral,
+                map: mapInstanceRef.current!,
+                title: emp.nombre || 'Empresa',
+            });
+            markersRef.current.push(marker);
+        }
+
+        // Ajustar bounds
+        if (empresasConCoordenadas.length) {
+            const bounds = new window.google.maps.LatLngBounds();
+            empresasConCoordenadas.forEach(e => bounds.extend(e.coordenadas as google.maps.LatLngLiteral));
+            mapInstanceRef.current!.fitBounds(bounds);
+        }
+
+        // Mostrar ruta si existe
+        if (route) {
             directionsRendererRef.current.setDirections(route);
         } else {
-            empresasConCoordenadas.forEach(empresa => {
-                const marker = new window.google.maps.Marker({
-                    position: { lat: empresa.coordenadas!.lat, lng: empresa.coordenadas!.lng },
-                    map: mapInstanceRef.current,
-                    title: empresa.nombre,
-                });
-
-                const infoWindow = new window.google.maps.InfoWindow({
-                    content: `<div style="font-weight: bold;">${empresa.nombre}</div><div>${empresa.direccion}</div>`
-                });
-
-                marker.addListener('click', () => {
-                    infoWindow.open(mapInstanceRef.current, marker);
-                });
-
-                markersRef.current.push(marker);
-            });
+            directionsRendererRef.current.setDirections({ routes: [] } as any);
         }
+    }, [isLoaded, empresasConCoordenadas.length, !!route]);
 
-    }, [empresasConCoordenadas, isLoaded, route]);
-
-    return (
-        <div className="relative" id="map-container-for-pdf">
-            <div 
-                ref={mapRef}
-                className="h-[600px] w-full rounded-lg border"
-            />
-            {!route && empresasConCoordenadas.length === 0 && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90 rounded-lg">
-                    <div className="text-center p-6">
-                        <p className="text-gray-600 text-lg">📍 No hay empresas geo-localizadas</p>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
+    return <div id="map-container-for-pdf" ref={mapRef} style={{ width: '100%', height: `${heightPx ?? 400}px`, borderRadius: 8 }} />;
 };
 
-// Componente de detalles de ruta
+// Componente de detalles de ruta para impresión y visualización
 const RouteDetails: React.FC<{ route: google.maps.DirectionsResult; travelMode: 'DRIVING' | 'TRANSIT' }> = ({ route, travelMode }) => {
     const PRECIO_BENCINA_POR_LITRO = 1300;
     const CONSUMO_PROMEDIO_KM_POR_LITRO = 12;
     const tiempoPorParada = travelMode === 'TRANSIT' ? 45 : 30;
-    
-    const travelDuration = route.routes[0].legs.reduce((acc, leg) => acc + (leg.duration?.value || 0), 0);
-    const numberOfStops = route.routes[0].legs.length > 1 ? route.routes[0].legs.length - 1 : 0;
+
+    const legs = route.routes[0]?.legs || [];
+    const travelDuration = legs.reduce((acc, leg) => acc + (leg.duration?.value || 0), 0);
+    const numberOfStops = legs.length > 1 ? legs.length - 1 : 0;
     const stopDuration = numberOfStops * tiempoPorParada * 60;
     const totalDuration = travelDuration + stopDuration;
-    const totalDistance = route.routes[0].legs.reduce((acc, leg) => acc + (leg.distance?.value || 0), 0);
+    const totalDistance = legs.reduce((acc, leg) => acc + (leg.distance?.value || 0), 0);
     const costoBencina = travelMode === 'DRIVING' ? ((totalDistance / 1000) / CONSUMO_PROMEDIO_KM_POR_LITRO) * PRECIO_BENCINA_POR_LITRO : 0;
 
     return (
         <div className="mt-6 p-4 border rounded-lg bg-slate-50" id="route-details-for-pdf">
             <h3 className="text-xl font-bold mb-3">Detalles de la Ruta</h3>
             <div className="space-y-4">
-                {route.routes[0].legs.map((leg, legIndex) => (
+                {legs.map((leg, legIndex) => (
                     <div key={legIndex} className="border rounded-lg p-4 bg-white">
                         <div className="flex justify-between items-center mb-3">
-                            <h4 className="font-bold text-lg">Tramo {legIndex + 1}: {leg.start_address.split(',')[0]} → {leg.end_address.split(',')[0]}</h4>
+                            <h4 className="font-bold text-lg">Tramo {legIndex + 1}: {leg.start_address?.split(',')[0]} → {leg.end_address?.split(',')[0]}</h4>
                             <div className="text-sm text-gray-600">{leg.duration?.text} • {leg.distance?.text}</div>
                         </div>
                         {travelMode === 'TRANSIT' && (
@@ -180,7 +176,7 @@ const RouteDetails: React.FC<{ route: google.maps.DirectionsResult; travelMode: 
                                     step.transit && (
                                         <div key={stepIndex} className="flex items-start gap-2 text-sm py-1">
                                             <span className="text-lg">🚌</span>
-                                            <span dangerouslySetInnerHTML={{ __html: step.instructions }}/>
+                                            <span dangerouslySetInnerHTML={{ __html: step.instructions || '' }} />
                                         </div>
                                     )
                                 ))}
@@ -189,7 +185,7 @@ const RouteDetails: React.FC<{ route: google.maps.DirectionsResult; travelMode: 
                     </div>
                 ))}
             </div>
-             <div className="mt-4 pt-4 border-t font-bold text-right">
+            <div className="mt-4 pt-4 border-t font-bold text-right">
                 <p>Tiempo de viaje: {Math.round(travelDuration / 60)} min</p>
                 <p>Tiempo en paradas: {Math.round(stopDuration / 60)} min</p>
                 <p className="text-lg">Duración Total Estimada: {Math.round(totalDuration / 60)} min</p>
@@ -201,99 +197,6 @@ const RouteDetails: React.FC<{ route: google.maps.DirectionsResult; travelMode: 
         </div>
     );
 };
-
-// Función para obtener coordenadas
-const getPlaceDetails = async (placeId: string): Promise<{lat: number, lng: number} | null> => {
-    if (!window.google) return null;
-    
-    return new Promise((resolve) => {
-        const service = new window.google.maps.places.PlacesService(document.createElement('div'));
-        
-        service.getDetails({
-            placeId: placeId,
-            fields: ['geometry']
-        }, (place, status) => {
-            if (status === window.google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
-                resolve({
-                    lat: place.geometry.location.lat(),
-                    lng: place.geometry.location.lng()
-                });
-            } else {
-                resolve(null);
-            }
-        });
-    });
-};
-
-// --- COMPONENTE DASHBOARD (CLÁSICO) ---
-const DashboardView: React.FC<{ data: any }> = ({ data }) => {
-    const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
-    return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="p-4 border rounded-lg bg-white col-span-1">
-                <h3 className="font-bold mb-4">Empresas por Especialidad</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                        <Pie data={data.porEspecialidad} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label>
-                            {data.porEspecialidad.map((entry: any, index: number) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                        </Pie>
-                        <Tooltip />
-                    </PieChart>
-                </ResponsiveContainer>
-            </div>
-             <div className="p-4 border rounded-lg bg-white col-span-1 md:col-span-2">
-                <h3 className="font-bold mb-4">Empresas por Supervisor</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={data.porSupervisor} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis type="number" />
-                        <YAxis type="category" dataKey="name" width={150} />
-                        <Tooltip />
-                        <Bar dataKey="value" fill="#82ca9d" name="Empresas" />
-                    </BarChart>
-                </ResponsiveContainer>
-            </div>
-            <div className="p-4 border rounded-lg bg-white col-span-1 lg:col-span-3">
-                <h3 className="font-bold mb-4">Distribución por Comuna</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={data.porComuna}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="value" fill="#8884d8" name="Empresas" />
-                    </BarChart>
-                </ResponsiveContainer>
-            </div>
-            <div className="p-4 border rounded-lg bg-white col-span-1">
-                <h3 className="font-bold mb-4">Calificación por Ámbito</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                    <RadarChart cx="50%" cy="50%" outerRadius="80%" data={data.calificacionPorAmbito}>
-                        <PolarGrid />
-                        <PolarAngleAxis dataKey="subject" />
-                        <PolarRadiusAxis angle={30} domain={[0, 5]} />
-                        <Radar name="Promedio" dataKey="A" stroke="#8884d8" fill="#8884d8" fillOpacity={0.6} />
-                        <Tooltip />
-                    </RadarChart>
-                </ResponsiveContainer>
-            </div>
-            <div className="p-4 border rounded-lg bg-white col-span-1 md:col-span-2">
-                <h3 className="font-bold mb-4">Ranking de Empresas</h3>
-                <div className="overflow-y-auto max-h-[300px]">
-                    <ul className="space-y-2">
-                        {data.ranking.map((empresa: any, index: number) => (
-                            <li key={empresa.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
-                                <span className="font-semibold">{index + 1}. {empresa.nombre}</span>
-                                <span className="font-bold text-amber-500">{empresa.promedio.toFixed(1)} ★</span>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 // --- COMPONENTE DASHBOARD (MODERNO) ---
 const DashboardViewModern: React.FC<{ data: any }> = ({ data }) => {
     const COLORS = ['#6366F1', '#06B6D4', '#22C55E', '#F59E0B', '#EF4444'];
@@ -428,6 +331,11 @@ const DashboardViewModern: React.FC<{ data: any }> = ({ data }) => {
     );
 };
 
+// Vista clásica mínima (fallback) delegando a la moderna para mantener compatibilidad
+const DashboardView: React.FC<{ data: any }> = ({ data }) => {
+    return <DashboardViewModern data={data} />;
+};
+
 
 const GestionEmpresas: React.FC = () => {
     const { currentUser } = useAuth();
@@ -449,13 +357,24 @@ const GestionEmpresas: React.FC = () => {
     const [travelMode, setTravelMode] = useState<'DRIVING' | 'TRANSIT'>('DRIVING');
     const [routeName, setRouteName] = useState('');
     const [savedRoutes, setSavedRoutes] = useState<RutaSupervision[]>([]);
+    const [routeSupervisor, setRouteSupervisor] = useState<{ id: string; nombreCompleto: string } | undefined>(undefined);
     const [notasPorEstudiante, setNotasPorEstudiante] = useState<Record<string, { notas: any[]; unsub?: () => void }>>({});
     const [notaNueva, setNotaNueva] = useState<Record<string, { texto: string; color: 'yellow' | 'pink' | 'green' | 'blue' }>>({});
 
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
     const { isLoaded: isMapScriptLoaded, error: mapScriptError } = useGoogleMapsScript(apiKey);
 
+    const canReadEmpresas = useMemo(() => {
+        const p = currentUser?.profile as any;
+        return p === Profile.SUBDIRECCION || p === Profile.PROFESORADO || p === Profile.COORDINACION_TP;
+    }, [currentUser?.profile]);
+
     useEffect(() => {
+        // Solo suscribir si el perfil tiene permisos de lectura según reglas
+        if (!canReadEmpresas) {
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         const unsubEmpresas = subscribeToEmpresas(setEmpresas);
         const unsubProfesores = subscribeToProfesores(setProfesores);
@@ -468,14 +387,14 @@ const GestionEmpresas: React.FC = () => {
             unsubEstudiantes();
             unsubSavedRoutes();
             // Limpiar suscripciones de notas
-            Object.values(notasPorEstudiante).forEach(v => v.unsub && v.unsub());
+            (Object.values(notasPorEstudiante as Record<string, { notas: any[]; unsub?: () => void }>)).forEach(v => v.unsub?.());
         };
-    }, []);
+    }, [canReadEmpresas]);
 
     // Suscripción dinámica a notas para estudiantes visibles (3º/4º + filtro curso)
     useEffect(() => {
         // limpiar previas
-        Object.values(notasPorEstudiante).forEach(v => v.unsub && v.unsub());
+    (Object.values(notasPorEstudiante as Record<string, { notas: any[]; unsub?: () => void }>)).forEach(v => v.unsub?.());
         const nuevos: Record<string, { notas: any[]; unsub?: () => void }> = {};
         const es3o4 = (curso?: string) => !!curso && (curso.startsWith('3º') || curso.startsWith('4º'));
         let visibles = estudiantes.filter(e => es3o4(e.curso));
@@ -554,7 +473,7 @@ const GestionEmpresas: React.FC = () => {
                     for (const sid of selectedIds) {
                         if (asignados.includes(sid)) {
                             const st = mapEst.get(sid);
-                            if (st) conflictos.push({ student: st, empresa: emp });
+                            if (st) conflictos.push({ student: st as User, empresa: emp });
                         }
                     }
                 }
@@ -615,6 +534,21 @@ const GestionEmpresas: React.FC = () => {
         }
     };
 
+    // Helper: obtener coordenadas de un placeId
+    const getPlaceDetails = async (placeId: string): Promise<{ lat: number; lng: number } | null> => {
+        if (!window.google) return null;
+        return await new Promise((resolve) => {
+            const service = new window.google.maps.places.PlacesService(document.createElement('div'));
+            service.getDetails({ placeId, fields: ['geometry'] }, (place, status) => {
+                if (status === window.google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
+                    resolve({ lat: place.geometry.location.lat(), lng: place.geometry.location.lng() });
+                } else {
+                    resolve(null);
+                }
+            });
+        });
+    };
+
     const handleEdit = (empresa: Empresa) => {
         setCurrentEmpresa(JSON.parse(JSON.stringify(empresa)));
         if (empresa.direccion) {
@@ -645,24 +579,73 @@ const GestionEmpresas: React.FC = () => {
         setIsCalculatingRoute(true);
         const directionsService = new window.google.maps.DirectionsService();
 
-        const waypoints = selectedRouteCompanies
+        // Respetar límite de waypoints (máx 25 incluyendo origen/destino => 23 paradas)
+        const rawWaypoints = selectedRouteCompanies
             .filter(e => e.coordenadas)
             .map(e => ({ location: e.coordenadas!, stopover: true }));
+        const waypoints = rawWaypoints.slice(0, 23);
+        if (rawWaypoints.length > waypoints.length) {
+            console.warn('Se limitaron las paradas a 23 por restricción de Google Directions.');
+        }
 
-        directionsService.route({
+        const buildRequest = (mode: google.maps.TravelMode): google.maps.DirectionsRequest => ({
             origin: startPointCoords,
             destination: startPointCoords,
-            waypoints: waypoints,
+            waypoints,
             optimizeWaypoints: true,
-            travelMode: window.google.maps.TravelMode[travelMode],
-        }, (result, status) => {
-            setIsCalculatingRoute(false);
-            if (status === window.google.maps.DirectionsStatus.OK && result) {
-                setCalculatedRoute(result);
-            } else {
-                alert("No se pudo calcular la ruta: " + status);
-            }
+            travelMode: mode,
+            region: 'CL',
+            provideRouteAlternatives: false,
         });
+
+        const routeWithRetry = async (mode: google.maps.TravelMode, retries = 3): Promise<google.maps.DirectionsResult> => {
+            return await new Promise((resolve, reject) => {
+                const attempt = (n: number) => {
+                    directionsService.route(buildRequest(mode), (result, status) => {
+                        if (status === window.google.maps.DirectionsStatus.OK && result) {
+                            resolve(result);
+                        } else if (status === window.google.maps.DirectionsStatus.UNKNOWN_ERROR || status === (window.google.maps as any).DirectionsStatus.OVER_QUERY_LIMIT) {
+                            if (n < retries) {
+                                const backoff = 400 * Math.pow(2, n);
+                                setTimeout(() => attempt(n + 1), backoff);
+                            } else {
+                                reject(status);
+                            }
+                        } else if (status === window.google.maps.DirectionsStatus.ZERO_RESULTS) {
+                            reject(status);
+                        } else {
+                            reject(status);
+                        }
+                    });
+                };
+                attempt(0);
+            });
+        };
+
+        (async () => {
+            try {
+                const mode = window.google.maps.TravelMode[travelMode];
+                let result = await routeWithRetry(mode);
+                setCalculatedRoute(result);
+            } catch (err) {
+                // Fallback: si era TRANSIT, intentar DRIVING
+                if (travelMode === 'TRANSIT') {
+                    try {
+                        const result = await routeWithRetry(window.google.maps.TravelMode.DRIVING);
+                        setCalculatedRoute(result);
+                        alert('No se encontró una ruta en transporte público. Se usó Automóvil como alternativa.');
+                    } catch (err2) {
+                        console.error('Fallo al calcular ruta (fallback DRIVING):', err2);
+                        alert('No se pudo calcular la ruta en este momento. Intenta nuevamente más tarde.');
+                    }
+                } else {
+                    console.error('Fallo al calcular ruta:', err);
+                    alert('No se pudo calcular la ruta en este momento. Intenta nuevamente más tarde.');
+                }
+            } finally {
+                setIsCalculatingRoute(false);
+            }
+        })();
     };
     
     const clearRoute = () => {
@@ -683,6 +666,7 @@ const GestionEmpresas: React.FC = () => {
             startPoint: { label: startPoint.label, coords: startPointCoords },
             empresas: selectedRouteCompanies.map(e => ({id: e.id, nombre: e.nombre, coordenadas: e.coordenadas})),
             travelMode,
+            supervisor: routeSupervisor,
         };
         try {
             await saveRouteToDB(routeToSave);
@@ -693,29 +677,357 @@ const GestionEmpresas: React.FC = () => {
         }
     };
 
+    // --- Utilidades para mapa estático en PDF ---
+    const encodePolyline = (points: { lat: number; lng: number }[]) => {
+        // Implementación mínima del algoritmo de Google Polyline Encoding
+        let lastLat = 0, lastLng = 0;
+        const result: string[] = [];
+        const encode = (num: number) => {
+            let v = num < 0 ? ~(num << 1) : (num << 1);
+            while (v >= 0x20) {
+                result.push(String.fromCharCode((0x20 | (v & 0x1f)) + 63));
+                v >>= 5;
+            }
+            result.push(String.fromCharCode(v + 63));
+        };
+        for (const p of points) {
+            const lat = Math.round(p.lat * 1e5);
+            const lng = Math.round(p.lng * 1e5);
+            encode(lat - lastLat);
+            encode(lng - lastLng);
+            lastLat = lat;
+            lastLng = lng;
+        }
+        return result.join('');
+    };
+
+    const buildStaticMapUrl = (route: google.maps.DirectionsResult): string | null => {
+        try {
+            const r: any = route?.routes?.[0];
+            if (!r) return null;
+            let pts: { lat: number; lng: number }[] = [];
+            if (r.overview_path && Array.isArray(r.overview_path) && r.overview_path.length) {
+                // overview_path: LatLng[]
+                pts = r.overview_path.map((ll: any) => ({ lat: ll.lat(), lng: ll.lng() }));
+            } else if (r.overview_polyline && typeof r.overview_polyline.getPath === 'function') {
+                const arr = r.overview_polyline.getPath().getArray();
+                pts = arr.map((ll: any) => ({ lat: ll.lat(), lng: ll.lng() }));
+            } else {
+                return null;
+            }
+            // Reducir puntos para evitar URLs demasiado largas
+            if (pts.length > 200) {
+                const step = Math.ceil(pts.length / 200);
+                const sampled: { lat: number; lng: number }[] = [];
+                for (let i = 0; i < pts.length; i += step) sampled.push(pts[i]);
+                if (sampled[sampled.length - 1] !== pts[pts.length - 1]) sampled.push(pts[pts.length - 1]);
+                pts = sampled;
+            }
+            const enc = encodePolyline(pts);
+            const url = new URL('https://maps.googleapis.com/maps/api/staticmap');
+            // cuadrado 4:4 (1:1)
+            url.searchParams.set('size', '1024x1024');
+            url.searchParams.set('scale', '2');
+            url.searchParams.set('maptype', 'roadmap');
+            // Ruta
+            url.searchParams.append('path', `color:0x1e3a8aff|weight:4|enc:${enc}`);
+            // Marcadores: inicio y paradas (máximo 9 con etiquetas)
+            if (startPointCoords) {
+                url.searchParams.append('markers', `color:green|label:S|${startPointCoords.lat},${startPointCoords.lng}`);
+            }
+            // Reducimos la cantidad de marcadores para acortar la URL
+            selectedRouteCompanies.slice(0, 5).forEach((e, idx) => {
+                if (e.coordenadas?.lat && e.coordenadas?.lng) {
+                    const label = String((idx + 1) % 10); // 1..9, 0 si 10
+                    url.searchParams.append('markers', `color:red|label:${label}|${e.coordenadas.lat},${e.coordenadas.lng}`);
+                }
+            });
+            url.searchParams.set('key', apiKey);
+            return url.toString();
+        } catch {
+            return null;
+        }
+    };
+
+    // Descarga de imagen via proxy backend para evitar CORS (Hosting rewrite a /api)
+    const fetchImageAsDataURL = async (imgUrl: string): Promise<string> => {
+        const proxied = `/api/staticMap?u=${encodeURIComponent(imgUrl)}`;
+        const res = await fetch(proxied, { method: 'GET' });
+        if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
+        const blob = await res.blob();
+        return await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(String(reader.result));
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    };
+
     const handleExportPDF = async () => {
-        const mapElement = document.getElementById('map-container-for-pdf');
-        const detailsElement = document.getElementById('route-details-for-pdf');
-        if (!mapElement || !detailsElement) return;
+        if (!calculatedRoute) {
+            alert('Falta información para generar el PDF. Primero visualiza la ruta.');
+            return;
+        }
 
         const pdf = new jsPDF('p', 'mm', 'a4');
         const pdfWidth = pdf.internal.pageSize.getWidth();
-        
-        pdf.text(`Ruta de Supervisión: ${routeName || 'Sin nombre'}`, 10, 15);
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        const margin = 10; // 1 cm
+        const contentWidth = pdfWidth - margin * 2;
+
+    // Encabezado dentro de los márgenes (barra oscura estilo slate-900)
+    const headerH = 16;
+    pdf.setFillColor(15, 23, 42);
+        pdf.rect(margin, margin, contentWidth, headerH, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(14);
+    pdf.text(`Ruta de Supervisión: ${routeName || 'Sin nombre'}`, margin + 4, margin + 11);
         pdf.setFontSize(10);
-        pdf.text(`Fecha: ${new Date().toLocaleDateString('es-CL')}`, 10, 22);
+    const d = new Date();
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const fechaTxt = `Fecha: ${dd}-${mm}-${yyyy}`;
+        const modoTxt = `Modo: ${travelMode === 'DRIVING' ? 'Automóvil' : 'Transporte Público'}`;
+        const supervisorTxt = routeSupervisor?.nombreCompleto ? `Supervisor: ${routeSupervisor.nombreCompleto}` : '';
+        const rightText = [fechaTxt, modoTxt, supervisorTxt].filter(Boolean).join('  •  ');
+        pdf.text(rightText, margin + contentWidth - 4, margin + 11, { align: 'right' });
+        pdf.setTextColor(0, 0, 0);
 
-        const mapCanvas = await html2canvas(mapElement, { useCORS: true });
-        const mapImgData = mapCanvas.toDataURL('image/png');
-        pdf.addImage(mapImgData, 'PNG', 10, 30, pdfWidth - 20, 100);
+        let yCursor = margin + headerH + 6;
 
-        const detailsCanvas = await html2canvas(detailsElement);
-        const detailsImgData = detailsCanvas.toDataURL('image/png');
-        const detailsImgProps = pdf.getImageProperties(detailsImgData);
-        const detailsHeight = (detailsImgProps.height * (pdfWidth - 20)) / detailsImgProps.width;
-        pdf.addImage(detailsImgData, 'PNG', 10, 135, pdfWidth - 20, detailsHeight);
+        // Mapa: Static Maps primero, luego fallback a captura, luego placeholder (cuadrado 4:4)
+        const mapElement = document.getElementById('map-container-for-pdf');
+        const mapSide = Math.min(contentWidth, 120); // lado del cuadrado en mm
+        let mapAdded = false;
+        try {
+            const staticUrl = buildStaticMapUrl(calculatedRoute);
+            if (staticUrl) {
+                const dataUrl = await fetchImageAsDataURL(staticUrl);
+                if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+                pdf.addImage(dataUrl, 'PNG', margin, yCursor, mapSide, mapSide);
+                yCursor += mapSide + 6;
+                mapAdded = true;
+            }
+        } catch {}
+        if (!mapAdded && mapElement) {
+            try {
+                const mapCanvas = await html2canvas(mapElement as HTMLElement, { useCORS: true, allowTaint: true, backgroundColor: '#ffffff', scale: 2 });
+                const mapImgData = mapCanvas.toDataURL('image/png');
+                if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+                pdf.addImage(mapImgData, 'PNG', margin, yCursor, mapSide, mapSide);
+                yCursor += mapSide + 6;
+                mapAdded = true;
+            } catch {}
+        }
+        if (!mapAdded) {
+            pdf.setDrawColor(200);
+            pdf.setFillColor(245, 245, 245);
+            if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+            pdf.rect(margin, yCursor, mapSide, mapSide, 'FD');
+            pdf.setTextColor(120);
+            pdf.setFontSize(11);
+            pdf.text('Mapa no disponible para captura. (Se omitió en el PDF)', margin + mapSide / 2, yCursor + mapSide / 2, { align: 'center' });
+            pdf.setTextColor(0);
+            yCursor += mapSide + 6;
+        }
 
-        pdf.save(`ruta-${routeName || 'supervision'}.pdf`);
+        // Detalles renderizados como texto envuelto (alineación izquierda)
+        const lineH = 6;
+        const addSectionTitle = (title: string) => {
+            if (yCursor + lineH > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+            pdf.setFontSize(12);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text(title, margin, yCursor);
+            pdf.setFont('helvetica', 'normal');
+            yCursor += lineH;
+        };
+        addSectionTitle('Detalles de la Ruta');
+        pdf.setFontSize(10);
+        const legs = calculatedRoute.routes[0].legs || [];
+        const travelDurationSec = legs.reduce((acc, leg) => acc + (leg.duration?.value || 0), 0);
+        const numberOfStops = legs.length > 1 ? legs.length - 1 : 0;
+        const tiempoPorParada = travelMode === 'TRANSIT' ? 45 : 30;
+        const stopDurationSec = numberOfStops * tiempoPorParada * 60;
+        const totalDurationSec = travelDurationSec + stopDurationSec;
+        const totalDistanceM = legs.reduce((acc, leg) => acc + (leg.distance?.value || 0), 0);
+        const PRECIO_BENCINA_POR_LITRO = 1300;
+        const CONSUMO_PROMEDIO_KM_POR_LITRO = 12;
+        const costoBencina = travelMode === 'DRIVING' ? ((totalDistanceM / 1000) / CONSUMO_PROMEDIO_KM_POR_LITRO) * PRECIO_BENCINA_POR_LITRO : 0;
+
+        // Cuadrícula de métricas (5 "cards")
+        const metrics = [
+            { label: 'Tiempo de viaje', value: `${Math.round(travelDurationSec / 60)} min` },
+            { label: 'Tiempo en paradas', value: `${Math.round(stopDurationSec / 60)} min` },
+            { label: 'Duración total', value: `${Math.round(totalDurationSec / 60)} min` },
+            { label: 'Distancia total', value: `${(totalDistanceM / 1000).toFixed(1)} km` },
+            { label: 'Costo estimado', value: travelMode === 'DRIVING' ? `$${Math.round(costoBencina).toLocaleString('es-CL')}` : '—' },
+        ];
+        const cardsPerRow = 5;
+        const gap = 4;
+        const cardW = (contentWidth - gap * (cardsPerRow - 1)) / cardsPerRow;
+        const cardH = 16;
+        let cardX = margin;
+        let cardY = yCursor + 2;
+        for (let i = 0; i < metrics.length; i++) {
+            if (cardY + cardH > pdfHeight - margin) { pdf.addPage(); cardY = margin; cardX = margin; }
+            // fondo y borde
+            pdf.setFillColor(248, 250, 252); // slate-50
+            pdf.setDrawColor(226, 232, 240); // slate-200
+            pdf.rect(cardX, cardY, cardW, cardH, 'FD');
+            // textos
+            pdf.setTextColor(100, 116, 139); // slate-500
+            pdf.setFontSize(8);
+            pdf.text(metrics[i].label, cardX + 2, cardY + 5);
+            pdf.setTextColor(0, 0, 0);
+            pdf.setFontSize(10);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text(String(metrics[i].value), cardX + 2, cardY + 11);
+            pdf.setFont('helvetica', 'normal');
+            // avanzar posición
+            if ((i + 1) % cardsPerRow === 0) {
+                cardX = margin;
+                cardY += cardH + 2;
+            } else {
+                cardX += cardW + gap;
+            }
+        }
+        yCursor = cardY + (metrics.length % cardsPerRow === 0 ? 0 : cardH) + 4;
+
+        // Tramos como "cards" similares a las métricas (2 columnas)
+        const tramoCols = 2;
+        const tramoGap = 4;
+        const tramoCardW = (contentWidth - tramoGap * (tramoCols - 1)) / tramoCols;
+        const drawTramoCard = (x: number, y: number, w: number, tramoIdx: number, leg: google.maps.DirectionsLeg) => {
+            const label = `Tramo ${tramoIdx + 1}`;
+            const origen = (leg.start_address || '').split(',')[0];
+            const destino = (leg.end_address || '').split(',')[0];
+            const detalle = `${origen} → ${destino}\n${leg.duration?.text || ''} • ${leg.distance?.text || ''}`;
+            const innerPad = 2;
+            const valueMaxWidth = w - innerPad * 2;
+            const valueLines = pdf.splitTextToSize(detalle, valueMaxWidth);
+            const labelH = 5;
+            const valueLH = 3.8; // interlineado más compacto y "normal"
+            const valueH = valueLines.length * valueLH;
+            const contentH = labelH + 2 + valueH + 2;
+            const minH = 18;
+            const h = Math.max(minH, contentH);
+            // fondo y borde
+            pdf.setFillColor(248, 250, 252); // slate-50
+            pdf.setDrawColor(226, 232, 240); // slate-200
+            pdf.rect(x, y, w, h, 'FD');
+            // etiqueta
+            pdf.setTextColor(100, 116, 139); // slate-500
+            pdf.setFontSize(8);
+            pdf.text(label, x + innerPad, y + 4);
+            // valor
+            pdf.setTextColor(0, 0, 0);
+            pdf.setFontSize(10);
+            pdf.setFont('helvetica', 'normal'); // sin negrita para evitar efecto de interletrado
+            let yy = y + 4 + 2; // debajo del label
+            for (const ln of valueLines) {
+                pdf.text(ln, x + innerPad, yy + 5);
+                yy += valueLH;
+            }
+            pdf.setFont('helvetica', 'normal');
+            return h;
+        };
+
+        // Layout en dos columnas, altura por fila según el card más alto
+        let colIndex = 0;
+        let rowMaxH = 0;
+        let rowStartY = yCursor;
+        for (let i = 0; i < legs.length; i++) {
+            const x = margin + colIndex * (tramoCardW + tramoGap);
+            // Si no cabe verticalmente, salto de página y reseteo fila
+            const estimatedH = 22; // estimación inicial para corte (se recalcula al dibujar)
+            if (rowStartY + estimatedH > pdfHeight - margin) {
+                pdf.addPage();
+                rowStartY = margin;
+                yCursor = margin;
+                colIndex = 0;
+                rowMaxH = 0;
+            }
+            const h = drawTramoCard(x, rowStartY, tramoCardW, i, legs[i]);
+            rowMaxH = Math.max(rowMaxH, h);
+            colIndex++;
+            if (colIndex === tramoCols) {
+                // siguiente fila
+                rowStartY += rowMaxH + 3;
+                yCursor = rowStartY;
+                rowMaxH = 0;
+                colIndex = 0;
+            }
+        }
+        // Si la última fila quedó incompleta, avanzar cursor igualmente
+        if (colIndex !== 0) {
+            yCursor = rowStartY + rowMaxH + 2;
+        }
+
+        // Firmas
+        const ensureSpace = (needed: number) => {
+            if (yCursor + needed > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+        };
+        ensureSpace(20);
+        pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Firmas', margin, yCursor);
+        pdf.setFont('helvetica', 'normal');
+        yCursor += 8;
+
+        const colGap = 12;
+        const colWidth = (contentWidth - colGap) / 2;
+        const leftX = margin;
+        const rightX = margin + colWidth + colGap;
+        const signatureLineWidth = colWidth;
+        const rowH = 12; // alto aproximado por fila de firmas
+        const drawSignature = (x: number, y: number, label: string) => {
+            pdf.line(x, y, x + signatureLineWidth, y);
+            pdf.setFontSize(9);
+            // Truncar etiqueta si es muy larga para que no desborde
+            const maxChars = 60;
+            const txt = label.length > maxChars ? label.slice(0, maxChars - 1) + '…' : label;
+            pdf.text(txt, x, y + 6);
+        };
+
+        // Firmas por empresa (3 columnas por fila)
+        const empresasParaFirmar = selectedRouteCompanies.map(e => e.nombre || 'Empresa');
+        const cols = 3;
+        const gapCols = 12;
+        const colWidth3 = (contentWidth - gapCols * (cols - 1)) / cols;
+        const rowH3 = 14;
+        const colXs = [margin, margin + colWidth3 + gapCols, margin + (colWidth3 + gapCols) * 2];
+        for (let i = 0; i < empresasParaFirmar.length; i++) {
+            const col = i % cols;
+            if (col === 0) ensureSpace(rowH3 + 8);
+            const x = colXs[col];
+            // línea
+            pdf.line(x, yCursor, x + colWidth3, yCursor);
+            // etiqueta centrada
+            pdf.setFontSize(9);
+            const label = `Firma representante: ${empresasParaFirmar[i]}`;
+            pdf.text(label.length > 60 ? label.slice(0,59) + '…' : label, x + colWidth3 / 2, yCursor + 6, { align: 'center' });
+            if (col === cols - 1) {
+                yCursor += rowH3;
+            }
+        }
+        // si la última fila no se completó, avanzar
+        if (empresasParaFirmar.length % cols !== 0) yCursor += rowH3;
+
+        // Firma profesor tutor (3 columnas: ocupar la central)
+        ensureSpace(rowH3 + 8);
+        const centerX = colXs[1];
+        pdf.line(centerX, yCursor, centerX + colWidth3, yCursor);
+        pdf.setFontSize(9);
+        const tutorLabel = routeSupervisor?.nombreCompleto ? `Firma profesor tutor: ${routeSupervisor.nombreCompleto}` : 'Firma profesor tutor';
+        pdf.text(tutorLabel, centerX + colWidth3 / 2, yCursor + 6, { align: 'center' });
+
+        try {
+            pdf.save(`ruta-${routeName || 'supervision'}.pdf`);
+        } catch (e) {
+            console.error(e);
+            alert('No se pudo descargar el PDF. Reintenta o prueba en otro navegador.');
+        }
     };
     
     const loadSavedRoute = (route: RutaSupervision) => {
@@ -724,6 +1036,7 @@ const GestionEmpresas: React.FC = () => {
         setSelectedRouteCompanies(route.empresas);
         setTravelMode(route.travelMode);
         setRouteName(route.nombre);
+        setRouteSupervisor(route.supervisor);
         setView('route');
     };
 
@@ -774,6 +1087,17 @@ const GestionEmpresas: React.FC = () => {
 
     if (loading) {
         return <div className="text-center p-8">Cargando...</div>;
+    }
+
+    if (!canReadEmpresas) {
+        return (
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
+                <h1 className="text-2xl font-bold mb-2">Gestión de Empresas</h1>
+                <div className="p-4 rounded-lg border bg-amber-50 text-amber-800">
+                    No tienes permisos para acceder a este módulo. Requiere perfil de Subdirección, Profesorado o Coordinación TP.
+                </div>
+            </div>
+        );
     }
 
     if (mapScriptError) {
@@ -1089,6 +1413,26 @@ const GestionEmpresas: React.FC = () => {
                                 </div>
                             </div>
                             <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">3.b Selecciona profesor supervisor (Coordinación TP)</label>
+                                <select
+                                    value={routeSupervisor ? JSON.stringify(routeSupervisor) : ''}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setRouteSupervisor(v ? JSON.parse(v) : undefined);
+                                    }}
+                                    className="input-style w-full"
+                                >
+                                    <option value="">Sin supervisor</option>
+                                    {profesores
+                                        .filter(p => p.profile === Profile.COORDINACION_TP)
+                                        .map(p => (
+                                            <option key={p.id} value={JSON.stringify({ id: p.id, nombreCompleto: p.nombreCompleto })}>
+                                                {p.nombreCompleto}
+                                            </option>
+                                        ))}
+                                </select>
+                            </div>
+                            <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">4. Selecciona las empresas a visitar</label>
                                 <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-2">
                                     {empresas.filter(e => e.coordenadas).map(empresa => (
@@ -1132,11 +1476,73 @@ const GestionEmpresas: React.FC = () => {
                                 </button>
                             </div>
                         </div>
-                        <div>
-                           <GoogleMapView empresas={selectedRouteCompanies} isLoaded={isMapScriptLoaded} route={calculatedRoute} />
-                        </div>
+                        <div>{/* El mapa principal se muestra en la tarjeta inferior cuando hay ruta */}</div>
                     </div>
-                    {calculatedRoute && <RouteDetails route={calculatedRoute} travelMode={travelMode} />}
+                    {calculatedRoute && (() => {
+                        // Cálculos para detalles
+                        const legs = calculatedRoute.routes[0]?.legs || [];
+                        const travelDuration = legs.reduce((acc, leg) => acc + (leg.duration?.value || 0), 0);
+                        const numberOfStops = legs.length > 1 ? legs.length - 1 : 0;
+                        const tiempoPorParada = travelMode === 'TRANSIT' ? 45 : 30;
+                        const stopDuration = numberOfStops * tiempoPorParada * 60;
+                        const totalDuration = travelDuration + stopDuration;
+                        const totalDistance = legs.reduce((acc, leg) => acc + (leg.distance?.value || 0), 0);
+                        const costoBencina = travelMode === 'DRIVING' ? ((totalDistance / 1000) / 12) * 1300 : 0;
+                        const ddmmyyyy = (() => { const d = new Date(); const dd = String(d.getDate()).padStart(2,'0'); const mm = String(d.getMonth()+1).padStart(2,'0'); const yyyy = d.getFullYear(); return `${dd}-${mm}-${yyyy}`; })();
+                        return (
+                            <div className="bg-white shadow-lg rounded-2xl mx-auto max-w-5xl p-6 font-sans text-gray-800 mt-6">
+                                {/* Encabezado superior */}
+                                <div className="bg-slate-900 text-white rounded-xl px-6 py-3 mb-4 flex justify-between items-center">
+                                    <div className="font-bold">Ruta de Supervisión: {routeName || 'Sin nombre'}</div>
+                                    <div className="text-sm opacity-90 flex gap-3">
+                                        <span>{ddmmyyyy}</span>
+                                        <span>•</span>
+                                        <span>{travelMode === 'DRIVING' ? 'Automóvil' : 'Transporte Público'}</span>
+                                    </div>
+                                </div>
+
+                                {/* Mapa */}
+                                <div className="rounded-xl shadow-sm border overflow-hidden mb-6">
+                                    <GoogleMapView empresas={selectedRouteCompanies} isLoaded={isMapScriptLoaded} route={calculatedRoute} heightPx={384} />
+                                </div>
+
+                                {/* Detalles de la Ruta */}
+                                <h3 className="text-lg font-bold mt-6">Detalles de la Ruta</h3>
+                                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                                    <div className="p-3 rounded-lg bg-slate-50 border"><div className="text-xs text-slate-500">Tiempo de viaje</div><div className="font-semibold">{Math.round(travelDuration / 60)} min</div></div>
+                                    <div className="p-3 rounded-lg bg-slate-50 border"><div className="text-xs text-slate-500">Tiempo en paradas</div><div className="font-semibold">{Math.round(stopDuration / 60)} min</div></div>
+                                    <div className="p-3 rounded-lg bg-slate-50 border"><div className="text-xs text-slate-500">Duración total</div><div className="font-semibold">{Math.round(totalDuration / 60)} min</div></div>
+                                    <div className="p-3 rounded-lg bg-slate-50 border"><div className="text-xs text-slate-500">Distancia total</div><div className="font-semibold">{(totalDistance / 1000).toFixed(1)} km</div></div>
+                                    <div className="p-3 rounded-lg bg-slate-50 border"><div className="text-xs text-slate-500">Costo estimado</div><div className="font-semibold">{travelMode === 'DRIVING' ? `$${Math.round(costoBencina).toLocaleString('es-CL')}` : '—'}</div></div>
+                                </div>
+
+                                {/* Tramos */}
+                                <div className="mt-4 divide-y">
+                                    {legs.map((leg, i) => (
+                                        <div key={i} className="py-2">
+                                            <div className="text-sm">Tramo {i + 1}: {(leg.start_address || '').split(',')[0]} → {(leg.end_address || '').split(',')[0]}. {leg.duration?.text || ''} • {leg.distance?.text || ''}</div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Firmas (3 columnas, dinámicas) */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 mt-10">
+                                    {selectedRouteCompanies.map((e, idx) => (
+                                        <div key={e.id || idx} className="text-center">
+                                            <div className="border-t-2 border-gray-400 h-10" />
+                                            <div className="text-sm text-gray-600 mt-2 break-words">Firma representante: {e.nombre || 'Empresa'}</div>
+                                        </div>
+                                    ))}
+                                    <div className="text-center">
+                                        <div className="border-t-2 border-gray-400 h-10" />
+                                        <div className="text-sm text-gray-600 mt-2 break-words">
+                                            {routeSupervisor?.nombreCompleto ? `Firma profesor tutor: ${routeSupervisor.nombreCompleto}` : 'Firma profesor tutor'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
             )}
 

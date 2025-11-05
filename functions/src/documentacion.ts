@@ -120,15 +120,29 @@ export const indexDocumentacionDoc = onCall({ secrets: [geminiApiKey] }, async (
 
     // Indexado por chunks con embeddings
     const chunks = chunkText(text || '', 1200).slice(0, 500); // tope defensivo
-    const batch = db.batch();
     const chunkCol = db.collection('documentacion_chunks');
 
-    // Primero elimina chunks previos de este doc (si los hay)
+    // Primero elimina chunks previos de este doc (si los hay) en lotes seguros
     const oldSnap = await chunkCol.where('docId', '==', docId).get();
-    oldSnap.docs.forEach(d => batch.delete(d.ref));
+    if (!oldSnap.empty) {
+      let delBatch = db.batch();
+      let delOps = 0;
+      for (const d of oldSnap.docs) {
+        delBatch.delete(d.ref);
+        delOps++;
+        if (delOps >= 450) {
+          await delBatch.commit();
+          delBatch = db.batch();
+          delOps = 0;
+        }
+      }
+      if (delOps > 0) await delBatch.commit();
+    }
 
-    // Crea embeddings por chunk (secuencial para evitar throttling)
+    // Crea embeddings por chunk (secuencial) y escribe en batches rotativos
     let idx = 0;
+    let batch = db.batch();
+    let ops = 0;
     for (const c of chunks) {
       const { embedding } = await getTextEmbedding(c);
       const ref = chunkCol.doc();
@@ -142,13 +156,15 @@ export const indexDocumentacionDoc = onCall({ secrets: [geminiApiKey] }, async (
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       };
       batch.set(ref, payload);
+      ops++;
       idx++;
-      // Límite defensivo del batch (Firestore máx 500 operaciones)
-      if (idx % 450 === 0) {
+      if (ops >= 450) {
         await batch.commit();
+        batch = db.batch();
+        ops = 0;
       }
     }
-    await batch.commit();
+    if (ops > 0) await batch.commit();
     return { ok: true, characters: (text || "").length, pageCount: pageCount || 0 };
   } catch (err: any) {
     console.error("[indexDocumentacionDoc] Error:", err);
@@ -159,18 +175,28 @@ export const indexDocumentacionDoc = onCall({ secrets: [geminiApiKey] }, async (
 // Buscador muy simple por palabras clave para top-K documentos
 // scoreDoc (legacy) ya no se usa con embeddings
 
-function buildPrompt(question: string, contexts: Array<{ title: string; text: string }>): string {
-  const ctx = contexts
-    .map((c, i) => `Documento ${i + 1}: ${c.title}\n---\n${c.text.substring(0, 6000)}\n`)
+function buildPrompt(
+  question: string,
+  docs: Array<{ idx: number; title: string; text: string }>,
+  history?: Array<{ role: 'user' | 'assistant'; text: string }>,
+): string {
+  const historyText = Array.isArray(history) && history.length > 0
+    ? `Historial reciente (máx 4 turnos):\n${history.slice(-4).map(m => `${m.role === 'user' ? 'Usuario' : 'Asistente'}: ${m.text}`).join('\n')}\n\n`
+    : '';
+  const ctx = docs
+    .map((c) => `Doc ${c.idx}: ${c.title}\n---\n${c.text.substring(0, 1600)}\n`)
     .join("\n\n");
-  return `Eres un asistente institucional. Responde únicamente usando el contexto provisto (reglamentos, protocolos, documentación interna). Si no hay información suficiente, indica claramente que no está en los documentos.
+  return `Eres un asistente institucional. Responde solo con el contexto de los documentos listados. Si la respuesta no está en ellos, responde claramente que no hay información suficiente en los documentos.
 
-Contexto:
+${historyText}Documentos base:
 ${ctx}
 
-Pregunta del usuario: ${question}
+Pregunta: ${question}
 
-Responde de forma breve y clara. Si corresponde, cita el/los documentos con (Doc #).`;
+Instrucciones de respuesta:
+- Sé breve y claro.
+- Si corresponde, cita (Doc N) donde N corresponde al índice indicado arriba.
+- No inventes información fuera de los documentos.`;
 }
 
 // Nota: App Check deshabilitado temporalmente para no bloquear mientras el cliente
@@ -181,7 +207,7 @@ export const documentacionQuery = onCall({ secrets: [geminiApiKey], /* enforceAp
     // Log defensivo: cuando App Check no está presente, aún permitimos la consulta si el usuario está autenticado
     console.warn('[documentacionQuery] App Check token ausente; permitiendo por ahora (solo usuarios autenticados).');
   }
-  const { question, topK = 3, tags: tagsFilter } = request.data || {};
+  const { question, topK = 3, tags: tagsFilter, history } = request.data || {};
   if (!question || typeof question !== "string") {
     throw new HttpsError("invalid-argument", "'question' es requerido.");
   }
@@ -214,26 +240,33 @@ export const documentacionQuery = onCall({ secrets: [geminiApiKey], /* enforceAp
         score: Array.isArray(ch.embedding) ? sim(qVec, ch.embedding) : -1,
       }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, Math.max(3, Math.min(12, Number(topK) * 3 || 9)));
+      .slice(0, Math.max(3, Math.min(60, Number(topK) * 10 || 30)));
 
-    // Unir por doc para citas
-    const seenDocs: Record<string, { title: string; score: number }> = {};
-    const contexts = rankedChunks.map((c) => {
-      if (!seenDocs[c.docId]) seenDocs[c.docId] = { title: c.title, score: c.score };
-      return { title: c.title, text: c.text };
-    });
+    // Si las similitudes son muy bajas, devolvemos una respuesta explícita
+    const bestScore = rankedChunks[0]?.score ?? -1;
+    if (bestScore < 0.1) {
+      return { ok: true, answer: 'No encuentro información suficiente en los documentos para responder esta consulta.', modelUsed: 'n/a', citations: [] };
+    }
+
+    // Agrupar por documento y seleccionar mejores docs y fragmentos
+    const byDoc: Record<string, { title: string; chunks: { text: string; score: number }[] }> = {};
+    for (const rc of rankedChunks) {
+      if (!byDoc[rc.docId]) byDoc[rc.docId] = { title: rc.title, chunks: [] };
+      byDoc[rc.docId].chunks.push({ text: rc.text, score: rc.score });
+    }
+    const docEntries = Object.entries(byDoc)
+      .map(([docId, v]) => ({ docId, title: v.title, topChunkScore: Math.max(...v.chunks.map(c => c.score)), chunks: v.chunks.sort((a,b)=>b.score-a.score).slice(0, 2) }))
+      .sort((a,b) => b.topChunkScore - a.topChunkScore)
+      .slice(0, Math.max(1, Math.min(4, Number(topK) || 3)));
+
+    const contexts = docEntries.map((d, i) => ({ idx: i + 1, title: d.title, text: d.chunks.map(c => c.text).join('\n\n') }));
 
     // Construir prompt y usar modelo PRO para mayor fidelidad (fallback implícito en helper)
-    const prompt = buildPrompt(question, contexts);
-    const { text: aiResponseText, modelUsed } = await callGemini({ prompt, mode: 'standard', config: { maxOutputTokens: 1024, temperature: 0.2 } });
+  const prompt = buildPrompt(question, contexts as Array<{ idx: number; title: string; text: string }>, Array.isArray(history) ? history : undefined);
+  const { text: aiResponseText, modelUsed } = await callGemini({ prompt, mode: 'standard', config: { maxOutputTokens: 2048, temperature: 0.2 } });
 
-    // Generar citas deterministas
-    const citations = Object.keys(seenDocs).slice(0, Number(topK) || 3).map((docId, i) => ({
-      index: i + 1,
-      id: docId,
-      title: seenDocs[docId].title,
-      storagePath: undefined,
-    }));
+  // Generar citas basadas en los documentos seleccionados
+  const citations = docEntries.map((d, i) => ({ index: i + 1, id: d.docId, title: d.title, storagePath: undefined }));
 
     return { ok: true, answer: aiResponseText, modelUsed, citations };
   } catch (err: any) {

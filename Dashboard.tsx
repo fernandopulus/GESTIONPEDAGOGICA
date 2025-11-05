@@ -12,8 +12,7 @@ import CrearHorarios from './components/modules/CrearHorarios';
 import SeguimientoAcciones from './components/modules/SeguimientoAcciones';
 import PlanificacionDocente from './components/modules/PlanificacionDocente';
 import CalendarioAcademico from './components/modules/CalendarioAcademico';
-import MuroAnuncios from './components/modules/MuroAnuncios';
-import GeneradorActas from './components/modules/GeneradorActas';
+ 
 import EvaluacionAprendizajes from './components/modules/EvaluacionAprendizajes';
 import Administracion from './components/modules/Administracion';
 import MaterialesDidacticosSubmodule from './components/modules/MaterialesDidacticosSubmodule';
@@ -25,7 +24,6 @@ import AsistenciaEmpresa from './components/modules/AsistenciaEmpresa';
 import AsistenciaDual from './components/modules/AsistenciaDual';
 import EvaluacionesFormativas from './components/modules/EvaluacionesFormativas';
 import AcompanamientoDocente from './components/modules/AcompanamientoDocente';
-import MensajeriaInterna from './components/modules/MensajeriaInterna';
 import Interdisciplinario from './components/modules/Interdisciplinario';
 import Panol from './components/modules/Panol';
 import RecursosAprendizaje from './components/modules/RecursosAprendizaje';
@@ -148,9 +146,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onLogout, onUserUpda
         
         // Módulos compartidos
         if (activeModule.name === 'Calendario Académico') return <CalendarioAcademico profile={profile} />;
-        if (activeModule.name === 'Muro de Anuncios') return <MuroAnuncios currentUser={currentUser} />;
-        if (activeModule.name === 'Mensajería Interna') return <MensajeriaInterna currentUser={currentUser} refreshUnreadCount={refreshUnreadCount} />;
-        if (activeModule.name === 'Generador de Actas') return <GeneradorActas />;
+        
+        
 
         if (profile === Profile.SUBDIRECCION) {
             if (activeModule.name === 'Dashboard') {

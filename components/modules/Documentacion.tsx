@@ -44,8 +44,10 @@ const Documentacion: React.FC<Props> = ({ currentUser }) => {
     setQuestion('');
     setLoading(true);
     try {
-  const activeTags = selectedTags.length > 0 ? selectedTags : undefined;
-  const res = await askDocumentacion(q, 3, activeTags);
+      const activeTags = selectedTags.length > 0 ? selectedTags : undefined;
+      // Enviar historial breve (últimos 4 turnos) para mejorar coherencia en seguimientos
+      const shortHistory = chat.slice(-4).map(m => ({ role: m.role, text: m.text }));
+      const res = await askDocumentacion(q, 3, activeTags, shortHistory);
       const citations = Array.isArray(res.citations)
         ? res.citations.map((c) => ({ index: c.index, id: c.id, title: c.title }))
         : [];

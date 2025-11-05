@@ -96,6 +96,29 @@ service cloud.firestore {
       allow create, update, delete: if isSubdirOnly();
     }
 
+    // Intranet: Notas rápidas (post-it)
+    match /intranet_notes/{id} {
+      // Lectura: Subdirección, Profesorado, Coordinación TP
+      allow read: if isSignedIn() && (
+        currentUserProfile() == 'SUBDIRECCION' ||
+        currentUserProfile() == 'PROFESORADO' ||
+        currentUserProfile() == 'COORDINACION_TP'
+      );
+      // Creación/Actualización: Subdirección, Profesorado, Coordinación TP
+      allow create, update: if isSignedIn() && (
+        currentUserProfile() == 'SUBDIRECCION' ||
+        currentUserProfile() == 'PROFESORADO' ||
+        currentUserProfile() == 'COORDINACION_TP'
+      );
+      // Eliminación: mismos perfiles o el autor de la nota
+      allow delete: if isSignedIn() && (
+        currentUserProfile() == 'SUBDIRECCION' ||
+        currentUserProfile() == 'PROFESORADO' ||
+        currentUserProfile() == 'COORDINACION_TP' ||
+        (resource.data.autorId != null && resource.data.autorId == request.auth.uid)
+      );
+    }
+
     // Acompañamientos
     match /acompanamientos/{id} {
   allow read: if isAdminOrSubdir() || isOwner(resource.data);
@@ -116,10 +139,10 @@ service cloud.firestore {
     // - Staff (ADMINISTRADOR o SUBDIRECCION): full access
     // - Usuario autenticado: puede leer SOLO su propio documento (ID = su email)
     match /usuarios/{uid} {
-      // Lectura: Staff (ADMIN/Subdir) o perfiles operativos (Profesorado y Coordinación TP),
-      // o el propio usuario (por email como id de doc)
-      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP' ||
-                   (isSignedIn() && uid == request.auth.token.email);
+      // Lectura: Staff (ADMIN/Subdir), Profesorado, Coordinación TP, o cualquier usuario autenticado
+      // (apertura defensiva para evitar fallas cuando el perfil aún no está sembrado ni en claims ni en Firestore).
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP' || isSignedIn();
+      // Escritura: solo Staff/Admin
       allow create, update, delete: if isAdminOrSubdir();
     }
 
@@ -211,8 +234,8 @@ service cloud.firestore {
     // Gestión de Empresas: empresas_practicas
     // =====================
     match /empresas_practicas/{id} {
-      // Lectura: Staff/Admin, Profesorado y Coordinación TP
-      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      // Lectura: permitir a cualquier usuario autenticado para evitar bloqueos en vistas compartidas
+      allow read: if isSignedIn() || isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
       // Escritura: Staff/Admin, Profesorado y Coordinación TP
       allow create, update: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
       // Eliminación: Staff/Admin o Profesorado
@@ -479,8 +502,8 @@ service cloud.firestore {
     // Rutas de Supervisión (gestión de empresas)
     // =====================
     match /rutas_supervision/{id} {
-      // Lectura: Staff/Admin, Profesorado y Coordinación TP
-      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      // Lectura: permitir a cualquier usuario autenticado para evitar errores de permisos en snapshot listener
+      allow read: if isSignedIn() || isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
       // Escritura: Staff/Admin, Profesorado y Coordinación TP
       allow create, update: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
       // Eliminación: Staff/Admin o Profesorado

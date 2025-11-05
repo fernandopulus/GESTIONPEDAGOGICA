@@ -192,7 +192,7 @@ const TopBar: React.FC<TopBarProps> = ({
                   ))}
                   {unreadAnnouncements.length === 0 && <li className="p-2 text-sm text-slate-500 dark:text-slate-400">No hay anuncios nuevos.</li>}
                 </ul>
-                <button onClick={() => onNavigate('Muro de Anuncios')} className="w-full mt-2 text-center text-sm font-semibold text-amber-600 hover:underline p-2">Ver todo</button>
+                {/* Enlace removido: módulo "Muro de Anuncios" ya no existe */}
               </div>
             </Dropdown>
 
@@ -283,7 +283,7 @@ const TopBar: React.FC<TopBarProps> = ({
                   ))}
                   {recentMessages.length === 0 && <li className="p-2 text-sm text-slate-500 dark:text-slate-400">No hay mensajes recientes.</li>}
                 </ul>
-                <button onClick={() => onNavigate('Mensajería Interna')} className="w-full mt-2 text-center text-sm font-semibold text-amber-600 hover:underline p-2">Ir a la bandeja</button>
+                {/* Enlace removido: módulo "Mensajería Interna" eliminado */}
               </div>
             </Dropdown>
 

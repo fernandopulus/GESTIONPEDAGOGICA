@@ -11,8 +11,7 @@ import CrearHorarios from './modules/CrearHorarios';
 import SeguimientoAcciones from './modules/SeguimientoAcciones';
 import PlanificacionDocente from './modules/PlanificacionDocente';
 import CalendarioAcademico from './modules/CalendarioAcademico';
-import MuroAnuncios from './modules/MuroAnuncios';
-import GeneradorActas from './modules/GeneradorActas';
+ 
 import EvaluacionAprendizajes from './modules/EvaluacionAprendizajes';
 import Administracion from './modules/Administracion';
 import SeguimientoDual from './modules/SeguimientoDual';
@@ -23,7 +22,6 @@ import AsistenciaEmpresa from './modules/AsistenciaEmpresa';
 import AsistenciaDual from './modules/AsistenciaDual';
 import EvaluacionesFormativas from './modules/EvaluacionesFormativas';
 import AcompanamientoDocente from './modules/AcompanamientoDocente';
-import MensajeriaInterna from './modules/MensajeriaInterna';
 import Interdisciplinario from './modules/Interdisciplinario';
 import Panol from './modules/Panol';
 import RecursosAprendizaje from './modules/RecursosAprendizaje';
@@ -131,34 +129,34 @@ const Dashboard: React.FC<DashboardProps> = ({
     [modules, handleModuleSelect]
   );
 
-  // ===== Sidebar con estilo emulado =====
+  // ===== Sidebar (estilo minimal) =====
   const SidebarContent: React.FC = () => (
     <>
       {/* Header */}
-      <div className="flex items-center h-20 px-4 border-b border-white/10 bg-[#121926]">
+      <div className="flex items-center h-16 px-4 border-b border-slate-200 bg-white">
         <div className="flex items-center gap-3">
           {/* Círculo amarillo + ícono forzado a currentColor */}
-          <div className="w-9 h-9 rounded-full bg-amber-400 flex items-center justify-center shadow-inner">
+          <div className="w-9 h-9 rounded-full bg-amber-400 flex items-center justify-center">
             <span className="text-slate-900 inline-flex items-center justify-center">
               <LirLogoIcon className="w-4 h-4" />
             </span>
           </div>
           {!isSidebarCollapsed && (
-            <span className="text-white font-extrabold text-xl tracking-tight">Gestión LIR</span>
+            <span className="text-blue-900 font-extrabold text-xl tracking-tight">Gestión LIR</span>
           )}
         </div>
         <button
           type="button"
           onClick={() => setSidebarCollapsed((s) => !s)}
-          className="ml-auto w-9 h-9 inline-flex items-center justify-center rounded-full hover:bg-white/10 transition"
+          className="ml-auto w-9 h-9 inline-flex items-center justify-center rounded-md hover:bg-slate-100 transition"
           title={isSidebarCollapsed ? 'Expandir' : 'Colapsar'}
         >
-          {isSidebarCollapsed ? <ChevronRight className="w-5 h-5 text-slate-200" /> : <ChevronLeft className="w-5 h-5 text-slate-200" />}
+          {isSidebarCollapsed ? <ChevronRight className="w-5 h-5 text-slate-600" /> : <ChevronLeft className="w-5 h-5 text-slate-600" />}
         </button>
       </div>
 
       {/* Navegación: agrupada para PROFESORADO, SUBDIRECCIÓN y COORDINACIÓN TP; plana para otros perfiles o colapsado */}
-      <nav className="flex-1 overflow-y-auto p-3 bg-[#1B2433]">
+      <nav className="flex-1 overflow-y-auto p-3 bg-white">
         {profile === Profile.PROFESORADO && !isSidebarCollapsed ? (
           <div className="space-y-3">
             {[
@@ -180,7 +178,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               {
                 id: 'herramientas',
                 title: 'Herramientas',
-                items: ['Documentación', 'Muro de Anuncios', 'Mensajería Interna', 'Generador de Actas'],
+                items: ['Documentación'],
               },
             ].map((grp) => {
               const isOpen = !!expandedSidebarGroups[grp.id];
@@ -192,15 +190,15 @@ const Dashboard: React.FC<DashboardProps> = ({
               if (groupModules.length === 0) return null;
 
               return (
-                <div key={grp.id} className="rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+                <div key={grp.id} className="rounded-xl bg-white border border-slate-200 overflow-hidden">
                   <button
                     type="button"
-                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/10 transition"
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition"
                     onClick={() => setExpandedSidebarGroups((p) => ({ ...p, [grp.id]: !p[grp.id] }))}
                     aria-expanded={isOpen}
                   >
-                    <span className="text-sm font-semibold text-white/90">{grp.title}</span>
-                    <ChevronDown className={`w-4 h-4 text-white/70 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                    <span className="text-sm font-semibold text-blue-900">{grp.title}</span>
+                    <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                   </button>
                   {isOpen && (
                     <div className="px-2 pb-2">
@@ -210,11 +208,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                           <button
                             key={mod.name}
                             onClick={() => handleModuleSelect(mod)}
-                            className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-xl transition-all mt-1
-                              ${isActive ? 'bg-amber-400 text-slate-900 font-bold shadow' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                            className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-lg transition-all mt-1
+                              ${isActive ? 'bg-amber-400/90 text-slate-900 font-semibold' : 'text-blue-900 hover:bg-slate-50'}`}
                             title={mod.name}
                           >
-                            <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>{mod.icon}</span>
+                            <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-blue-900'}`}>{mod.icon}</span>
                             <span className="text-[0.98rem] leading-tight text-left">{mod.name}</span>
                           </button>
                         );
@@ -229,17 +227,17 @@ const Dashboard: React.FC<DashboardProps> = ({
               'Intranet','Planificación','Recursos de Aprendizaje','Interdisciplinario','Inclusión',
               'Evaluación de Aprendizajes','Evaluaciones Formativas','Evaluación de Competencias','Actividades Remotas','SIMCE',
               'Análisis Taxonómico','Mis Acompañamientos','Desarrollo Profesional',
-              'Muro de Anuncios','Mensajería Interna','Generador de Actas'
+              
             ].includes(m.name)).length > 0 && (
-              <div className="rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
-                <div className="px-4 py-3 text-sm font-semibold text-white/90">Otros</div>
+              <div className="rounded-xl bg-white border border-slate-200 overflow-hidden">
+                <div className="px-4 py-3 text-sm font-semibold text-blue-900">Otros</div>
                 <div className="px-2 pb-2">
                   {modules
                     .filter((m) => ![
                       'Intranet','Planificación','Recursos de Aprendizaje','Interdisciplinario','Inclusión',
                       'Evaluación de Aprendizajes','Evaluaciones Formativas','Evaluación de Competencias','Actividades Remotas','SIMCE',
                       'Análisis Taxonómico','Mis Acompañamientos','Desarrollo Profesional',
-                      'Muro de Anuncios','Mensajería Interna','Generador de Actas'
+                      
                     ].includes(m.name))
                     .map((mod) => {
                       const isActive = activeModule?.name === mod.name;
@@ -247,11 +245,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                         <button
                           key={mod.name}
                           onClick={() => handleModuleSelect(mod)}
-                          className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-xl transition-all mt-1
-                            ${isActive ? 'bg-amber-400 text-slate-900 font-bold shadow' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                          className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-lg transition-all mt-1
+                              ${isActive ? 'bg-amber-400/90 text-slate-900 font-semibold' : 'text-blue-900 hover:bg-slate-50'}`}
                           title={mod.name}
                         >
-                          <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>{mod.icon}</span>
+                          <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-blue-900'}`}>{mod.icon}</span>
                           <span className="text-[0.98rem] leading-tight text-left">{mod.name}</span>
                         </button>
                       );
@@ -288,7 +286,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               {
                 id: 'sd_herramientas',
                 title: 'Herramientas',
-                items: ['Documentación', 'Calendario Académico', 'Muro de Anuncios', 'Mensajería Interna', 'Generador de Actas'],
+                items: ['Documentación', 'Calendario Académico'],
               },
             ].map((grp) => {
               const isOpen = !!expandedSidebarGroups[grp.id];
@@ -297,15 +295,15 @@ const Dashboard: React.FC<DashboardProps> = ({
                 .filter(Boolean) as Module[];
               if (groupModules.length === 0) return null;
               return (
-                <div key={grp.id} className="rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+                <div key={grp.id} className="rounded-xl bg-white border border-slate-200 overflow-hidden">
                   <button
                     type="button"
-                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/10 transition"
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition"
                     onClick={() => setExpandedSidebarGroups((p) => ({ ...p, [grp.id]: !p[grp.id] }))}
                     aria-expanded={isOpen}
                   >
-                    <span className="text-sm font-semibold text-white/90">{grp.title}</span>
-                    <ChevronDown className={`w-4 h-4 text-white/70 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                    <span className="text-sm font-semibold text-blue-900">{grp.title}</span>
+                    <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                   </button>
                   {isOpen && (
                     <div className="px-2 pb-2">
@@ -315,11 +313,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                           <button
                             key={mod.name}
                             onClick={() => handleModuleSelect(mod)}
-                            className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-xl transition-all mt-1
-                              ${isActive ? 'bg-amber-400 text-slate-900 font-bold shadow' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                            className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-lg transition-all mt-1
+                              ${isActive ? 'bg-amber-400/90 text-slate-900 font-semibold' : 'text-blue-900 hover:bg-slate-50'}`}
                             title={mod.name}
                           >
-                            <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>{mod.icon}</span>
+                            <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-blue-900'}`}>{mod.icon}</span>
                             <span className="text-[0.98rem] leading-tight text-left">{mod.name}</span>
                           </button>
                         );
@@ -344,12 +342,10 @@ const Dashboard: React.FC<DashboardProps> = ({
               'Análisis Taxonómico',
               'Dashboard',
               'Calendario Académico',
-              'Muro de Anuncios',
-              'Mensajería Interna',
-              'Generador de Actas',
+              
             ].includes(m.name)).length > 0 && (
-              <div className="rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
-                <div className="px-4 py-3 text-sm font-semibold text-white/90">Otros</div>
+              <div className="rounded-xl bg-white border border-slate-200 overflow-hidden">
+                <div className="px-4 py-3 text-sm font-semibold text-blue-900">Otros</div>
                 <div className="px-2 pb-2">
                   {modules
                     .filter((m) => ![
@@ -365,9 +361,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       'Análisis Taxonómico',
                       'Dashboard',
                       'Calendario Académico',
-                      'Muro de Anuncios',
-                      'Mensajería Interna',
-                      'Generador de Actas',
+                      
                     ].includes(m.name))
                     .map((mod) => {
                       const isActive = activeModule?.name === mod.name;
@@ -375,11 +369,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                         <button
                           key={mod.name}
                           onClick={() => handleModuleSelect(mod)}
-                          className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-xl transition-all mt-1
-                            ${isActive ? 'bg-amber-400 text-slate-900 font-bold shadow' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                          className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-lg transition-all mt-1
+                              ${isActive ? 'bg-amber-400/90 text-slate-900 font-semibold' : 'text-blue-900 hover:bg-slate-50'}`}
                           title={mod.name}
                         >
-                          <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>{mod.icon}</span>
+                          <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-blue-900'}`}>{mod.icon}</span>
                           <span className="text-[0.98rem] leading-tight text-left">{mod.name}</span>
                         </button>
                       );
@@ -416,10 +410,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                 title: 'Utilidades',
                 items: [
                   'Documentación',
-                  'Mensajería Interna',
-                  'Muro de Anuncios',
                   'Calendario Académico',
-                  'Generador de Actas',
+                  
                   'Multicopias',
                 ],
               },
@@ -432,15 +424,15 @@ const Dashboard: React.FC<DashboardProps> = ({
               if (groupModules.length === 0) return null;
 
               return (
-                <div key={grp.id} className="rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+                <div key={grp.id} className="rounded-xl bg-white border border-slate-200 overflow-hidden">
                   <button
                     type="button"
-                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/10 transition"
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition"
                     onClick={() => setExpandedSidebarGroups((p) => ({ ...p, [grp.id]: !p[grp.id] }))}
                     aria-expanded={isOpen}
                   >
-                    <span className="text-sm font-semibold text-white/90">{grp.title}</span>
-                    <ChevronDown className={`w-4 h-4 text-white/70 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                    <span className="text-sm font-semibold text-blue-900">{grp.title}</span>
+                    <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                   </button>
                   {isOpen && (
                     <div className="px-2 pb-2">
@@ -450,11 +442,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                           <button
                             key={mod.name}
                             onClick={() => handleModuleSelect(mod)}
-                            className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-xl transition-all mt-1
-                              ${isActive ? 'bg-amber-400 text-slate-900 font-bold shadow' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                            className={`w-full group flex items-center justify-start px-3 gap-3 py-2 rounded-lg transition-all mt-1
+                              ${isActive ? 'bg-amber-400/90 text-slate-900 font-semibold' : 'text-blue-900 hover:bg-slate-50'}`}
                             title={mod.name}
                           >
-                            <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>{mod.icon}</span>
+                            <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-blue-900'}`}>{mod.icon}</span>
                             <span className="text-[0.98rem] leading-tight text-left">{mod.name}</span>
                           </button>
                         );
@@ -491,11 +483,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                   key={mod.name}
                   ref={(el) => (itemRefs.current[i] = el)}
                   onClick={() => handleModuleSelect(mod)}
-                  className={`w-full group flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'justify-start px-4'} gap-3 py-3 rounded-2xl transition-all
-                    ${isActive ? 'bg-amber-400 text-slate-900 font-bold shadow-md' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                  className={`w-full group flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'justify-start px-4'} gap-3 py-3 rounded-xl transition-all
+                    ${isActive ? 'bg-amber-400/90 text-slate-900 font-semibold' : 'text-blue-900 hover:bg-slate-50'}`}
                   title={isSidebarCollapsed ? mod.name : undefined}
                 >
-                  <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-300 group-hover:text-white'}`}>{mod.icon}</span>
+                  <span className={`shrink-0 ${isActive ? 'text-slate-900' : 'text-blue-900'}`}>{mod.icon}</span>
                   {!isSidebarCollapsed && (
                     <span className="text-[1.05rem] leading-tight whitespace-normal break-words text-left">{mod.name}</span>
                   )}
@@ -511,7 +503,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const renderContent = () => {
     if (!activeModule) {
       return (
-        <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-md h-full w-full flex items-center justify-center">
+        <div className="bg-white dark:bg-slate-800 p-8 rounded-xl border border-slate-200 dark:border-slate-700 h-full w-full flex items-center justify-center">
           <p className="text-slate-500 dark:text-slate-400 text-lg">Seleccione un módulo del menú para comenzar.</p>
         </div>
       );
@@ -521,9 +513,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   if (activeModule.name === 'Intranet') return <Intranet currentUser={currentUser} />;
     if (activeModule.name === 'Documentación') return <Documentacion currentUser={currentUser} />;
     if (activeModule.name === 'Calendario Académico') return <CalendarioAcademico profile={profile} />;
-    if (activeModule.name === 'Muro de Anuncios') return <MuroAnuncios currentUser={currentUser} />;
-    if (activeModule.name === 'Mensajería Interna') return <MensajeriaInterna currentUser={currentUser} refreshUnreadCount={refreshUnreadCount} />;
-    if (activeModule.name === 'Generador de Actas') return <GeneradorActas />;
+    
+    
+    
     if (activeModule.name === 'Desarrollo Profesional') return <DesarrolloProfesionalDocente currentUser={currentUser} />;
 
     // ===== Por perfil =====
@@ -582,7 +574,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
     // Fallback
     return (
-      <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-md h-full w-full animate-fade-in">
+      <div className="bg-white dark:bg-slate-800 p-8 rounded-xl border border-slate-200 dark:border-slate-700 h-full w-full animate-fade-in">
         <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-6">{activeModule.name}</h1>
         <div className="border-l-4 border-amber-400 pl-4">
           <p className="text-slate-600 dark:text-slate-400 text-lg">
@@ -594,7 +586,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-b from-slate-100 to-slate-50 dark:from-slate-950 dark:to-slate-900">
+    <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
       <TopBar
         currentUser={currentUser}
         onLogout={onLogout}
@@ -619,9 +611,9 @@ const Dashboard: React.FC<DashboardProps> = ({
         {/* Sidebar */}
         <aside
           className={`fixed md:relative z-30 inset-y-0 left-0 ${isSidebarCollapsed ? 'w-16' : 'w-72'} 
-          bg-[#0F1724] text-white flex flex-col transform md:translate-x-0
+          bg-white text-blue-900 flex flex-col transform md:translate-x-0
           ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
-          transition-all duration-300 ease-in-out border-r border-white/10`}
+          transition-all duration-300 ease-in-out border-r border-slate-200`}
         >
           <SidebarContent />
         </aside>
@@ -633,14 +625,14 @@ const Dashboard: React.FC<DashboardProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <button
-                  className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-xl bg-white dark:bg-slate-800 shadow hover:shadow-md transition"
+                  className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 transition"
                   onClick={() => setSidebarOpen(true)}
                   title="Abrir menú"
                 >
                   <Menu className="w-5 h-5" />
                 </button>
                 {activeModule?.icon && (
-                  <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-white dark:bg-slate-800 shadow">
+                  <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                     {activeModule.icon}
                   </span>
                 )}

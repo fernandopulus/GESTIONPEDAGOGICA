@@ -133,9 +133,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Seguimiento de acciones pedagógicas', icon: <TrendingUpIcon /> },
         { name: 'Inclusión', icon: <AcademicCapIcon /> },
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
-        { name: 'Muro de Anuncios', icon: <BellIcon /> },
-        { name: 'Mensajería Interna', icon: <MessageSquareIcon /> },
-        { name: 'Generador de Actas', icon: <DocumentTextIcon /> },
+        
     ],
     [Profile.PROFESORADO]: [
         { name: 'Intranet', icon: <HomeIcon /> },
@@ -155,9 +153,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Desarrollo Profesional', icon: <AcademicCapIcon /> },
         { name: 'Evaluación de Competencias', icon: <TargetIcon /> },
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
-        { name: 'Muro de Anuncios', icon: <BellIcon /> },
-        { name: 'Mensajería Interna', icon: <MessageSquareIcon /> },
-        { name: 'Generador de Actas', icon: <ClipboardListIcon /> },
+        
     ],
     [Profile.COORDINACION_TP]: [
         { name: 'Intranet', icon: <HomeIcon /> },
@@ -170,11 +166,9 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Multicopias', icon: <ClipboardListIcon /> },
         { name: 'Gestión de Empresas', icon: <BuildingIcon /> },
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
-        { name: 'Muro de Anuncios', icon: <BellIcon /> },
-        { name: 'Mensajería Interna', icon: <MessageSquareIcon /> },
+        
         { name: 'Alternancia TP', icon: '🔄' }, // Ícono de ciclo o sincronización
         { name: 'Desarrollo Profesional', icon: <AcademicCapIcon /> },
-        { name: 'Generador de Actas', icon: <DocumentTextIcon /> },
     ],
     [Profile.ESTUDIANTE]: [
         { name: 'Documentación', icon: <DocumentTextIcon /> },
@@ -184,8 +178,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Tareas Interdisciplinarias', icon: <GlobeAltIcon /> },
         { name: 'Asistencia a Empresa', icon: <ClockIcon /> },
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
-        { name: 'Muro de Anuncios', icon: <BellIcon /> },
-        { name: 'Mensajería Interna', icon: <MessageSquareIcon /> },
+        
     ]
 };
 

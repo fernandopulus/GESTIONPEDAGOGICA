@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { User, Profile, IntranetEntry } from '../../types';
+import { User, Profile, IntranetEntry, IntranetNote } from '../../types';
 import { listenIntranetEntries, createIntranetEntry, updateIntranetEntry, deleteIntranetEntry } from '../../src/firebaseHelpers/intranetHelper';
 import { Plus, Tag, ExternalLink, Image as ImageIcon, Video as VideoIcon, Pin, Trash2, Edit3, Save, X, Eye, EyeOff, UploadCloud, Loader2, FileText, Calendar, Megaphone, BookOpen, Users, Settings, Star, MessageSquare, Bell, ClipboardList, CheckCircle, AlertTriangle, MapPin, GraduationCap, Folder, Link as LinkIcon, Wand2, Briefcase, Building2, FileSpreadsheet, BarChart3, PieChart, Heart, Lightbulb, Rocket, Globe, Map, Clock3, Mail, Phone, Camera, PlayCircle } from 'lucide-react';
 import UltraSafeRenderer from '../common/UltraSafeRenderer';
 import { uploadIntranetFile, deleteIntranetFile } from '../../src/firebaseHelpers/uploads';
+import { listenIntranetNotes, createIntranetNote, updateIntranetNote, deleteIntranetNote } from '../../src/firebaseHelpers/intranetNotes';
+import { Pin as PinIcon } from 'lucide-react';
 
 interface Props {
   currentUser: User;
@@ -390,6 +392,7 @@ const Intranet: React.FC<Props> = ({ currentUser }) => {
   const isSub = currentUser.profile === Profile.SUBDIRECCION;
   const canView = [Profile.SUBDIRECCION, Profile.PROFESORADO, Profile.COORDINACION_TP].includes(currentUser.profile);
   const canPersonalize = [Profile.PROFESORADO, Profile.COORDINACION_TP].includes(currentUser.profile);
+  const canCreateNote = [Profile.SUBDIRECCION, Profile.PROFESORADO, Profile.COORDINACION_TP].includes(currentUser.profile);
 
   const [entries, setEntries] = useState<IntranetEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -401,6 +404,10 @@ const Intranet: React.FC<Props> = ({ currentUser }) => {
   const [newLink, setNewLink] = useState<{ titulo?: string; url: string }>({ url: '' });
   const [imgUploadPct, setImgUploadPct] = useState<number | null>(null);
   const [vidUploadPct, setVidUploadPct] = useState<number | null>(null);
+  // Notas rápidas (post-it)
+  const [notes, setNotes] = useState<IntranetNote[]>([]);
+  const [loadingNotes, setLoadingNotes] = useState<boolean>(true);
+  const [noteForm, setNoteForm] = useState<{ titulo: string; mensaje: string; color: IntranetNote['color'] }>({ titulo: '', mensaje: '', color: 'yellow' });
   // Preferencias por usuario (solo en este navegador)
   type UserPrefs = { order: string[]; colors: Record<string, string>; version: number };
   const [prefs, setPrefs] = useState<UserPrefs>({ order: [], colors: {}, version: 1 });
@@ -474,6 +481,20 @@ const Intranet: React.FC<Props> = ({ currentUser }) => {
       console.error('Error al suscribirse a intranet:', e);
       setError('No se pudo cargar la intranet.');
       setLoading(false);
+    });
+    return () => { try { unsub && unsub(); } catch {} };
+  }, [canView]);
+
+  // Suscripción a notas rápidas
+  useEffect(() => {
+    if (!canView) return;
+    setLoadingNotes(true);
+    const unsub = listenIntranetNotes((rows) => {
+      setNotes(rows);
+      setLoadingNotes(false);
+    }, (e) => {
+      console.error('Error al suscribirse a intranet_notes:', e);
+      setLoadingNotes(false);
     });
     return () => { try { unsub && unsub(); } catch {} };
   }, [canView]);
@@ -744,6 +765,114 @@ const Intranet: React.FC<Props> = ({ currentUser }) => {
             </button>
           )}
         </div>
+      </div>
+
+      {/* Notas rápidas (Post-it) */}
+      <div className="bg-white dark:bg-slate-800 p-5 md:p-6 rounded-xl shadow border border-slate-200 dark:border-slate-700">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Notas rápidas</h3>
+          {canCreateNote && (
+            <div className="flex gap-2">
+              <select
+                value={noteForm.color}
+                onChange={(e)=>setNoteForm(prev=>({ ...prev, color: e.target.value as any }))}
+                className="rounded-md border border-slate-300 px-2 py-1 text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                title="Color del post-it"
+              >
+                <option value="yellow">Amarillo</option>
+                <option value="lime">Verde</option>
+                <option value="sky">Celeste</option>
+                <option value="red">Rojo</option>
+                <option value="violet">Violeta</option>
+              </select>
+              <button
+                onClick={async ()=>{
+                  if (!noteForm.titulo || !noteForm.mensaje) { alert('Título y mensaje son obligatorios'); return; }
+                  try {
+                    await createIntranetNote({ titulo: noteForm.titulo, mensaje: noteForm.mensaje, color: noteForm.color });
+                    setNoteForm({ titulo: '', mensaje: '', color: noteForm.color });
+                  } catch (e: any) {
+                    alert(e?.message || 'No se pudo crear la nota');
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-700 dark:bg-amber-500 dark:text-slate-900 dark:hover:bg-amber-600"
+              >
+                <Plus className="w-4 h-4" /> Agregar Nota
+              </button>
+            </div>
+          )}
+        </div>
+        {canCreateNote && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+            <input
+              value={noteForm.titulo}
+              onChange={(e)=>setNoteForm(prev=>({ ...prev, titulo: e.target.value }))}
+              placeholder="Título de la nota"
+              className="rounded-md border border-slate-300 px-3 py-2 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+            />
+            <input
+              value={noteForm.mensaje}
+              onChange={(e)=>setNoteForm(prev=>({ ...prev, mensaje: e.target.value }))}
+              placeholder="Mensaje (breve)"
+              className="rounded-md border border-slate-300 px-3 py-2 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+            />
+            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <PinIcon className="w-4 h-4" /> Usa estas notas para comunicar situaciones importantes.
+            </div>
+          </div>
+        )}
+
+        {loadingNotes ? (
+          <div className="text-slate-600 dark:text-slate-300">Cargando notas…</div>
+        ) : notes.length === 0 ? (
+          <div className="text-slate-500 dark:text-slate-400">No hay notas aún.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
+            {notes.map((note, idx) => {
+              const colorMap: Record<NonNullable<IntranetNote['color']>, string> = {
+                yellow: 'bg-yellow-200 dark:bg-yellow-800/50',
+                lime: 'bg-lime-200 dark:bg-lime-800/50',
+                sky: 'bg-sky-200 dark:bg-sky-800/50',
+                red: 'bg-red-200 dark:bg-red-800/50',
+                violet: 'bg-violet-200 dark:bg-violet-800/50',
+              };
+              const rotate = ['-rotate-2','rotate-1','rotate-2','-rotate-1','rotate-1'][idx % 5];
+              const canDeleteNote = currentUser.profile === Profile.SUBDIRECCION || note.autor === currentUser.nombreCompleto;
+              const canPinNote = [Profile.SUBDIRECCION, Profile.PROFESORADO].includes(currentUser.profile);
+              return (
+                <div key={note.id} className={`font-handwritten text-slate-800 dark:text-slate-200 shadow-xl p-4 flex flex-col relative transition-transform duration-300 ease-in-out hover:scale-105 hover:rotate-0 hover:z-10 ${colorMap[note.color || 'yellow']} transform ${rotate}`}>
+                  {note.destacado && (
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2"><span className="text-5xl" role="img" aria-label="Nota fijada">📌</span></div>
+                  )}
+                  <h4 className="text-3xl font-bold border-b-2 border-slate-500/30 dark:border-slate-400/30 pb-2 mb-3 break-words">{note.titulo}</h4>
+                  <p className="flex-grow text-2xl whitespace-pre-wrap mb-4 break-words min-h-[80px]">{note.mensaje}</p>
+                  <div className="font-sans text-xs mt-auto pt-2 border-t border-slate-500/30 dark:border-slate-400/30 flex justify-between items-end">
+                    <div>
+                      <p className="font-bold">{note.autor}</p>
+                      <p className="text-slate-600 dark:text-slate-400">{new Date(note.fechaPublicacion).toLocaleString('es-CL')}</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {canPinNote && (
+                        <button
+                          onClick={async ()=>{ try { await updateIntranetNote(note.id, { destacado: !note.destacado }); } catch(e) { alert('No se pudo fijar'); } }}
+                          title={note.destacado? 'Desfijar':'Fijar'}
+                          className="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded-full transition-colors"
+                        >
+                          <span className={`text-xl transition-opacity ${note.destacado ? 'opacity-100' : 'opacity-30'}`}>📌</span>
+                        </button>
+                      )}
+                      {canDeleteNote && (
+                        <button onClick={async ()=>{ if (!confirm('¿Eliminar nota?')) return; try { await deleteIntranetNote(note.id); } catch(e) { alert('No se pudo eliminar'); } }} title="Eliminar" className="text-red-600 hover:text-red-800 p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded-full transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Editor para Subdirección */}

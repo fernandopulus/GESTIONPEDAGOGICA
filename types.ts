@@ -151,6 +151,18 @@ export interface Anuncio {
   destinatarios?: DestinatariosAnuncio;
 }
 
+// --- Intranet: Notas rápidas (post-it) ---
+export interface IntranetNote {
+  id: string;
+  titulo: string;
+  mensaje: string;
+  autor: string;
+  autorId?: string;
+  fechaPublicacion: string; // ISO String
+  destacado: boolean;
+  color?: 'yellow' | 'lime' | 'sky' | 'red' | 'violet';
+}
+
 // --- Mensajería ---
 
 export interface MensajeInterno {
@@ -1159,6 +1171,7 @@ export interface RutaSupervision {
   startPoint: { label: string; coords: { lat: number; lng: number } };
   empresas: { id: string; nombre: string; coordenadas?: { lat: number; lng: number } | null }[];
   travelMode: 'DRIVING' | 'TRANSIT';
+  supervisor?: { id: string; nombreCompleto: string };
   createdAt?: any;
 }
 
