@@ -12,6 +12,7 @@ if (!getApps().length) initializeApp();
 
 // ---- Secrets ----
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
+const GOOGLE_MAPS_API_KEY = defineSecret("GOOGLE_MAPS_API_KEY");
 
 // ---- Express app ----
 const app = express();
@@ -120,6 +121,131 @@ apiRouter.post("/generarTexto", requireAuth, async (req, res) => {
   }
 });
 
+// --- Static Map (server-side key) ---
+// Construye y descarga un mapa estático de Google usando la API key del servidor.
+// GET /api/staticMapServer?enc=<polyline>&start=<lat,lng>&stops=<lat,lng>|<lat,lng>|...
+// Opcionales: size=640, scale=2
+apiRouter.get("/staticMapServer", async (req: Request, res: Response) => {
+  try {
+    const enc = (req.query.enc as string) || "";
+    const startStr = (req.query.start as string) || "";
+    const stopsStr = (req.query.stops as string) || "";
+    const size = (req.query.size as string) || "640";
+    const scale = (req.query.scale as string) || "2";
+
+    if (!enc) return res.status(400).json({ error: "Falta 'enc' (polyline)" });
+
+    const serverKey = process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_STATIC_API_KEY;
+    if (!serverKey) return res.status(500).json({ error: "No hay API key de Google Maps en el servidor" });
+
+    const gUrl = new URL("https://maps.googleapis.com/maps/api/staticmap");
+    gUrl.searchParams.set("size", `${size}x${size}`);
+    gUrl.searchParams.set("scale", scale);
+    gUrl.searchParams.set("maptype", "roadmap");
+    gUrl.searchParams.set("region", "CL");
+    gUrl.searchParams.append("path", `color:0x1e3a8aff|weight:4|enc:${enc}`);
+    if (startStr) {
+      gUrl.searchParams.append("markers", `color:green|label:S|${startStr}`);
+    }
+    if (stopsStr) {
+      // stops separados por '|'
+      const stops = String(stopsStr).split("|").slice(0, 5);
+      stops.forEach((s, idx) => {
+        const label = String((idx + 1) % 10);
+        gUrl.searchParams.append("markers", `color:red|label:${label}|${s}`);
+      });
+    }
+    gUrl.searchParams.set("key", serverKey);
+
+    const response = await fetch(gUrl.toString());
+    if (!response.ok) {
+      const text = await response.text();
+      return res.status(502).json({ error: `Static Maps HTTP ${response.status}`, body: text });
+    }
+    const contentType = response.headers.get("content-type") || "image/png";
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=300");
+    res.setHeader("Access-Control-Allow-Origin", "https://plania-clase.web.app");
+    return res.status(200).send(buffer);
+  } catch (err: any) {
+    console.error("/api/staticMapServer error:", err);
+    return res.status(500).json({ error: "Fallo servidor Static Maps", details: err?.message || String(err) });
+  }
+});
+
+// --- Constructor de Static Maps en servidor ---
+// Crea la URL con la API Key de servidor y devuelve la imagen resultante.
+// Acepta ambos formatos de cuerpo:
+// 1) { enc: string, size?: string|number, scale?: number, maptype?: string, region?: string, start?: {lat,lng}, stops?: Array<{lat,lng}> }
+// 2) { pathEnc: string, start?: {lat,lng}, stops?: Array<{lat,lng}>, size?: number, maptype?: string }
+apiRouter.post("/staticMapBuild", async (req: Request, res: Response) => {
+  try {
+    const { pathEnc, enc, start, stops } = req.body || {};
+    const maptype = req.body?.maptype ?? "roadmap";
+    const region = req.body?.region ?? "CL";
+    const scale = Number(req.body?.scale ?? 2);
+    const sizeAny = req.body?.size ?? 640; // puede ser "640x640" o 640
+
+    const poly: string | undefined = typeof pathEnc === 'string' ? pathEnc : (typeof enc === 'string' ? enc : undefined);
+    if (!poly) {
+      return res.status(400).json({ error: "Polyline requerida: use 'enc' o 'pathEnc'" });
+    }
+
+    // Key de servidor preferida; fallback a otras si no existe
+    const serverKey = process.env.GOOGLE_MAPS_API_KEY || process.env.MAPS_API_KEY_SERVER || process.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!serverKey) {
+      return res.status(500).json({ error: "MAPS API key no configurada en el servidor" });
+    }
+
+    // Normalizar size: aceptar "WxH" o número (cuadrado)
+    let sizeParam = "640x640";
+    if (typeof sizeAny === 'string') {
+      // Validar patrón WxH y clamp a máx 640
+      const m = sizeAny.match(/^(\d{2,4})x(\d{2,4})$/);
+      if (m) {
+        const w = Math.max(256, Math.min(640, Number(m[1])));
+        const h = Math.max(256, Math.min(640, Number(m[2])));
+        sizeParam = `${w}x${h}`;
+      }
+    } else {
+      const clamped = Math.max(256, Math.min(640, Number(sizeAny) || 640));
+      sizeParam = `${clamped}x${clamped}`;
+    }
+
+    const url = new URL('https://maps.googleapis.com/maps/api/staticmap');
+    url.searchParams.set('size', sizeParam);
+    url.searchParams.set('scale', String(scale));
+    url.searchParams.set('maptype', String(maptype));
+    url.searchParams.set('region', String(region));
+    url.searchParams.append('path', `color:0x1e3a8aff|weight:4|enc:${poly}`);
+    if (start && typeof start.lat === 'number' && typeof start.lng === 'number') {
+      url.searchParams.append('markers', `color:green|label:S|${start.lat},${start.lng}`);
+    }
+    (Array.isArray(stops) ? stops.slice(0, 9) : []).forEach((s, idx) => {
+      if (s && typeof s.lat === 'number' && typeof s.lng === 'number') {
+        const label = String((idx + 1) % 10);
+        url.searchParams.append('markers', `color:red|label:${label}|${s.lat},${s.lng}`);
+      }
+    });
+    url.searchParams.set('key', serverKey);
+
+    const resp = await fetch(url.toString());
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      return res.status(502).json({ error: `Static Maps HTTP ${resp.status}`, details: text.slice(0, 500) });
+    }
+    const buf = Buffer.from(await resp.arrayBuffer());
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.setHeader('Access-Control-Allow-Origin', 'https://plania-clase.web.app');
+    return res.status(200).send(buf);
+  } catch (err: any) {
+    console.error('/api/staticMapBuild error:', err);
+    return res.status(500).json({ error: 'Fallo al construir Static Maps', details: err?.message || String(err) });
+  }
+});
 // --- Proxy para Google Static Maps ---
 // Permite obtener la imagen del mapa desde el backend para evitar CORS en el navegador.
 // Uso: GET /api/staticMap?u=<URL_COMPLETA_STATICMAPS_URL_codificada>
@@ -158,6 +284,17 @@ apiRouter.get("/staticMap", async (req: Request, res: Response) => {
     return res.status(500).json({ error: "Proxy falló", details: err?.message || String(err) });
   }
 });
+
+// --- Builder de Static Maps desde backend (POST) ---
+// Cuerpo esperado:
+// {
+//   "pathEnc": "<polyline codificado>",
+//   "start": { "lat": number, "lng": number } | null,
+//   "stops": Array<{ "lat": number, "lng": number }>,
+//   "size": 640, // lado en px
+//   "maptype": "roadmap" | "satellite" | "terrain" | "hybrid"
+// }
+// (Se eliminó un duplicado de este endpoint y se consolidó la lógica más arriba)
 
 apiRouter.post("/generarActividadRemota", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -475,7 +612,7 @@ app.use("/api", apiRouter);
 // Exporta una sola función Express; añade el rewrite en firebase.json:
 // { "hosting": { "rewrites": [ { "source": "/api/**", "function": { "functionId": "api", "region": "us-central1" } } ] } }
 export const api = onRequest(
-  { region: "us-central1", secrets: [GEMINI_API_KEY], timeoutSeconds: 120, memory: "512MiB" },
+  { region: "us-central1", secrets: [GEMINI_API_KEY, GOOGLE_MAPS_API_KEY], timeoutSeconds: 120, memory: "512MiB" },
   app
 );
 

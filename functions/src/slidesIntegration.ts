@@ -188,71 +188,10 @@ export class SlidesIntegration {
       'visual': 'Estilo visual dinámico con énfasis en elementos gráficos, diagramas, infografías y representaciones visuales para facilitar la comprensión',
       'interactivo': 'Estilo participativo que incluye preguntas, actividades prácticas, discusiones y elementos que fomenten la participación activa del estudiante',
       'profesional': 'Estilo empresarial con enfoque en aplicaciones prácticas, casos de estudio reales y conexiones con el mundo laboral',
-      'sobrio': 'Estilo minimalista y directo, enfocado en contenido esencial sin elementos decorativos excesivos',
-      'creativo': 'Estilo innovador y atractivo, con un enfoque original que estimula la imaginación y el pensamiento lateral',
-      'minimalista': 'Estilo depurado y esencial, centrado en lo más importante sin elementos distractores'
+      'sobrio': 'Estilo minimalista y directo, enfocado en contenido esencial sin elementos decorativos excesivos'
     };
     
     return estilos[estilo] || estilos['academico'];
-  }
-  
-  /**
-   * Obtiene los colores específicos para cada estilo de presentación
-   */
-  private getStyleColors(estilo: string): any {
-    const styles: Record<string, any> = {
-      'sobrio': {
-        background: { red: 0.98, green: 0.98, blue: 0.98 },
-        primary: { red: 0.2, green: 0.2, blue: 0.25 },
-        secondary: { red: 0.5, green: 0.5, blue: 0.55 },
-        accent: { red: 0.3, green: 0.3, blue: 0.4 },
-        text: { red: 0.1, green: 0.1, blue: 0.1 }
-      },
-      'visual': {
-        background: { red: 0.95, green: 0.97, blue: 1.0 },
-        primary: { red: 0.0, green: 0.44, blue: 0.8 },
-        secondary: { red: 0.2, green: 0.6, blue: 0.9 },
-        accent: { red: 1.0, green: 0.6, blue: 0.2 },
-        text: { red: 0.1, green: 0.1, blue: 0.1 }
-      },
-      'academico': {
-        background: { red: 0.98, green: 0.96, blue: 0.9 },
-        primary: { red: 0.5, green: 0.3, blue: 0.1 },
-        secondary: { red: 0.7, green: 0.5, blue: 0.2 },
-        accent: { red: 0.3, green: 0.5, blue: 0.7 },
-        text: { red: 0.2, green: 0.2, blue: 0.2 }
-      },
-      'interactivo': {
-        background: { red: 0.95, green: 1.0, blue: 0.95 },
-        primary: { red: 0.1, green: 0.7, blue: 0.3 },
-        secondary: { red: 0.3, green: 0.8, blue: 0.4 },
-        accent: { red: 0.9, green: 0.3, blue: 0.5 },
-        text: { red: 0.1, green: 0.1, blue: 0.1 }
-      },
-      'profesional': {
-        background: { red: 0.95, green: 0.95, blue: 0.97 },
-        primary: { red: 0.2, green: 0.2, blue: 0.5 },
-        secondary: { red: 0.1, green: 0.1, blue: 0.3 },
-        accent: { red: 0.7, green: 0.0, blue: 0.0 },
-        text: { red: 0.1, green: 0.1, blue: 0.1 }
-      },
-      'creativo': {
-        background: { red: 0.98, green: 0.95, blue: 1.0 },
-        primary: { red: 0.6, green: 0.2, blue: 0.8 },
-        secondary: { red: 0.8, green: 0.3, blue: 0.7 },
-        accent: { red: 1.0, green: 0.8, blue: 0.0 },
-        text: { red: 0.2, green: 0.2, blue: 0.2 }
-      },
-      'minimalista': {
-        background: { red: 1.0, green: 1.0, blue: 1.0 },
-        primary: { red: 0.0, green: 0.0, blue: 0.0 },
-        secondary: { red: 0.3, green: 0.3, blue: 0.3 },
-        accent: { red: 0.7, green: 0.7, blue: 0.7 },
-        text: { red: 0.0, green: 0.0, blue: 0.0 }
-      }
-    };
-    
-    return styles[estilo] || styles['sobrio'];
   }
 
   /**
@@ -467,7 +406,7 @@ export class SlidesIntegration {
       }
       
       // Crear las diapositivas con el contenido generado
-      await this.addSlidesToPresentation(slides, presentationId, slidesContent, data.estilo);
+      await this.addSlidesToPresentation(slides, presentationId, slidesContent);
       
       // Configurar permisos
       await drive.permissions.create({
@@ -514,13 +453,18 @@ export class SlidesIntegration {
   private async addSlidesToPresentation(
     slidesClient: any, 
     presentationId: string, 
-    slidesContent: GeneratedSlide[],
-    estilo: string = 'sobrio'
+    slidesContent: GeneratedSlide[]
   ): Promise<void> {
     console.log(`Añadiendo ${slidesContent.length} diapositivas con contenido mejorado`);
     
-    // Obtener los colores específicos para el estilo seleccionado
-    const themeColors = this.getStyleColors(estilo);
+    // Definir colores del tema (formato correcto para Google Slides API)
+    const themeColors = {
+      primary: { red: 0.2, green: 0.4, blue: 0.8 },      // Azul institucional
+      secondary: { red: 0.1, green: 0.3, blue: 0.6 },    // Azul oscuro
+      accent: { red: 0.9, green: 0.5, blue: 0.1 },       // Naranja
+      background: { red: 0.98, green: 0.98, blue: 1.0 },  // Azul muy claro
+      text: { red: 0.2, green: 0.2, blue: 0.2 }           // Gris oscuro
+    };
     
     const requests = [];
     
@@ -554,22 +498,24 @@ export class SlidesIntegration {
         }
       });
       
-      // Configurar fondo de todas las diapositivas con el color de estilo elegido
-      requests.push({
-        updatePageProperties: {
-          objectId: slideId,
-          pageProperties: {
-            pageBackgroundFill: {
-              solidFill: {
-                color: {
-                  rgbColor: themeColors.background
+      // Configurar fondo de la diapositiva
+      if (i === 0) { // Portada con fondo especial
+        requests.push({
+          updatePageProperties: {
+            objectId: slideId,
+            pageProperties: {
+              pageBackgroundFill: {
+                solidFill: {
+                  color: {
+                    rgbColor: themeColors.background
+                  }
                 }
               }
-            }
-          },
-          fields: 'pageBackgroundFill'
-        }
-      });
+            },
+            fields: 'pageBackgroundFill'
+          }
+        });
+      }
       
       // Insertar y formatear título
       requests.push({

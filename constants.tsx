@@ -171,7 +171,6 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Desarrollo Profesional', icon: <AcademicCapIcon /> },
     ],
     [Profile.ESTUDIANTE]: [
-        { name: 'Documentación', icon: <DocumentTextIcon /> },
         { name: 'Auto-aprendizaje', icon: <BookOpenIcon /> },
         { name: 'Evaluación Formativa', icon: <TrendingUpIcon /> },
         { name: 'SIMCE', icon: <SimceIcon /> },

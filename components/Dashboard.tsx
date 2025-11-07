@@ -511,7 +511,8 @@ const Dashboard: React.FC<DashboardProps> = ({
 
     // ===== Módulos comunes =====
   if (activeModule.name === 'Intranet') return <Intranet currentUser={currentUser} />;
-    if (activeModule.name === 'Documentación') return <Documentacion currentUser={currentUser} />;
+    // Bloquear acceso a Documentación para estudiantes aunque intenten acceder por deep-link o estado previo
+    if (activeModule.name === 'Documentación' && profile !== Profile.ESTUDIANTE) return <Documentacion currentUser={currentUser} />;
     if (activeModule.name === 'Calendario Académico') return <CalendarioAcademico profile={profile} />;
     
     

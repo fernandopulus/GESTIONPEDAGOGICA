@@ -364,6 +364,29 @@ const GestionEmpresas: React.FC = () => {
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
     const { isLoaded: isMapScriptLoaded, error: mapScriptError } = useGoogleMapsScript(apiKey);
 
+    // Mapa de estudiantes por id y utilidades relacionadas a empresas/estudiantes
+    const estudiantesMap = useMemo(() => {
+        const map = new Map<string, User>();
+        estudiantes.forEach(e => map.set(e.id, e));
+        return map;
+    }, [estudiantes]);
+
+    const getEmpresaCompleta = (empLite: Pick<Empresa, 'id' | 'nombre' | 'coordenadas'> & Partial<Empresa>) => {
+        const found = empresas.find(e => e.id === empLite.id);
+        return found || empLite;
+    };
+
+    const getEstudiantesDeEmpresa = (empresaId: string): User[] => {
+        const emp = empresas.find(e => e.id === empresaId);
+        const ids = emp?.estudiantesAsignados || [];
+        const list: User[] = [];
+        ids.forEach(id => {
+            const st = estudiantesMap.get(id);
+            if (st) list.push(st);
+        });
+        return list;
+    };
+
     const canReadEmpresas = useMemo(() => {
         const p = currentUser?.profile as any;
         return p === Profile.SUBDIRECCION || p === Profile.PROFESORADO || p === Profile.COORDINACION_TP;
@@ -701,13 +724,12 @@ const GestionEmpresas: React.FC = () => {
         return result.join('');
     };
 
-    const buildStaticMapUrl = (route: google.maps.DirectionsResult): string | null => {
+    const getOverviewPoints = (route: google.maps.DirectionsResult): { lat: number; lng: number }[] | null => {
         try {
             const r: any = route?.routes?.[0];
             if (!r) return null;
             let pts: { lat: number; lng: number }[] = [];
             if (r.overview_path && Array.isArray(r.overview_path) && r.overview_path.length) {
-                // overview_path: LatLng[]
                 pts = r.overview_path.map((ll: any) => ({ lat: ll.lat(), lng: ll.lng() }));
             } else if (r.overview_polyline && typeof r.overview_polyline.getPath === 'function') {
                 const arr = r.overview_polyline.getPath().getArray();
@@ -715,7 +737,7 @@ const GestionEmpresas: React.FC = () => {
             } else {
                 return null;
             }
-            // Reducir puntos para evitar URLs demasiado largas
+            // Reducir puntos para evitar URLs demasiado largas y para vector map
             if (pts.length > 200) {
                 const step = Math.ceil(pts.length / 200);
                 const sampled: { lat: number; lng: number }[] = [];
@@ -723,12 +745,23 @@ const GestionEmpresas: React.FC = () => {
                 if (sampled[sampled.length - 1] !== pts[pts.length - 1]) sampled.push(pts[pts.length - 1]);
                 pts = sampled;
             }
+            return pts;
+        } catch {
+            return null;
+        }
+    };
+
+    const buildStaticMapUrl = (route: google.maps.DirectionsResult): string | null => {
+        try {
+            let pts = getOverviewPoints(route);
+            if (!pts) return null;
             const enc = encodePolyline(pts);
             const url = new URL('https://maps.googleapis.com/maps/api/staticmap');
-            // cuadrado 4:4 (1:1)
-            url.searchParams.set('size', '1024x1024');
+            // Tamaño soportado (Static Maps): 640x640 con scale=2 para mayor nitidez
+            url.searchParams.set('size', '640x640');
             url.searchParams.set('scale', '2');
             url.searchParams.set('maptype', 'roadmap');
+            url.searchParams.set('region', 'CL');
             // Ruta
             url.searchParams.append('path', `color:0x1e3a8aff|weight:4|enc:${enc}`);
             // Marcadores: inicio y paradas (máximo 9 con etiquetas)
@@ -749,17 +782,134 @@ const GestionEmpresas: React.FC = () => {
         }
     };
 
-    // Descarga de imagen via proxy backend para evitar CORS (Hosting rewrite a /api)
-    const fetchImageAsDataURL = async (imgUrl: string): Promise<string> => {
-        const proxied = `/api/staticMap?u=${encodeURIComponent(imgUrl)}`;
-        const res = await fetch(proxied, { method: 'GET' });
-        if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
+    // Dibuja un "mapa vectorial" simple si falla Static Maps (sin tiles, pero con la ruta y marcadores)
+    const drawVectorRoute = (
+        pdf: jsPDF,
+        x: number,
+        y: number,
+        side: number,
+        points: { lat: number; lng: number }[],
+        start?: { lat: number; lng: number } | null,
+        stops?: { lat: number; lng: number }[]
+    ) => {
+        if (!points || points.length < 2) return false;
+        const lats = points.map(p => p.lat);
+        const lngs = points.map(p => p.lng);
+        const minLat = Math.min(...lats);
+        const maxLat = Math.max(...lats);
+        const minLng = Math.min(...lngs);
+        const maxLng = Math.max(...lngs);
+        const pad = 3; // mm de padding interno
+        const w = side - pad * 2;
+        const h = side - pad * 2;
+        const dLng = (maxLng - minLng) || 1e-6;
+        const dLat = (maxLat - minLat) || 1e-6;
+        // Mantener aspecto: usar el mayor de ambos para escalar a cuadrado
+        const scale = Math.min(w / dLng, h / dLat);
+        const cx = x + pad;
+        const cy = y + pad;
+
+        // Marco
+        pdf.setDrawColor(200);
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(x, y, side, side, 'FD');
+
+        // Ruta
+        pdf.setDrawColor(30, 58, 138); // azul oscuro
+        pdf.setLineWidth(0.6);
+        for (let i = 1; i < points.length; i++) {
+            const p0 = points[i - 1];
+            const p1 = points[i];
+            const px0 = cx + (p0.lng - minLng) * scale;
+            const py0 = cy + (maxLat - p0.lat) * scale; // invertir Y
+            const px1 = cx + (p1.lng - minLng) * scale;
+            const py1 = cy + (maxLat - p1.lat) * scale;
+            pdf.line(px0, py0, px1, py1);
+        }
+
+        // Marcadores
+        const drawCircle = (px: number, py: number, r: number, color: [number, number, number]) => {
+            pdf.setFillColor(...color);
+            pdf.circle(px, py, r, 'F');
+        };
+        if (start) {
+            const sx = cx + (start.lng - minLng) * scale;
+            const sy = cy + (maxLat - start.lat) * scale;
+            drawCircle(sx, sy, 1.6, [34, 197, 94]); // verde
+        }
+        if (stops && stops.length) {
+            stops.slice(0, 5).forEach(st => {
+                const sx = cx + (st.lng - minLng) * scale;
+                const sy = cy + (maxLat - st.lat) * scale;
+                drawCircle(sx, sy, 1.4, [239, 68, 68]); // rojo
+            });
+        }
+
+        return true;
+    };
+
+    // Descarga de imagen via backend builder (usa API Key de servidor)
+    const fetchStaticMapFromServer = async (enc: string, start?: {lat:number;lng:number}|null, stops?: {lat:number;lng:number}[]): Promise<string> => {
+        const res = await fetch('/api/staticMapBuild', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enc, size: '640x640', scale: 2, maptype: 'roadmap', region: 'CL', start, stops: (stops||[]).slice(0,8) })
+        });
+        if (!res.ok) throw new Error(`staticMapBuild HTTP ${res.status}`);
         const blob = await res.blob();
         return await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(String(reader.result));
             reader.onerror = reject;
             reader.readAsDataURL(blob);
+        });
+    };
+
+    const fetchStaticMapBuilt = async (route: google.maps.DirectionsResult): Promise<string> => {
+        const pts = getOverviewPoints(route) || [];
+        const enc = encodePolyline(pts);
+        const body = {
+            pathEnc: enc,
+            start: startPointCoords,
+            stops: selectedRouteCompanies.filter(e => e.coordenadas).map(e => e.coordenadas),
+            size: 640,
+            maptype: 'roadmap'
+        };
+        const res = await fetch('/api/staticMapBuild', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) throw new Error(`staticMapBuild HTTP ${res.status}`);
+        const blob = await res.blob();
+        return await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(String(reader.result));
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    };
+
+    // Utilidad: traer imagen remota como dataURL (para encabezado gráfico)
+    const fetchImageAsDataURL = async (url: string): Promise<string> => {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`image HTTP ${res.status}`);
+        const blob = await res.blob();
+        return await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(String(reader.result));
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    };
+
+    // Medir dimensiones de una imagen (dataURL) para respetar proporción
+    const getImageNaturalSize = (dataUrl: string): Promise<{ w: number; h: number }> => {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve({ w: img.naturalWidth || img.width, h: img.naturalHeight || img.height });
+            img.onerror = reject;
+            img.src = dataUrl;
         });
     };
 
@@ -772,55 +922,118 @@ const GestionEmpresas: React.FC = () => {
         const pdf = new jsPDF('p', 'mm', 'a4');
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = pdf.internal.pageSize.getHeight();
-        const margin = 10; // 1 cm
-        const contentWidth = pdfWidth - margin * 2;
+    const margin = 10; // 1 cm
+    const contentWidth = pdfWidth - margin * 2;
+    const sectionGap = 10; // espacio vertical fijo entre secciones (1 cm)
 
-    // Encabezado dentro de los márgenes (barra oscura estilo slate-900)
-    const headerH = 16;
-    pdf.setFillColor(15, 23, 42);
-        pdf.rect(margin, margin, contentWidth, headerH, 'F');
-        pdf.setTextColor(255, 255, 255);
-        pdf.setFontSize(14);
-    pdf.text(`Ruta de Supervisión: ${routeName || 'Sin nombre'}`, margin + 4, margin + 11);
-        pdf.setFontSize(10);
-    const d = new Date();
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    const fechaTxt = `Fecha: ${dd}-${mm}-${yyyy}`;
-        const modoTxt = `Modo: ${travelMode === 'DRIVING' ? 'Automóvil' : 'Transporte Público'}`;
-        const supervisorTxt = routeSupervisor?.nombreCompleto ? `Supervisor: ${routeSupervisor.nombreCompleto}` : '';
-        const rightText = [fechaTxt, modoTxt, supervisorTxt].filter(Boolean).join('  •  ');
-        pdf.text(rightText, margin + contentWidth - 4, margin + 11, { align: 'right' });
-        pdf.setTextColor(0, 0, 0);
+        // Encabezado con imagen (banner): 1.5 cm de alto, ancho ajustado al ancho de página útil (dentro de márgenes)
+        let yCursor = margin;
+        const drawTitleAndSubtitle = () => {
+            // Título y subtítulo bajo el banner
+            if (yCursor + 6 > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(14);
+            const title = `Ruta de Supervisión: ${routeName || 'Sin nombre'}`;
+            pdf.text(title, margin, yCursor + 6);
+            yCursor += 9;
+            // Subtítulo (fecha, modo, supervisor)
+            const d = new Date();
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const yyyy = d.getFullYear();
+            const fechaTxt = `Fecha: ${dd}-${mm}-${yyyy}`;
+            const modoTxt = `Modo: ${travelMode === 'DRIVING' ? 'Automóvil' : 'Transporte Público'}`;
+            const supervisorTxt = routeSupervisor?.nombreCompleto ? `Supervisor: ${routeSupervisor.nombreCompleto}` : '';
+            const subtitle = [fechaTxt, modoTxt, supervisorTxt].filter(Boolean).join('  •  ');
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(10);
+            pdf.setTextColor(100, 116, 139);
+            const subLines = pdf.splitTextToSize(subtitle, contentWidth);
+            for (const ln of subLines) {
+                if (yCursor + 5 > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+                pdf.text(ln, margin, yCursor);
+                yCursor += 5;
+            }
+            pdf.setTextColor(0, 0, 0);
+            yCursor += 4;
+        };
 
-        let yCursor = margin + headerH + 6;
+        try {
+            const bannerUrl = 'https://res.cloudinary.com/dwncmu1wu/image/upload/v1756260600/Captura_de_pantalla_2025-08-26_a_la_s_10.09.17_p._m._aakgkt.png';
+            const dataUrl = await fetchImageAsDataURL(bannerUrl);
+            // Altura fija 15 mm y ancho al ancho de contenido (página dentro de márgenes)
+            const targetH = 15;
+            const targetW = contentWidth;
+            pdf.addImage(dataUrl, 'PNG', margin, yCursor, targetW, targetH);
+            yCursor += targetH + 4;
+            drawTitleAndSubtitle();
+        } catch (e) {
+            // Si falla el banner, dibujar solo títulos manteniendo espaciado
+            yCursor += 4;
+            drawTitleAndSubtitle();
+        }
+        // Asegurar 1 cm de separación después del encabezado (título/subtítulo ya añade 4 mm)
+        yCursor += Math.max(0, sectionGap - 4);
 
         // Mapa: Static Maps primero, luego fallback a captura, luego placeholder (cuadrado 4:4)
         const mapElement = document.getElementById('map-container-for-pdf');
         const mapSide = Math.min(contentWidth, 120); // lado del cuadrado en mm
         let mapAdded = false;
+        // 1) Intento con builder de backend (server key)
         try {
-            const staticUrl = buildStaticMapUrl(calculatedRoute);
-            if (staticUrl) {
-                const dataUrl = await fetchImageAsDataURL(staticUrl);
-                if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
-                pdf.addImage(dataUrl, 'PNG', margin, yCursor, mapSide, mapSide);
-                yCursor += mapSide + 6;
-                mapAdded = true;
-            }
+            const dataUrl = await fetchStaticMapBuilt(calculatedRoute);
+            if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+            pdf.addImage(dataUrl, 'PNG', margin, yCursor, mapSide, mapSide);
+            yCursor += mapSide + sectionGap;
+            mapAdded = true;
         } catch {}
+        // 2) Fallback a proxy de URL (si builder falla)
+        if (!mapAdded) {
+            try {
+                const pts = getOverviewPoints(calculatedRoute);
+                if (pts && pts.length >= 2) {
+                    const enc = encodePolyline(pts);
+                    const stops = selectedRouteCompanies.filter(e => e.coordenadas).map(e => e.coordenadas!)
+                    const dataUrl = await fetchStaticMapFromServer(enc, startPointCoords || undefined, stops);
+                    if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+                    pdf.addImage(dataUrl, 'PNG', margin, yCursor, mapSide, mapSide);
+                    yCursor += mapSide + sectionGap;
+                    mapAdded = true;
+                }
+            } catch {}
+        }
         if (!mapAdded && mapElement) {
             try {
                 const mapCanvas = await html2canvas(mapElement as HTMLElement, { useCORS: true, allowTaint: true, backgroundColor: '#ffffff', scale: 2 });
                 const mapImgData = mapCanvas.toDataURL('image/png');
                 if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
                 pdf.addImage(mapImgData, 'PNG', margin, yCursor, mapSide, mapSide);
-                yCursor += mapSide + 6;
+                yCursor += mapSide + sectionGap;
                 mapAdded = true;
             } catch {}
         }
         if (!mapAdded) {
+            // Intento final: dibujar una representación vectorial de la ruta (sin tiles)
+            const pts = getOverviewPoints(calculatedRoute) || [];
+            if (pts.length >= 2) {
+                if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+                const success = drawVectorRoute(
+                    pdf,
+                    margin,
+                    yCursor,
+                    mapSide,
+                    pts,
+                    startPointCoords,
+                    selectedRouteCompanies.filter(e => e.coordenadas).map(e => e.coordenadas!)
+                );
+                if (success) {
+                    yCursor += mapSide + sectionGap;
+                    mapAdded = true;
+                }
+            }
+        }
+        if (!mapAdded) {
+            // Como último recurso, placeholder neutro
             pdf.setDrawColor(200);
             pdf.setFillColor(245, 245, 245);
             if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
@@ -829,7 +1042,7 @@ const GestionEmpresas: React.FC = () => {
             pdf.setFontSize(11);
             pdf.text('Mapa no disponible para captura. (Se omitió en el PDF)', margin + mapSide / 2, yCursor + mapSide / 2, { align: 'center' });
             pdf.setTextColor(0);
-            yCursor += mapSide + 6;
+            yCursor += mapSide + sectionGap;
         }
 
         // Detalles renderizados como texto envuelto (alineación izquierda)
@@ -842,7 +1055,7 @@ const GestionEmpresas: React.FC = () => {
             pdf.setFont('helvetica', 'normal');
             yCursor += lineH;
         };
-        addSectionTitle('Detalles de la Ruta');
+    addSectionTitle('Detalles de la Ruta');
         pdf.setFontSize(10);
         const legs = calculatedRoute.routes[0].legs || [];
         const travelDurationSec = legs.reduce((acc, leg) => acc + (leg.duration?.value || 0), 0);
@@ -870,21 +1083,29 @@ const GestionEmpresas: React.FC = () => {
         let cardX = margin;
         let cardY = yCursor + 2;
         for (let i = 0; i < metrics.length; i++) {
-            if (cardY + cardH > pdfHeight - margin) { pdf.addPage(); cardY = margin; cardX = margin; }
-            // fondo y borde
+            if (cardY + cardH > pdfHeight - margin) {
+                pdf.addPage();
+                cardY = margin;
+                cardX = margin;
+            }
+            // Fondo y borde de la tarjeta
             pdf.setFillColor(248, 250, 252); // slate-50
             pdf.setDrawColor(226, 232, 240); // slate-200
             pdf.rect(cardX, cardY, cardW, cardH, 'FD');
-            // textos
+
+            // Etiqueta
             pdf.setTextColor(100, 116, 139); // slate-500
             pdf.setFontSize(8);
-            pdf.text(metrics[i].label, cardX + 2, cardY + 5);
-            pdf.setTextColor(0, 0, 0);
-            pdf.setFontSize(10);
-            pdf.setFont('helvetica', 'bold');
-            pdf.text(String(metrics[i].value), cardX + 2, cardY + 11);
             pdf.setFont('helvetica', 'normal');
-            // avanzar posición
+            pdf.text(metrics[i].label, cardX + 2, cardY + 4);
+
+            // Valor
+            pdf.setTextColor(0, 0, 0);
+            pdf.setFontSize(11);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text(String(metrics[i].value), cardX + 2, cardY + cardH - 5);
+
+            // Avance de grilla
             if ((i + 1) % cardsPerRow === 0) {
                 cardX = margin;
                 cardY += cardH + 2;
@@ -892,77 +1113,121 @@ const GestionEmpresas: React.FC = () => {
                 cardX += cardW + gap;
             }
         }
-        yCursor = cardY + (metrics.length % cardsPerRow === 0 ? 0 : cardH) + 4;
+    yCursor = cardY + (metrics.length % cardsPerRow === 0 ? 0 : cardH) + sectionGap;
 
-        // Tramos como "cards" similares a las métricas (2 columnas)
+        // Tramos como "cards" (2 columnas), respetando márgenes y evitando interletrado raro
         const tramoCols = 2;
         const tramoGap = 4;
         const tramoCardW = (contentWidth - tramoGap * (tramoCols - 1)) / tramoCols;
-        const drawTramoCard = (x: number, y: number, w: number, tramoIdx: number, leg: google.maps.DirectionsLeg) => {
-            const label = `Tramo ${tramoIdx + 1}`;
+        const innerPad = 2;
+        const labelH = 5;
+        const valueLH = 4.0; // interlineado normal
+
+        // Asegurar fuente antes de medir para consistencia
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(10);
+
+        let colIndex = 0;
+        let rowMaxH = 0;
+        let rowStartY = yCursor;
+
+        for (let i = 0; i < legs.length; i++) {
+            const leg = legs[i];
+            const x = margin + colIndex * (tramoCardW + tramoGap);
             const origen = (leg.start_address || '').split(',')[0];
             const destino = (leg.end_address || '').split(',')[0];
-            const detalle = `${origen} → ${destino}\n${leg.duration?.text || ''} • ${leg.distance?.text || ''}`;
-            const innerPad = 2;
-            const valueMaxWidth = w - innerPad * 2;
+            // Evitar caracteres fuera de WinAnsi para built-in fonts
+            const detalle = `${origen} -> ${destino}\n${leg.duration?.text || ''} • ${leg.distance?.text || ''}`;
+            const valueMaxWidth = tramoCardW - innerPad * 2;
             const valueLines = pdf.splitTextToSize(detalle, valueMaxWidth);
-            const labelH = 5;
-            const valueLH = 3.8; // interlineado más compacto y "normal"
             const valueH = valueLines.length * valueLH;
             const contentH = labelH + 2 + valueH + 2;
             const minH = 18;
             const h = Math.max(minH, contentH);
-            // fondo y borde
-            pdf.setFillColor(248, 250, 252); // slate-50
-            pdf.setDrawColor(226, 232, 240); // slate-200
-            pdf.rect(x, y, w, h, 'FD');
-            // etiqueta
-            pdf.setTextColor(100, 116, 139); // slate-500
-            pdf.setFontSize(8);
-            pdf.text(label, x + innerPad, y + 4);
-            // valor
-            pdf.setTextColor(0, 0, 0);
-            pdf.setFontSize(10);
-            pdf.setFont('helvetica', 'normal'); // sin negrita para evitar efecto de interletrado
-            let yy = y + 4 + 2; // debajo del label
-            for (const ln of valueLines) {
-                pdf.text(ln, x + innerPad, yy + 5);
-                yy += valueLH;
-            }
-            pdf.setFont('helvetica', 'normal');
-            return h;
-        };
 
-        // Layout en dos columnas, altura por fila según el card más alto
-        let colIndex = 0;
-        let rowMaxH = 0;
-        let rowStartY = yCursor;
-        for (let i = 0; i < legs.length; i++) {
-            const x = margin + colIndex * (tramoCardW + tramoGap);
-            // Si no cabe verticalmente, salto de página y reseteo fila
-            const estimatedH = 22; // estimación inicial para corte (se recalcula al dibujar)
-            if (rowStartY + estimatedH > pdfHeight - margin) {
+            // Salto de página si esta tarjeta no cabe en la página actual
+            if (rowStartY + h > pdfHeight - margin) {
                 pdf.addPage();
                 rowStartY = margin;
                 yCursor = margin;
                 colIndex = 0;
                 rowMaxH = 0;
             }
-            const h = drawTramoCard(x, rowStartY, tramoCardW, i, legs[i]);
+
+            // Fondo y borde
+            pdf.setFillColor(248, 250, 252); // slate-50
+            pdf.setDrawColor(226, 232, 240); // slate-200
+            pdf.rect(x, rowStartY, tramoCardW, h, 'FD');
+            // Etiqueta
+            pdf.setTextColor(100, 116, 139); // slate-500
+            pdf.setFontSize(8);
+            pdf.text(`Tramo ${i + 1}`, x + innerPad, rowStartY + 4);
+            // Valor
+            pdf.setTextColor(0, 0, 0);
+            pdf.setFontSize(10);
+            pdf.setFont('helvetica', 'normal');
+            let yy = rowStartY + 4 + 2; // debajo de la etiqueta
+            for (const ln of valueLines) {
+                pdf.text(ln, x + innerPad, yy + 5);
+                yy += valueLH;
+            }
+
             rowMaxH = Math.max(rowMaxH, h);
             colIndex++;
             if (colIndex === tramoCols) {
-                // siguiente fila
+                // Pasar a la siguiente fila
                 rowStartY += rowMaxH + 3;
                 yCursor = rowStartY;
                 rowMaxH = 0;
                 colIndex = 0;
             }
         }
-        // Si la última fila quedó incompleta, avanzar cursor igualmente
         if (colIndex !== 0) {
-            yCursor = rowStartY + rowMaxH + 2;
+            // Avanzar si quedó fila incompleta, con separación de sección
+            yCursor = rowStartY + rowMaxH + sectionGap;
         }
+
+        // Estudiantes por empresa
+        const addBodyText = (txt: string, x: number, maxWidth: number, fontSize = 10) => {
+            pdf.setFontSize(fontSize);
+            const lines = pdf.splitTextToSize(txt, maxWidth);
+            for (const ln of lines) {
+                if (yCursor + 4 > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+                pdf.text(ln, x, yCursor);
+                yCursor += 4;
+            }
+        };
+
+    addSectionTitle('Estudiantes por empresa');
+        pdf.setFont('helvetica', 'normal');
+        const maxW = contentWidth;
+        const empresasForStudents = selectedRouteCompanies.map(e => getEmpresaCompleta(e) as Empresa);
+        for (const emp of empresasForStudents) {
+            if (yCursor + 8 > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+            // Nombre empresa
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(10);
+            const empName = emp?.nombre || 'Empresa';
+            pdf.text(empName, margin, yCursor);
+            yCursor += 5;
+            pdf.setFont('helvetica', 'normal');
+            const alumnosIds = emp?.estudiantesAsignados || [];
+            if (alumnosIds.length === 0) {
+                addBodyText('• Sin estudiantes asignados', margin, maxW, 10);
+            } else {
+                const alumnos = alumnosIds
+                    .map((id: string) => estudiantesMap.get(id))
+                    .filter(Boolean) as User[];
+                for (const a of alumnos) {
+                    const line = `• ${a.nombreCompleto}${a.curso ? ` (${a.curso})` : ''}`;
+                    addBodyText(line, margin, maxW, 10);
+                }
+            }
+            yCursor += 2;
+        }
+
+        // Separación entre "Estudiantes por empresa" y "Firmas"
+        yCursor += sectionGap;
 
         // Firmas
         const ensureSpace = (needed: number) => {
@@ -1434,19 +1699,36 @@ const GestionEmpresas: React.FC = () => {
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">4. Selecciona las empresas a visitar</label>
-                                <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-2">
-                                    {empresas.filter(e => e.coordenadas).map(empresa => (
-                                        <div key={empresa.id} className="flex items-center">
-                                            <input 
-                                                type="checkbox"
-                                                id={`route-${empresa.id}`}
-                                                checked={selectedRouteCompanies.some(e => e.id === empresa.id)}
-                                                onChange={() => handleRouteCompanyToggle(empresa)}
-                                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                            />
-                                            <label htmlFor={`route-${empresa.id}`} className="ml-3 text-sm text-gray-700">{empresa.nombre}</label>
-                                        </div>
-                                    ))}
+                                <div className="max-h-64 overflow-y-auto border rounded-lg p-2 space-y-2">
+                                    {empresas.filter(e => e.coordenadas).map(empresa => {
+                                        const asignados = getEstudiantesDeEmpresa(empresa.id);
+                                        const nombres = asignados.map(a => `${a.nombreCompleto}${a.curso ? ` (${a.curso})` : ''}`);
+                                        const selected = selectedRouteCompanies.some(e => e.id === empresa.id);
+                                        return (
+                                            <div key={empresa.id} className="py-1 px-2 rounded hover:bg-slate-50">
+                                                <div className="flex items-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        id={`route-${empresa.id}`}
+                                                        checked={selected}
+                                                        onChange={() => handleRouteCompanyToggle(empresa)}
+                                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                    />
+                                                    <label htmlFor={`route-${empresa.id}`} className="ml-3 text-sm text-gray-700">
+                                                        {empresa.nombre}
+                                                        {asignados.length > 0 && (
+                                                            <span className="ml-2 text-xs text-slate-500">({asignados.length} estudiante{asignados.length !== 1 ? 's' : ''})</span>
+                                                        )}
+                                                    </label>
+                                                </div>
+                                                {asignados.length > 0 && (
+                                                    <div className="ml-7 mt-1 text-xs text-slate-500 line-clamp-2">
+                                                        {nombres.join(', ')}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
@@ -1523,6 +1805,33 @@ const GestionEmpresas: React.FC = () => {
                                             <div className="text-sm">Tramo {i + 1}: {(leg.start_address || '').split(',')[0]} → {(leg.end_address || '').split(',')[0]}. {leg.duration?.text || ''} • {leg.distance?.text || ''}</div>
                                         </div>
                                     ))}
+                                </div>
+
+                                {/* Estudiantes por empresa seleccionada */}
+                                <div className="mt-6">
+                                    <h3 className="text-lg font-bold">Estudiantes por empresa</h3>
+                                    <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {selectedRouteCompanies.map(empLite => {
+                                            const empFull = getEmpresaCompleta(empLite) as Empresa;
+                                            const alumnos = (empFull.estudiantesAsignados || [])
+                                                .map(id => estudiantesMap.get(id))
+                                                .filter(Boolean) as User[];
+                                            return (
+                                                <div key={empFull.id} className="p-3 rounded-lg bg-slate-50 border">
+                                                    <div className="font-semibold text-sm mb-1 break-words">{empFull.nombre}</div>
+                                                    {alumnos.length > 0 ? (
+                                                        <ul className="text-xs text-slate-700 list-disc list-inside space-y-0.5">
+                                                            {alumnos.map(a => (
+                                                                <li key={a.id}>{a.nombreCompleto}{a.curso ? ` (${a.curso})` : ''}</li>
+                                                            ))}
+                                                        </ul>
+                                                    ) : (
+                                                        <div className="text-xs text-slate-500">Sin estudiantes asignados</div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
 
                                 {/* Firmas (3 columnas, dinámicas) */}
