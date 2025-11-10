@@ -27,6 +27,8 @@ import {
   ChevronRight
 } from 'lucide-react';
 import ConfiguracionDocumentos from './ConfiguracionDocumentos';
+import { ref, getDownloadURL, listAll } from 'firebase/storage';
+import { storage } from '../../src/firebase';
 
 interface Props {
   currentUser: User;
@@ -81,6 +83,19 @@ const sectionTone: Record<SectionType, { bg: string; text: string; ring: string 
 };
 
 const Documentacion: React.FC<Props> = ({ currentUser }) => {
+  // Bloqueo defensivo: Estudiantes no deben ver este módulo
+  // Guard: bloquear acceso para Estudiantes desde el propio módulo (defensa en profundidad)
+  if (currentUser.profile === Profile.ESTUDIANTE) {
+    return (
+      <div className="bg-white dark:bg-slate-800 p-8 rounded-xl ring-1 ring-slate-200 dark:ring-slate-700">
+        <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100 mb-2">Documentación</h2>
+        <p className="text-slate-600 dark:text-slate-300">No tienes acceso a este módulo.</p>
+      </div>
+    );
+  }
+
+  // Estado inicial de carga
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [docs, setDocs] = useState<DocuMeta[]>([]);
   const [question, setQuestion] = useState('');
   const [chat, setChat] = useState<ChatMsg[]>([]);
@@ -94,6 +109,7 @@ const Documentacion: React.FC<Props> = ({ currentUser }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState<string>('');
   const [activeTab, setActiveTab] = useState<TabType>('consulta');
+  const [loadingDoc, setLoadingDoc] = useState<string | null>(null); // ID del documento que se está cargando
 
   // Selección de sección/subsección (subir y chatear)
   const [sectionSel, setSectionSel] = useState<SectionType | ''>('');
@@ -110,9 +126,17 @@ const Documentacion: React.FC<Props> = ({ currentUser }) => {
     [currentUser.profile]
   );
   const canManage = isSubdir;
+  // Perfiles que pueden VER documentos (pero no gestionar): Subdirección, Profesorado y Coordinación TP
+  const canViewDocs = useMemo(
+    () => [Profile.SUBDIRECCION, Profile.PROFESORADO, Profile.COORDINACION_TP].includes(currentUser.profile),
+    [currentUser.profile]
+  );
 
   useEffect(() => {
-    const unsub = subscribeDocs(setDocs);
+    const unsub = subscribeDocs((docs) => {
+      setDocs(docs);
+      setIsInitialLoading(false);
+    });
     return () => unsub();
   }, []);
 
@@ -245,18 +269,30 @@ const Documentacion: React.FC<Props> = ({ currentUser }) => {
 
   const handleView = async (d: DocuMeta) => {
     try {
-      if (!d.storagePath) return;
-      const { ref, getDownloadURL } = await import('firebase/storage');
-      const { storage } = await import('../../src/firebase');
-      const url = await getDownloadURL(ref(storage, d.storagePath));
+      setLoadingDoc(d.id);
+      // Intentar con storagePath directo; si no existe, buscar el primer archivo dentro de la carpeta del doc
+      let path = d.storagePath;
+      if (!path) {
+        const folderRef = ref(storage, `documentacion/${d.id}`);
+        const list = await listAll(folderRef);
+        const item = list.items[0];
+        if (!item) throw new Error('No se encontró archivo asociado a este documento.');
+        path = item.fullPath;
+      }
+
+      const url = await getDownloadURL(ref(storage, path));
       setPreviewTitle(d.title);
       setPreviewUrl(url);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error abriendo documento:', e);
+      // Feedback visible para el usuario si falla
+      alert(e?.message || 'No se pudo abrir el documento.');
+    } finally {
+      setLoadingDoc(null);
     }
   };
 
-  // ---- UI helpers ----
+  // ---- UI helpers y atajos de teclado ----
   const toggleTag = (t: string) => {
     setSelectedTags((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
   };
@@ -268,6 +304,33 @@ const Documentacion: React.FC<Props> = ({ currentUser }) => {
       handleAsk();
     }
   };
+
+  // Atajos de teclado globales
+  useEffect(() => {
+    const handleGlobalKeyboard = (e: KeyboardEvent) => {
+      // Cerrar preview con Esc
+      if (e.key === 'Escape' && previewUrl) {
+        setPreviewUrl(null);
+        return;
+      }
+
+      // Alt + Q para cambiar a tab de consulta
+      if (e.altKey && e.key === 'q') {
+        setActiveTab('consulta');
+      }
+      // Alt + V para cambiar a visualizador 
+      else if (e.altKey && e.key === 'v') {
+        setActiveTab('visualizador');
+      }
+      // Alt + C para limpiar tags (si hay alguno seleccionado)
+      else if (e.altKey && e.key === 'c' && selectedTags.length > 0) {
+        clearTags();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyboard);
+    return () => window.removeEventListener('keydown', handleGlobalKeyboard);
+  }, [selectedTags.length]);
 
   const toggleExpanded = (sec: SectionType, sub: SubsectionType) => {
     const key = `${sec}::${sub}`;
@@ -426,33 +489,41 @@ const Documentacion: React.FC<Props> = ({ currentUser }) => {
                               </div>
                             </div>
 
-                            {isSubdir && (
-                              <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2">
+                              {canViewDocs && (
                                 <button
-                                  className={`text-slate-400 ${d.storagePath ? 'hover:text-indigo-600' : 'opacity-40 cursor-not-allowed'}`}
-                                  title={d.storagePath ? 'Ver documento' : 'No hay archivo asociado para ver'}
-                                  onClick={() => d.storagePath && handleView(d)}
-                                  disabled={!d.storagePath}
+                                  className="text-slate-400 hover:text-indigo-600 disabled:opacity-50"
+                                  title={loadingDoc === d.id ? "Cargando documento..." : "Ver documento"}
+                                  onClick={() => handleView(d)}
+                                  disabled={loadingDoc === d.id}
                                 >
-                                  <Eye className="w-4 h-4" />
+                                  {loadingDoc === d.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Eye className="w-4 h-4" />
+                                  )}
                                 </button>
-                                <button
-                                  className={`text-slate-400 ${d.storagePath ? 'hover:text-emerald-600' : 'opacity-40 cursor-not-allowed'}`}
-                                  title={d.storagePath ? 'Reindexar' : 'No hay archivo asociado para reindexar'}
-                                  onClick={() => d.storagePath && handleReindex(d)}
-                                  disabled={!d.storagePath}
-                                >
-                                  <RotateCw className="w-4 h-4" />
-                                </button>
-                                <button
-                                  className="text-slate-400 hover:text-red-600"
-                                  title="Eliminar"
-                                  onClick={() => deleteDocMeta(d.id)}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            )}
+                              )}
+                              {isSubdir && (
+                                <>
+                                  <button
+                                    className={`text-slate-400 ${d.storagePath ? 'hover:text-emerald-600' : 'opacity-40 cursor-not-allowed'}`}
+                                    title={d.storagePath ? 'Reindexar' : 'No hay archivo asociado para reindexar'}
+                                    onClick={() => d.storagePath && handleReindex(d)}
+                                    disabled={!d.storagePath}
+                                  >
+                                    <RotateCw className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    className="text-slate-400 hover:text-red-600"
+                                    title="Eliminar"
+                                    onClick={() => deleteDocMeta(d.id)}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -573,31 +644,10 @@ const Documentacion: React.FC<Props> = ({ currentUser }) => {
           </div>
         </div>
       </div>
-
-      {/* Modal visor de documento */}
-      {previewUrl && (
-        <div
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-          onClick={() => setPreviewUrl(null)}
-        >
-          <div
-            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full h-[90vh] max-w-5xl overflow-hidden flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-700">
-              <div className="font-medium truncate mr-2">{previewTitle}</div>
-              <button className="text-slate-500 hover:text-slate-800" onClick={() => setPreviewUrl(null)} title="Cerrar">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="flex-1 bg-slate-50 dark:bg-slate-800">
-              <iframe src={`${previewUrl}#toolbar=1&navpanes=0`} className="w-full h-full" title={previewTitle} />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
+
+  // === Layout principal con Tabs ===
 
   // === UI Visualizador ===
   const renderVisualizador = () => {
@@ -739,14 +789,20 @@ const Documentacion: React.FC<Props> = ({ currentUser }) => {
                                     </div>
 
                                     <div className="flex flex-col gap-2 items-end">
-                                      <button
-                                        className={`text-slate-400 ${d.storagePath ? 'hover:text-indigo-600' : 'opacity-40 cursor-not-allowed'}`}
-                                        title={d.storagePath ? 'Ver documento' : 'No hay archivo asociado para ver'}
-                                        onClick={() => d.storagePath && handleView(d)}
-                                        disabled={!d.storagePath}
-                                      >
-                                        <Eye className="w-4 h-4" />
-                                      </button>
+                                      {canViewDocs && (
+                                        <button
+                                          className="text-slate-400 hover:text-indigo-600 disabled:opacity-50"
+                                          title={loadingDoc === d.id ? "Cargando documento..." : "Ver documento"}
+                                          onClick={() => handleView(d)}
+                                          disabled={loadingDoc === d.id}
+                                        >
+                                          {loadingDoc === d.id ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                          ) : (
+                                            <Eye className="w-4 h-4" />
+                                          )}
+                                        </button>
+                                      )}
                                       {isSubdir && (
                                         <>
                                           <button
@@ -792,51 +848,93 @@ const Documentacion: React.FC<Props> = ({ currentUser }) => {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <button
           onClick={() => setActiveTab('consulta')}
-          className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl ring-1 transition ${
-            activeTab === 'consulta'
+          className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl ring-1 transition 
+            ${activeTab === 'consulta'
               ? 'bg-slate-900 text-white ring-slate-900'
-              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-100 ring-slate-200 dark:ring-slate-700'
-          }`}
-          title="Realizar consultas y gestionar el repositorio"
+              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-100 ring-slate-200 dark:ring-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+            }`}
+          title="Realizar consultas y gestionar el repositorio (Alt + Q)"
+          role="tab"
+          aria-selected={activeTab === 'consulta'}
+          aria-controls="panel-consulta"
         >
-          <MessageSquare className="w-4 h-4" />
-          Consulta
+          <MessageSquare className="w-4 h-4" aria-hidden="true" />
+          <span>Consulta</span>
+          <kbd className="ml-2 text-xs text-slate-400">Alt+Q</kbd>
         </button>
 
         <button
           onClick={() => setActiveTab('visualizador')}
-          className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl ring-1 transition ${
-            activeTab === 'visualizador'
-              ? 'bg-slate-900 text-white ring-slate-900'
-              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-100 ring-slate-200 dark:ring-slate-700'
-          }`}
-          title="Visualiza el repositorio por Sección y Sub-sección"
+          className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl ring-1 transition
+            ${activeTab === 'visualizador'
+              ? 'bg-slate-900 text-white ring-slate-900' 
+              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-100 ring-slate-200 dark:ring-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+            }`}
+          title="Visualiza el repositorio por Sección y Sub-sección (Alt + V)"
+          role="tab"
+          aria-selected={activeTab === 'visualizador'}
+          aria-controls="panel-visualizador"
         >
-          <LayoutGrid className="w-4 h-4" />
-          Visualizador
+          <LayoutGrid className="w-4 h-4" aria-hidden="true" />
+          <span>Visualizador</span>
+          <kbd className="ml-2 text-xs text-slate-400">Alt+V</kbd>
         </button>
 
         {isSubdir && (
           <button
             onClick={() => setActiveTab('configuracion')}
-            className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl ring-1 transition ${
-              activeTab === 'configuracion'
+            className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl ring-1 transition
+              ${activeTab === 'configuracion'
                 ? 'bg-slate-900 text-white ring-slate-900'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-100 ring-slate-200 dark:ring-slate-700'
-            }`}
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-100 ring-slate-200 dark:ring-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+              }`}
             title="Configuración de Documentación (Sólo Subdirección)"
+            role="tab" 
+            aria-selected={activeTab === 'configuracion'}
+            aria-controls="panel-configuracion"
           >
-            <FolderCog className="w-4 h-4" />
-            Configuración
+            <FolderCog className="w-4 h-4" aria-hidden="true" />
+            <span>Configuración</span>
           </button>
         )}
       </div>
 
-      {activeTab === 'consulta'
-        ? renderConsulta()
-        : activeTab === 'visualizador'
-        ? renderVisualizador()
-        : <ConfiguracionDocumentos currentUser={currentUser} />}
+      {/* Contenido del tab activo */}
+      {activeTab === 'consulta' && renderConsulta()}
+      {activeTab === 'visualizador' && renderVisualizador()}
+      {activeTab === 'configuracion' && isSubdir && <ConfiguracionDocumentos currentUser={currentUser} />}
+
+      {/* Modal visor de documento - Accesible desde cualquier tab */}
+      {previewUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setPreviewUrl(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full h-[90vh] max-w-5xl overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-700">
+              <div className="font-medium truncate mr-2">{previewTitle}</div>
+              <button 
+                className="text-slate-500 hover:text-slate-800 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/50" 
+                onClick={() => setPreviewUrl(null)} 
+                title="Cerrar visor (Esc)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 bg-slate-50 dark:bg-slate-800">
+              <iframe 
+                src={`${previewUrl}#toolbar=1&navpanes=0`} 
+                className="w-full h-full" 
+                title={previewTitle}
+                loading="lazy"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

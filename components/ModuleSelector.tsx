@@ -83,6 +83,7 @@ const ICONS: Record<string, React.ReactNode> = {
   desarrollo_profesional: <Shield className="w-5 h-5" aria-hidden />,
   evaluacion_ensayo: <FileText className="w-5 h-5" aria-hidden />,
   multicopias: <Copy className="w-5 h-5" aria-hidden />,
+  documentacion: <FileText className="w-5 h-5" aria-hidden />,
 };
 
 /** Gradientes por módulo (ligeros, accesibles) */
@@ -109,6 +110,7 @@ const ACCENTS: Record<string, string> = {
   seguimiento_curricular: 'from-indigo-500/20 to-blue-500/10',
   registro_inasistencias: 'from-fuchsia-500/20 to-pink-500/10',
   auto_aprendizaje: 'from-emerald-500/20 to-teal-500/10',
+  documentacion: 'from-cyan-500/20 to-teal-500/10',
   evaluacion_formativa: 'from-cyan-500/20 to-sky-500/10',
   tareas_interdisciplinarias: 'from-blue-500/20 to-indigo-500/10',
   calendario: 'from-indigo-500/20 to-blue-500/10',
@@ -158,6 +160,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'interdisciplinario', name: 'Interdisciplinario', icon: ICONS.interdisciplinario, accent: ACCENTS.interdisciplinario },
         { id: 'inclusion', name: 'Inclusión', icon: ICONS.inclusion, accent: ACCENTS.inclusion },
         { id: 'actividades_remotas', name: 'Actividades Remotas', icon: ICONS.actividades_remotas, accent: ACCENTS.actividades_remotas },
+        { id: 'documentacion', name: 'Documentación', icon: ICONS.documentacion, accent: ACCENTS.documentacion },
         { id: 'evaluacion_aprendizajes', name: 'Evaluación de Aprendizajes', icon: ICONS.evaluacion_aprendizajes, accent: ACCENTS.evaluacion_aprendizajes },
         { id: 'evaluaciones_formativas', name: 'Evaluaciones Formativas', icon: ICONS.evaluaciones_formativas, accent: ACCENTS.evaluaciones_formativas },
         { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
@@ -176,6 +179,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'gestion_empresas', name: 'Gestión de Empresas', icon: ICONS.gestion_empresas, accent: ACCENTS.gestion_empresas },
         { id: 'desarrollo_profesional', name: 'Desarrollo Profesional', icon: ICONS.desarrollo_profesional, accent: ACCENTS.desarrollo_profesional },
         { id: 'evaluacion_ensayo', name: 'Evaluación de Ensayo', icon: ICONS.evaluacion_ensayo, accent: ACCENTS.evaluacion_ensayo },
+        { id: 'documentacion', name: 'Documentación', icon: ICONS.documentacion, accent: ACCENTS.documentacion },
         { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
         { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
         ...commonModules,
@@ -197,6 +201,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'seguimiento_acciones', name: 'Seguimiento de Acciones', icon: ICONS.evaluaciones_formativas, accent: ACCENTS.evaluaciones_formativas },
         { id: 'inclusion', name: 'Inclusión', icon: ICONS.inclusion, accent: ACCENTS.inclusion },
         { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
+        { id: 'documentacion', name: 'Documentación', icon: ICONS.documentacion, accent: ACCENTS.documentacion },
         { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
         ...commonModules,
       ];
