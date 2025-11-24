@@ -242,6 +242,30 @@ service cloud.firestore {
       allow delete: if isAdminOrSubdir() || isProfesor();
     }
 
+    match /evaluaciones_empresas_dual/{estudianteId} {
+      function isOwnerEvaluation() {
+        return isSignedIn() && (
+          estudianteId == request.auth.uid ||
+          estudianteId == request.auth.token.email ||
+          (userDoc().data.id != null && estudianteId == userDoc().data.id) ||
+          (resource.data.estudianteId != null && (
+            resource.data.estudianteId == request.auth.uid ||
+            resource.data.estudianteId == request.auth.token.email ||
+            (userDoc().data.id != null && resource.data.estudianteId == userDoc().data.id)
+          ))
+        );
+      }
+
+      // Lectura: staff, profesor, coordinación TP o el propio estudiante evaluado
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP' || isOwnerEvaluation();
+
+      // Escritura: staff, profesor o coordinación TP
+      allow create, update: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+
+      // Eliminación: staff o profesor
+      allow delete: if isAdminOrSubdir() || isProfesor();
+    }
+
     // Respuestas de Actividades (entregas de estudiantes)
     match /respuestas_actividades/{id} {
       // Lectura: staff/profe o estudiante dueño (por UID o email almacenado)

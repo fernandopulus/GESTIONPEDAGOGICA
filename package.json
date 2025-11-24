@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "migrate:dry": "node functions/scripts/migrate_respuestas_email_to_uid.cjs --dry-run",
+    "migrate": "node functions/scripts/migrate_respuestas_email_to_uid.cjs",
+    "migrate:actividadId:dry": "node functions/scripts/normalize_respuestas_actividad_id.cjs --dry-run",
+    "migrate:actividadId": "node functions/scripts/normalize_respuestas_actividad_id.cjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

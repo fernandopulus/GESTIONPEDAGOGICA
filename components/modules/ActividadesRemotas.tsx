@@ -32,6 +32,7 @@ import {
   saveActividadFromPreview,
   calcularNota60,
   updateActividad,
+    updateUsuarioFields,
 } from '../../src/firebaseHelpers/actividadesRemotasHelper';
 import { auth } from '../../src/firebase';
 
@@ -67,6 +68,25 @@ const fileToBase64 = (file: File): Promise<string> =>
   });
 
 // —— Funciones auxiliares ULTRA seguras para evitar React error #31 —— //
+// Debug por URL: ?debugActividades=1[&debugStudent=Nombre][&debugActividadId=abc123]
+const getDebugFlags = () => {
+  if (typeof window === 'undefined') return { DEBUG_ACT: false, DEBUG_STUDENT: '', DEBUG_ACTIVIDAD_ID: '' };
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    const DEBUG_ACT = sp.has('debug') || sp.has('debugActividades');
+    const DEBUG_STUDENT = sp.get('debugStudent') || '';
+    const DEBUG_ACTIVIDAD_ID = sp.get('debugActividadId') || '';
+    return { DEBUG_ACT, DEBUG_STUDENT, DEBUG_ACTIVIDAD_ID };
+  } catch {
+    return { DEBUG_ACT: false, DEBUG_STUDENT: '', DEBUG_ACTIVIDAD_ID: '' };
+  }
+};
+const { DEBUG_ACT, DEBUG_STUDENT, DEBUG_ACTIVIDAD_ID } = getDebugFlags();
+if (DEBUG_ACT) {
+  // Señal rápida de que el modo debug está activo (nivel visible)
+  // eslint-disable-next-line no-console
+  console.log('[DEBUG actividad] Modo diagnóstico activo', { DEBUG_STUDENT, DEBUG_ACTIVIDAD_ID });
+}
 const logSuspiciousObject = (obj: any, context: string) => {
   if (typeof obj === 'object' && obj !== null && !Array.isArray(obj)) {
     const keys = Object.keys(obj);
@@ -210,6 +230,9 @@ const ActividadesRemotas: React.FC = () => {
   const [previewPrueba, setPreviewPrueba] = useState<PruebaEstandarizada | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [activeTab, setActiveTab] = useState<TabKey>('carpetas');
+  // Filtro por curso para Carpetas de Estudiantes
+  const [cursoFiltroCarpetas, setCursoFiltroCarpetas] = useState<string>('Todos');
+  const [estadoCarpetas, setEstadoCarpetas] = useState<'Activas' | 'Archivadas'>('Activas');
   // Filtros nueva vista Gestión
   const [filtroAsignatura, setFiltroAsignatura] = useState<string>('Todas');
   const [filtroNivel, setFiltroNivel] = useState<string>('Todos');
@@ -797,26 +820,170 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
   };
 
   /* ---------------------- Selecciones / cálculos ---------------------- */
+  // Helpers de normalización/match para cubrir datos legacy (email/nombre y variantes de actividadId)
+  const actividadesCollectionName = 'actividades_remotas';
+
+  const normalize = (v?: string | null) => (v || '').trim();
+  const stripDiacritics = (s: string) => {
+    try {
+      return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    } catch {
+      return s;
+    }
+  };
+  const normForCompare = (s: string) => stripDiacritics(s.toLowerCase().replace(/\s+/g, ' ').trim());
+  const equalsFlex = (a?: string, b?: string) => {
+    const aa = normalize(a);
+    const bb = normalize(b);
+    if (!aa || !bb) return false;
+    if (aa === bb) return true; // match exacto (UID u otros)
+    // match case-insensitive y sin acentos para emails/nombres
+    return normForCompare(aa) === normForCompare(bb);
+  };
+
+  const getStudentCandidateIds = (u: User): string[] => {
+    const out: string[] = [];
+    if (u.id) out.push(u.id);
+    if (u.email) out.push(u.email);
+    if (u.nombreCompleto) out.push(u.nombreCompleto);
+    if ((u as any).rut) out.push((u as any).rut);
+    if ((u as any).usuarioId) out.push((u as any).usuarioId);
+    if ((u as any).idUsuario) out.push((u as any).idUsuario);
+    return out.filter(Boolean);
+  };
+
+  const respuestaMatchesStudent = (r: any, u: User): boolean => {
+    const candidates = getStudentCandidateIds(u);
+    const rIds = [
+      r?.estudianteId,
+      r?.estudianteUID,
+      r?.estudianteUid,
+      r?.uid,
+      r?.usuarioId,
+      r?.idUsuario,
+      r?.userId,
+      r?.email,
+      r?.estudianteEmail,
+      r?.estudianteNombre,
+      r?.autorId,
+      r?.autorUID,
+      r?.autorEmail,
+      r?.estudiante?.id,
+      r?.estudiante?.uid,
+      r?.estudiante?.email,
+      r?.usuario?.id,
+      r?.usuario?.uid,
+      r?.usuario?.email,
+    ];
+    const ok = candidates.some((cid) => rIds.some((rid) => equalsFlex(rid, cid)));
+    if (DEBUG_ACT && (!DEBUG_STUDENT || (u?.nombreCompleto || '').toLowerCase().includes(DEBUG_STUDENT.toLowerCase()))) {
+      // Log seguro y acotado
+      try {
+        // Evitar volcar objetos grandes: mostramos claves presentes
+        const present = rIds.reduce((acc: string[], v: any, idx: number) => (v ? acc.concat(String(v)) : acc), []);
+        console.log('[DEBUG actividad] matchStudent', {
+          estudiante: u?.nombreCompleto,
+          userCandidates: candidates,
+          respuestaId: r?.id,
+          estudianteFields: present,
+          ok,
+        });
+      } catch {}
+    }
+    return ok;
+  };
+
+  const actividadIdVariants = (actividadId: string): string[] => {
+    const id = normalize(actividadId);
+    if (!id) return [];
+    const bases = [
+      'actividades_remotas',
+      'pruebas_estandarizadas',
+    ];
+    const variants: string[] = [id];
+    bases.forEach((base) => {
+      variants.push(`${base}/${id}`);
+      variants.push(`/${base}/${id}`);
+    });
+    return variants;
+  };
+
+  const respuestaMatchesActividad = (r: any, actividadId?: string | null): boolean => {
+    if (!actividadId) return false;
+    const variants = actividadIdVariants(actividadId);
+    let ok = false;
+    let via: string | undefined;
+    // campos directos
+    if (!ok && variants.includes(normalize(r?.actividadId))) { ok = true; via = 'actividadId'; }
+    if (!ok && variants.includes(normalize(r?.idActividad))) { ok = true; via = 'idActividad'; }
+    // mapa antiguo
+    if (!ok && variants.includes(normalize(r?.actividad?.id))) { ok = true; via = 'actividad.id'; }
+    const path = normalize(r?.actividadPath);
+    if (!ok && variants.includes(path)) { ok = true; via = 'actividadPath=variant'; }
+    if (!ok && path && path.endsWith(`/${normalize(actividadId)}`)) { ok = true; via = 'actividadPath=endsWithId'; }
+    // referencia a documento
+    try {
+      const ref = r?.actividadRef;
+      if (ref && !ok) {
+        if (equalsFlex(ref?.id, actividadId)) { ok = true; via = 'actividadRef.id'; }
+        const rpath = normalize(ref?.path);
+        if (!ok && variants.includes(rpath)) { ok = true; via = 'actividadRef.path=variant'; }
+        if (!ok && rpath && rpath.endsWith(`/${normalize(actividadId)}`)) { ok = true; via = 'actividadRef.path=endsWithId'; }
+      }
+    } catch {}
+    if (DEBUG_ACT && (!DEBUG_ACTIVIDAD_ID || equalsFlex(actividadId, DEBUG_ACTIVIDAD_ID))) {
+      try {
+        const payload = {
+          respuestaId: r?.id,
+          actividadId,
+          actividadIdCampos: {
+            actividadId: r?.actividadId,
+            idActividad: r?.idActividad,
+            actividadDotId: r?.actividad?.id,
+            actividadPath: r?.actividadPath,
+            actividadRefId: r?.actividadRef?.id,
+            actividadRefPath: r?.actividadRef?.path,
+          },
+          variants,
+          ok,
+          via,
+        };
+        if (ok) {
+          console.log('[DEBUG actividad] matchActividad OK', payload);
+        } else {
+          console.log('[DEBUG actividad] matchActividad false', payload);
+        }
+      } catch {}
+    }
+    return ok;
+  };
+
   const estudiantesAsignados = useMemo((): User[] => {
     const actividad = selectedActividad || selectedPrueba;
     if (!actividad || !allUsers.length) return [];
     const mapa = new Map<string, User>();
+    // Si no hay destinos de ningún tipo, no mostramos nada
     if (!actividad.cursosDestino?.length && !actividad.estudiantesDestino?.length) {
-      // En este módulo sólo trabajamos por estudiante; si no hay destino explícito no mostramos nada
       return [];
-    } else {
-      if (actividad.estudiantesDestino?.length) {
-        allUsers
-          .filter((u) => u.profile === Profile.ESTUDIANTE && actividad.estudiantesDestino.includes(u.nombreCompleto))
-          .forEach((u) => mapa.set(u.id, u));
-      }
+    }
+    // Incluir por lista explícita de estudiantes
+    if (actividad.estudiantesDestino?.length) {
+      allUsers
+        .filter((u) => u.profile === Profile.ESTUDIANTE && actividad.estudiantesDestino.includes(u.nombreCompleto))
+        .forEach((u) => mapa.set(u.id, u));
+    }
+    // Incluir por cursos de destino (paridad con vista estudiante)
+    if (actividad.cursosDestino?.length) {
+      allUsers
+        .filter((u) => u.profile === Profile.ESTUDIANTE && !!u.curso && actividad.cursosDestino.includes(u.curso))
+        .forEach((u) => mapa.set(u.id, u));
     }
     return Array.from(mapa.values()).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
   }, [selectedActividad, selectedPrueba, allUsers]);
 
   const resultadosDeActividad = useMemo(() => {
     const actividadId = selectedActividad?.id || selectedPrueba?.id;
-    return respuestas.filter((r) => r.actividadId === actividadId);
+    return respuestas.filter((r) => respuestaMatchesActividad(r, actividadId));
   }, [respuestas, selectedActividad, selectedPrueba]);
 
   const students = useMemo(
@@ -837,18 +1004,40 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
         const u = allUsers.find(x => x.profile === Profile.ESTUDIANTE && x.nombreCompleto === nombre);
         if (u) set.add(u.id);
       });
+      // por cursos de destino
+      (a.cursosDestino || []).forEach(curso => {
+        allUsers
+          .filter(x => x.profile === Profile.ESTUDIANTE && (x.curso || '') === curso)
+          .forEach(u => set.add(u.id));
+      });
     });
     pruebasEstandarizadas.forEach(p => {
       (p.estudiantesDestino || []).forEach(nombre => {
         const u = allUsers.find(x => x.profile === Profile.ESTUDIANTE && x.nombreCompleto === nombre);
         if (u) set.add(u.id);
       });
+      // por cursos de destino
+      (p.cursosDestino || []).forEach(curso => {
+        allUsers
+          .filter(x => x.profile === Profile.ESTUDIANTE && (x.curso || '') === curso)
+          .forEach(u => set.add(u.id));
+      });
     });
     // por respuestas
-    respuestas.forEach(r => set.add(r.estudianteId));
+    respuestas.forEach(r => {
+      const u = allUsers.find(x => x.profile === Profile.ESTUDIANTE && respuestaMatchesStudent(r, x));
+      if (u) set.add(u.id);
+    });
     return allUsers.filter(u => u.profile === Profile.ESTUDIANTE && set.has(u.id))
       .sort((a,b)=>a.nombreCompleto.localeCompare(b.nombreCompleto));
   }, [actividades, pruebasEstandarizadas, respuestas, allUsers]);
+
+  // Opciones de curso disponibles para la vista "Carpetas de Estudiantes"
+  const cursosDisponibles = useMemo(() => {
+    const set = new Set<string>();
+    programStudents.forEach((s) => set.add(s.curso || '—'));
+    return ['Todos', ...Array.from(set).sort()];
+  }, [programStudents]);
 
   const selectedStudent = useMemo(
     () => allUsers.find(u => u.id === selectedStudentId) || null,
@@ -859,13 +1048,13 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
     if (!selectedStudent) return { asignadas: [], respuestas: [] as RespuestaEstudianteActividad[] };
     const asignadas = [
       ...actividades
-        .filter(a => (a.estudiantesDestino || []).includes(selectedStudent.nombreCompleto))
+        .filter(a => (a.estudiantesDestino || []).includes(selectedStudent.nombreCompleto) || (a.cursosDestino || []).includes(selectedStudent.curso || ''))
         .map(a => ({ tipo: 'Actividad', item: a })),
       ...pruebasEstandarizadas
-        .filter(p => (p.estudiantesDestino || []).includes(selectedStudent.nombreCompleto))
+        .filter(p => (p.estudiantesDestino || []).includes(selectedStudent.nombreCompleto) || (p.cursosDestino || []).includes(selectedStudent.curso || ''))
         .map(p => ({ tipo: 'Prueba', item: p })),
     ] as Array<{ tipo: 'Actividad'|'Prueba'; item: any }>;
-    const resp = respuestas.filter(r => r.estudianteId === selectedStudent.id);
+    const resp = respuestas.filter(r => respuestaMatchesStudent(r, selectedStudent));
     return { asignadas, respuestas: resp };
   }, [selectedStudent, actividades, pruebasEstandarizadas, respuestas]);
 
@@ -874,6 +1063,13 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
   ============================================================ */
   const renderTabs = () => (
     <div className="flex flex-wrap gap-2 mb-6">
+      {DEBUG_ACT && (
+        <div className="w-full mb-2 px-3 py-2 rounded-lg bg-amber-100 text-amber-900 text-sm">
+          Modo diagnóstico activo
+          {DEBUG_STUDENT && <span className="ml-2">• Estudiante: <strong>{DEBUG_STUDENT}</strong></span>}
+          {DEBUG_ACTIVIDAD_ID && <span className="ml-2">• Actividad: <strong>{DEBUG_ACTIVIDAD_ID}</strong></span>}
+        </div>
+      )}
       {(['carpetas','actividades','pruebas','gestion'] as TabKey[]).map(tab => (
         <button
           key={tab}
@@ -888,6 +1084,33 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
         </button>
       ))}
       <div className="ml-auto flex items-center gap-2">
+        {activeTab === 'carpetas' && (
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Curso</label>
+            <select
+              value={cursoFiltroCarpetas}
+              onChange={(e) => setCursoFiltroCarpetas(e.target.value)}
+              className="border-slate-300 rounded-md"
+            >
+              {cursosDisponibles.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {activeTab === 'carpetas' && (
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Estado</label>
+            <select
+              value={estadoCarpetas}
+              onChange={(e) => setEstadoCarpetas(e.target.value as any)}
+              className="border-slate-300 rounded-md"
+            >
+              <option>Activas</option>
+              <option>Archivadas</option>
+            </select>
+          </div>
+        )}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 opacity-60" size={18} />
           <input
@@ -909,6 +1132,13 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
           </button>
         )}
       </div>
+      {DEBUG_ACT && (
+        <div className="w-full mt-3 p-2 rounded-md bg-amber-100 text-amber-800 text-xs">
+          Debug Actividades ON
+          {DEBUG_STUDENT && <span className="ml-2">• Estudiante: <strong>{DEBUG_STUDENT}</strong></span>}
+          {DEBUG_ACTIVIDAD_ID && <span className="ml-2">• ActividadId: <strong>{DEBUG_ACTIVIDAD_ID}</strong></span>}
+        </div>
+      )}
     </div>
   );
 
@@ -937,10 +1167,20 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
   const trabajos: TrabajoRow[] = useMemo(() => {
     const rows: TrabajoRow[] = [];
     for (const a of actividades) {
-      const asignados = a.estudiantesDestino || [];
-      for (const nombre of asignados) {
-        const u = allUsers.find(x => x.profile === Profile.ESTUDIANTE && x.nombreCompleto === nombre) || null;
-        const r = u ? respuestas.find(rr => rr.estudianteId === u.id && rr.actividadId === a.id) : undefined;
+      // Estudiantes asignados por nombre
+      const usersByNombre = (a.estudiantesDestino || [])
+        .map(nombre => allUsers.find(x => x.profile === Profile.ESTUDIANTE && x.nombreCompleto === nombre))
+        .filter(Boolean) as User[];
+      // Estudiantes asignados por curso
+      const usersByCurso = (a.cursosDestino || []).length
+        ? allUsers.filter(u => u.profile === Profile.ESTUDIANTE && !!u.curso && (a.cursosDestino || []).includes(u.curso))
+        : [];
+      const uniqueUsersMap = new Map<string, User>();
+      [...usersByNombre, ...usersByCurso].forEach(u => uniqueUsersMap.set(u.id, u));
+      const usuariosAsignados = Array.from(uniqueUsersMap.values());
+
+      for (const u of usuariosAsignados) {
+        const r = respuestas.find(rr => respuestaMatchesStudent(rr, u) && respuestaMatchesActividad(rr, a.id));
         rows.push({ actividad: a, estudiante: u, estado: r ? 'Completado' : 'Pendiente', respuesta: r });
       }
     }
@@ -1099,52 +1339,154 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
 
   /* ---------------------- Carpetas por Estudiante ---------------------- */
   const renderStudentFolders = () => {
-    const list = (studentSearch ? filteredStudents : programStudents);
+    // Base: estudiantes del programa (tienen alguna asignación o respuesta)
+  const base = programStudents;
+    const matchesSearch = (s: User) => !studentSearch.trim() || s.nombreCompleto.toLowerCase().includes(studentSearch.toLowerCase());
+  const matchesCurso = (s: User) => cursoFiltroCarpetas === 'Todos' || (s.curso || '—') === cursoFiltroCarpetas;
+  const matchesEstado = (s: User) => estadoCarpetas === 'Activas' ? !s.carpetaArchivada : !!s.carpetaArchivada;
+  const list = base.filter((s) => matchesSearch(s) && matchesCurso(s) && matchesEstado(s));
+
     if (!list.length) {
       return (
         <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow text-center text-slate-500">
-          No hay estudiantes asignados aún.
+          No hay estudiantes para mostrar.
         </div>
       );
     }
+
+    // Agrupar por curso
+    const groups = list.reduce((acc: Record<string, User[]>, s) => {
+      const key = s.curso || '—';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(s);
+      return acc;
+    }, {} as Record<string, User[]>);
+    const orderedCourses = Object.keys(groups).sort();
+
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
-        {list.map((s) => {
-          const entregas = respuestas.filter(r => r.estudianteId === s.id);
-          const completadas = entregas.length;
-          const asignadas = actividades.filter(a => (a.estudiantesDestino || []).includes(s.nombreCompleto)).length
-            + pruebasEstandarizadas.filter(p => (p.estudiantesDestino || []).includes(s.nombreCompleto)).length;
-          return (
-            <button
-              key={s.id}
-              onClick={() => setSelectedStudentId(s.id)}
-              className="group text-left rounded-2xl border border-slate-200 bg-white hover:shadow-md transition overflow-hidden"
-            >
-              <div className="flex items-center gap-3 p-4 bg-gradient-to-br from-amber-50 to-white">
-                <div className="rounded-xl p-3 bg-amber-100 text-amber-700">
-                  <FolderOpen />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-800 truncate">{s.nombreCompleto}</p>
-                  <p className="text-xs text-slate-500 flex items-center gap-1"><UserIcon size={14}/> {s.curso || '—'}</p>
-                </div>
-              </div>
-              <div className="p-4 grid grid-cols-3 text-center text-sm text-slate-600">
-                <div><p className="font-semibold">{asignadas}</p><p className="text-xs">Asignadas</p></div>
-                <div><p className="font-semibold">{completadas}</p><p className="text-xs">Entregas</p></div>
-                <div className="flex flex-col items-center">
-                  <Clock size={16} className="opacity-70" />
-                  <span className="text-xs mt-1">
-                    {entregas.length ? formatDateOnly(entregas.sort((a,b)=> (a.fechaCompletado || '').localeCompare(b.fechaCompletado || '')).slice(-1)[0].fechaCompletado) : '—'}
-                  </span>
-                </div>
-              </div>
-            </button>
-          );
-        })}
+      <div className="space-y-6">
+        {orderedCourses.map((curso) => (
+          <div key={curso}>
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-lg font-bold text-slate-800">{curso}</h3>
+              <span className="text-xs text-slate-500">{groups[curso].length} estudiante(s)</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+              {groups[curso].map((s) => {
+                // Avance alineado con Autoaprendizaje: solo actividades remotas, no pruebas
+                // Coincidencias por nombre, email, UID y curso (igual que Autoaprendizaje)
+                const assignedActividadIds = actividades
+                  .filter(a => {
+                    const porCurso = (a.cursosDestino || []).some(c => equalsFlex(c, s.curso || ''));
+                    const dest = a.estudiantesDestino || [];
+                    const porEstudiante = dest.some(d => equalsFlex(d, s.nombreCompleto) || equalsFlex(d, s.email) || equalsFlex(d, s.id));
+                    return porCurso || porEstudiante;
+                  })
+                  .map(a => a.id);
+
+                // Respuestas del estudiante que corresponden a actividades asignadas
+                const entregas = respuestas.filter((r) =>
+                  respuestaMatchesStudent(r, s) && assignedActividadIds.some(id => respuestaMatchesActividad(r, id))
+                );
+
+                const completadas = entregas.length;
+                const asignadas = assignedActividadIds.length;
+
+                // Porcentaje de avance
+                const avancePct = asignadas > 0 ? Math.round((completadas / asignadas) * 100) : 0;
+                const clampPct = Math.max(0, Math.min(100, avancePct));
+                const colorHex = clampPct < 50 ? '#ef4444' /* red-500 */ : (clampPct < 80 ? '#f59e0b' /* amber-500 */ : '#10b981' /* emerald-500 */);
+
+                const lastFecha = entregas.length
+                  ? entregas.sort((a,b)=> (a.fechaCompletado || '').localeCompare(b.fechaCompletado || '')).slice(-1)[0].fechaCompletado
+                  : '';
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setSelectedStudentId(s.id)}
+                    className="group text-left rounded-2xl border border-slate-200 bg-white hover:shadow-md transition overflow-hidden"
+                  >
+                    <div className="flex items-center gap-3 p-4 bg-gradient-to-br from-amber-50 to-white">
+                      <div className="rounded-xl p-3 bg-amber-100 text-amber-700">
+                        <FolderOpen />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-800 truncate">{s.nombreCompleto}</p>
+                        <p className="text-xs text-slate-500 flex items-center gap-1"><UserIcon size={14}/> {s.curso || '—'}</p>
+                        {s.modalidadRemota && (
+                          <p className="text-[11px] mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">
+                            {s.modalidadRemota}
+                          </p>
+                        )}
+                        {s.carpetaArchivada && (
+                          <p className="text-[11px] mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-300 text-slate-700">
+                            Archivado
+                          </p>
+                        )}
+                      </div>
+                      {/* Indicador de avance con advertencia por color */}
+                      <div className="ml-auto" title={`Avance ${clampPct}% • ${completadas}/${asignadas} entregas`} aria-label={`Avance ${clampPct}%`}>
+                        <div
+                          className="w-10 h-10 rounded-full grid place-items-center"
+                          style={{ background: `conic-gradient(${colorHex} ${clampPct}%, #e5e7eb 0)` }}
+                        >
+                          <div className="w-8 h-8 rounded-full bg-white grid place-items-center text-[11px] font-semibold" style={{ color: colorHex }}>
+                            {clampPct}%
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-4 grid grid-cols-3 text-center text-sm text-slate-600">
+                      <div><p className="font-semibold">{asignadas}</p><p className="text-xs">Asignadas</p></div>
+                      <div><p className="font-semibold">{completadas}</p><p className="text-xs">Entregas</p></div>
+                      <div className="flex flex-col items-center">
+                        <Clock size={16} className="opacity-70" />
+                        <span className="text-xs mt-1">{lastFecha ? formatDateOnly(lastFecha) : '—'}</span>
+                      </div>
+                    </div>
+                    {/* Barra de acciones rápidas */}
+                    <div className="border-t px-3 py-2 flex flex-wrap gap-2 bg-slate-50 text-[11px]">
+                      <button
+                        type="button"
+                        className="px-2 py-1 rounded bg-sky-600 text-white hover:bg-sky-700"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const newVal = s.modalidadRemota === 'Remoto' ? null : 'Remoto';
+                          await updateUsuarioFields(s.id, { modalidadRemota: newVal || undefined });
+                        }}
+                      >{s.modalidadRemota === 'Remoto' ? 'Quitar Remoto' : 'Marcar Remoto'}</button>
+                      <button
+                        type="button"
+                        className="px-2 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const newVal = s.modalidadRemota === 'Semi Remoto' ? null : 'Semi Remoto';
+                          await updateUsuarioFields(s.id, { modalidadRemota: newVal || undefined });
+                        }}
+                      >{s.modalidadRemota === 'Semi Remoto' ? 'Quitar Semi' : 'Marcar Semi'}</button>
+                      <button
+                        type="button"
+                        className={`px-2 py-1 rounded ${s.carpetaArchivada ? 'bg-slate-600 text-white hover:bg-slate-700' : 'bg-amber-600 text-white hover:bg-amber-700'}`}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const archivar = !s.carpetaArchivada;
+                          await updateUsuarioFields(s.id, {
+                            carpetaArchivada: archivar,
+                            carpetaArchivadaAt: archivar ? new Date().toISOString() : undefined
+                          });
+                        }}
+                      >{s.carpetaArchivada ? 'Quitar Archivo' : 'Dar de Alta (Archivar)'}</button>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     );
   };
+  
 
   const renderStudentHistory = () => {
     if (!selectedStudent) return null;
@@ -1178,7 +1520,7 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
             </thead>
             <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
               {asignadas.map(({ tipo, item }) => {
-                const r = resp.find(x => x.actividadId === item.id);
+                const r = resp.find(x => respuestaMatchesActividad(x, item.id));
                 const titulo = tipo === 'Actividad' ? `${item.asignatura} — ${item.tipos?.join(', ')}` : item.titulo;
                 const plazo = item.plazoEntrega ? formatDateOnly(item.plazoEntrega) : '—';
                 return (
@@ -1258,7 +1600,7 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
             </thead>
             <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
               {estudiantesAsignados.map((estudiante) => {
-                const resultado = resultadosDeActividad.find((r) => r.estudianteId === estudiante.id);
+                const resultado = resultadosDeActividad.find((r) => respuestaMatchesStudent(r, estudiante));
                 return (
                   <tr key={estudiante.id}>
                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-200">

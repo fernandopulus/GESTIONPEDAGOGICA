@@ -1,1 +1,8 @@
 node_modules
+functions/credentials/
+.env
+*.env
+.env.*
+dist/
+.DS_Store
+Thumbs.db

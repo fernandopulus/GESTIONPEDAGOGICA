@@ -116,6 +116,35 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [profile, modules]);
 
+  // Escuchar peticiones de navegación desde módulos hijos (por ejemplo, Desarrollo Profesional → Documentación)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const anyEvent = e as CustomEvent<{ moduleName?: string }>;
+      const moduleName = anyEvent.detail?.moduleName;
+      if (!moduleName) return;
+      const found = modules.find((m) => m.name === moduleName);
+      if (found) {
+        setActiveModule(found);
+      }
+    };
+    window.addEventListener('gp:navigate-module', handler);
+    return () => window.removeEventListener('gp:navigate-module', handler);
+  }, [modules]);
+
+  // Escuchar cambios en el hash para navegación directa (deep linking básico)
+  useEffect(() => {
+    const handleHash = () => {
+      if (window.location.hash === '#documentacion') {
+        const found = modules.find((m) => m.name === 'Documentación');
+        if (found) setActiveModule(found);
+      }
+    };
+    // Chequear al montar y al cambiar hash
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, [modules]);
+
   const handleModuleSelect = useCallback((mod: Module) => {
     setActiveModule(mod);
     if (window.innerWidth < 768) setSidebarOpen(false);

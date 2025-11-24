@@ -27,6 +27,7 @@ import {
   HelpCircle,
   Users,
 } from 'lucide-react';
+import { exportCargasHorariasDocentes } from '../../src/utils/exportCargasHorariasDocentes';
 
 // Estilos para animaciones y scrollbar personalizado
 const styles = `
@@ -133,6 +134,8 @@ const CrearHorarios: React.FC = () => {
   const [vistaResumen, setVistaResumen] = useState<'docentes' | 'cursos' | 'funciones' | 'totales'>('docentes');
   const [validaciones, setValidaciones] = useState<ValidationResultCarga[]>([]);
   const [loading, setLoading] = useState(false);
+  const [exportandoPDF, setExportandoPDF] = useState(false);
+    const [errorExportacion, setErrorExportacion] = useState<string | null>(null); // (eliminado duplicado de estados exportandoPDF / errorExportacion)
   // Horarios generados/guardados y vista
   const [horariosActuales, setHorariosActuales] = useState<HorariosGenerados | null>(null);
   const [horariosGenerados, setHorariosGenerados] = useState<HorariosGenerados | null>(null);
@@ -156,6 +159,7 @@ const CrearHorarios: React.FC = () => {
     perfil: 'PROFESORADO' | 'SUBDIRECCION' | 'COORDINACION_TP';
   }>({ nombre: '', email: '', departamento: 'General', horasContrato: 44, perfil: 'PROFESORADO' });
   const [docenteSearch, setDocenteSearch] = useState('');
+  // Nota: estados exportandoPDF y errorExportacion ya declarados arriba; se eliminaron duplicados.
 
   useEffect(() => {
     const unsub = subscribeToDocentes((d) => setDocentes(d));
@@ -456,6 +460,8 @@ const CrearHorarios: React.FC = () => {
     XLSX.writeFile(wb, `horarios_${new Date().toISOString().split('T')[0]}.xlsx`);
   }, [asignaciones, docentes, totalesByDocente]);
 
+  // Eliminado: flujo de exportación PDF antiguo con plantilla del liceo previo
+
   // Generar horario con IA (con fallback automático)
   const generarHorarioIA = useCallback(async () => {
     try {
@@ -536,6 +542,32 @@ const CrearHorarios: React.FC = () => {
       setLoading(false);
     }
   }, [validaciones, asignaciones]);
+
+  const handleExportPDF = useCallback(async () => {
+    try {
+      setExportandoPDF(true);
+      setErrorExportacion(null);
+      const blob = await exportCargasHorariasDocentes(docentes, asignaciones, totalesByDocente, {
+        titulo: 'Resumen de Cargas Horarias',
+        establecimiento: 'Liceo Industrial de Recoleta',
+        directora: 'Patricia Silva Sánchez',
+        incluirFecha: true,
+        headerImageUrl: 'https://res.cloudinary.com/dwncmu1wu/image/upload/v1756260600/Captura_de_pantalla_2025-08-26_a_la_s_10.09.17_p._m._aakgkt.png',
+        headerImageHeightCm: 1.5
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cargas_docentes_${new Date().toISOString().split('T')[0]}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error('Error exportando PDF:', e);
+      setErrorExportacion(e?.message || 'Error al exportar PDF');
+    } finally {
+      setExportandoPDF(false);
+    }
+  }, [docentes, asignaciones, totalesByDocente]);
 
   const getSemaforoColor = (docenteId: string) => {
     const totales = totalesByDocente[docenteId];
@@ -835,6 +867,19 @@ const CrearHorarios: React.FC = () => {
               <FileSpreadsheet className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
               <span className="text-xs font-medium mt-1">Exportar Excel</span>
             </button>
+
+            <button
+              onClick={handleExportPDF}
+              disabled={exportandoPDF || docentes.length === 0}
+              className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white rounded-lg transition-all duration-200 shadow-sm group disabled:opacity-50"
+            >
+              {exportandoPDF ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Download className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
+              )}
+              <span className="text-xs font-medium mt-1">{exportandoPDF ? 'Generando...' : 'Exportar PDF'}</span>
+            </button>
             
             <button 
               onClick={() => setShowReglasModal(true)} 
@@ -864,7 +909,7 @@ const CrearHorarios: React.FC = () => {
               className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-lg transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-amber-500 disabled:hover:to-orange-600 group"
             >
               {loading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
+                <Loader2 className="w-5 h-4 animate-spin" />
               ) : (
                 <Save className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
               )}
@@ -904,6 +949,21 @@ const CrearHorarios: React.FC = () => {
               ))}
             </div>
           </div>
+        </div>
+      )}
+      {errorExportacion && (
+        <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-xl p-4 flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" />
+          <div>
+            <h3 className="font-medium text-red-700 dark:text-red-300">Error de exportación</h3>
+            <p className="text-sm text-red-600 dark:text-red-400">{errorExportacion}</p>
+          </div>
+          <button
+            onClick={() => setErrorExportacion(null)}
+            className="ml-auto text-red-500 hover:text-red-700"
+          >
+            <CloseIcon className="w-5 h-5" />
+          </button>
         </div>
       )}
 
@@ -1005,28 +1065,23 @@ const CrearHorarios: React.FC = () => {
                 }
                 return (
                   <tr key={asignacion.id} className={estiloFila}>
-                    {/* Estado - Columna sticky */}
+                    {/* Estado */}
                     <td className="px-1 py-2 sticky left-0 z-10 bg-inherit">
-                      <div className="flex flex-col items-center">
-                        <div 
-                          className={`w-3 h-3 rounded-full ${
-                            semaforoColor === 'green' ? 'bg-green-500' : 
-                            semaforoColor === 'yellow' ? 'bg-yellow-500' : 
-                            semaforoColor === 'red' ? 'bg-red-500' : 'bg-gray-500'
-                          }`} 
-                        />
-                        {tieneMultiplesAsignaturas && esPrimeraAsignacionDocente && (
-                          <span className="text-xs text-blue-600 dark:text-blue-400 font-medium mt-1">{asignacionesDocente.length}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`w-3 h-3 rounded-full ${semaforoColor === 'green' ? 'bg-green-500' : semaforoColor === 'yellow' ? 'bg-yellow-500' : semaforoColor === 'red' ? 'bg-red-500' : 'bg-gray-400'}`}></span>
+                        {esPrimeraAsignacionDocente && (
+                          <span className="text-[10px] text-gray-600 dark:text-gray-400 font-medium truncate max-w-[70px]">
+                            {asignacion.docenteNombre}
+                          </span>
                         )}
                       </div>
                     </td>
-                    
-                    {/* Docente - Columna sticky */}
-                    <td className="px-1 py-2 sticky left-10 z-10 bg-inherit">
+                    {/* Docente */}
+                    <td className="px-1 py-2 sticky left-14 z-10 bg-inherit">
                       {!tieneMultiplesAsignaturas || esPrimeraAsignacionDocente ? (
                         <div>
-                          <select 
-                            value={asignacion.docenteId} 
+                          <select
+                            value={asignacion.docenteId}
                             onChange={(e) => actualizarAsignacion(asignacion.id, 'docenteId', e.target.value)}
                             className={`w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs ${tieneMultiplesAsignaturas ? 'font-medium' : ''}`}
                           >
@@ -1034,21 +1089,20 @@ const CrearHorarios: React.FC = () => {
                               <option key={d.id} value={d.id}>{d.nombre}</option>
                             ))}
                           </select>
-                          {tieneMultiplesAsignaturas && 
+                          {tieneMultiplesAsignaturas && (
                             <div className="mt-1 text-xs text-blue-600 dark:text-blue-400">
                               {asignacionesDocente.length} asig.
                             </div>
-                          }
+                          )}
                         </div>
                       ) : (
                         <div className="pl-1 italic text-gray-500 dark:text-gray-400 text-xs whitespace-nowrap">↳ Mismo</div>
                       )}
                     </td>
-                    
                     {/* Asignatura */}
                     <td className="px-1 py-2">
-                      <select 
-                        value={asignacion.asignaturaOModulo || ''} 
+                      <select
+                        value={asignacion.asignaturaOModulo || ''}
                         onChange={(e) => actualizarAsignacion(asignacion.id, 'asignaturaOModulo', e.target.value)}
                         className={`w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs ${tieneMultiplesAsignaturas ? 'border-blue-300 dark:border-blue-700' : ''}`}
                       >
@@ -1057,33 +1111,32 @@ const CrearHorarios: React.FC = () => {
                           <option key={asig} value={asig}>{asig}</option>
                         ))}
                       </select>
-                      {tieneMultiplesAsignaturas && !esPrimeraAsignacionDocente && 
+                      {tieneMultiplesAsignaturas && !esPrimeraAsignacionDocente && (
                         <div className="mt-1 text-xs text-blue-600 dark:text-blue-400">Adicional</div>
-                      }
+                      )}
                     </td>
-                    
-                    {/* Funciones lectivas - Diseño más compacto */}
+                    {/* Funciones lectivas */}
                     <td className="px-1 py-2">
                       <div className="space-y-1 w-full min-w-[200px]">
                         {(asignacion.funcionesLectivas || []).map((funcion) => (
                           <div key={funcion.id} className="flex gap-1 items-center">
-                            <input 
-                              type="text" 
-                              value={funcion.nombre} 
+                            <input
+                              type="text"
+                              value={funcion.nombre}
                               onChange={(e) => actualizarFuncionLectiva(asignacion.id, funcion.id, 'nombre', e.target.value)}
-                              placeholder="Nombre" 
+                              placeholder="Nombre"
                               className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-l bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs"
                             />
-                            <input 
-                              type="number" 
-                              value={funcion.horas} 
+                            <input
+                              type="number"
+                              value={funcion.horas}
                               onChange={(e) => actualizarFuncionLectiva(asignacion.id, funcion.id, 'horas', parseInt(e.target.value) || 0)}
-                              min={0} max={44} 
+                              min={0} max={44}
                               className="w-10 px-1 py-1 border-y border-r border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center"
                             />
-                            <button 
+                            <button
                               onClick={() => eliminarFuncionLectiva(asignacion.id, funcion.id)}
-                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-r" 
+                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-r"
                               title="Eliminar función"
                             >
                               <Trash2 className="w-3 h-3" />
@@ -1092,16 +1145,16 @@ const CrearHorarios: React.FC = () => {
                         ))}
                         {!asignacion.funcionesLectivas && (
                           <div className="flex gap-1 items-center">
-                            <input 
-                              type="text" 
-                              value={(asignacion as any).otraFuncion || ''} 
+                            <input
+                              type="text"
+                              value={(asignacion as any).otraFuncion || ''}
                               onChange={(e) => actualizarAsignacion(asignacion.id, 'otraFuncion', e.target.value)}
-                              placeholder="Ej: Coordinador" 
+                              placeholder="Ej: Coordinador"
                               className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs"
                             />
                           </div>
                         )}
-                        <button 
+                        <button
                           onClick={() => agregarFuncionLectiva(asignacion.id)}
                           className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 px-2 py-0.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
                         >
@@ -1109,30 +1162,27 @@ const CrearHorarios: React.FC = () => {
                         </button>
                       </div>
                     </td>
-                    
                     {/* Horas por asignatura */}
                     <td className="px-1 py-2 text-center">
                       <span className="text-xs font-medium text-gray-900 dark:text-white">{asignacion.horasXAsig || 0}</span>
                     </td>
-                    
-                    {/* Cursos - Grid adaptable */}
+                    {/* Cursos */}
                     <td className="px-1 py-2">
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1">
                         {CURSOS.map((curso) => (
                           <div key={curso} className="flex flex-col items-center bg-gray-50 dark:bg-gray-750 p-1 rounded">
                             <label className="text-xs text-gray-500 dark:text-gray-400">{curso}</label>
-                            <input 
-                              type="number" 
-                              min={0} 
-                              value={asignacion.horasPorCurso[curso as CursoId] || ''} 
+                            <input
+                              type="number"
+                              min={0}
+                              value={asignacion.horasPorCurso[curso as CursoId] || ''}
                               onChange={(e) => actualizarHorasCurso(asignacion.id, curso as CursoId, parseInt(e.target.value) || 0)}
-                              className="w-10 h-7 px-1 py-0 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center" 
+                              className="w-10 h-7 px-1 py-0 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center"
                             />
                           </div>
                         ))}
                       </div>
                     </td>
-                    
                     {/* HA/HB */}
                     <td className="px-1 py-2 text-center whitespace-nowrap">
                       {totales && (
@@ -1146,20 +1196,19 @@ const CrearHorarios: React.FC = () => {
                         </div>
                       )}
                     </td>
-                    
-                    {/* Acciones - Columna sticky */}
+                    {/* Acciones */}
                     <td className="px-1 py-2 text-center sticky right-0 z-10 bg-inherit">
                       <div className="flex flex-col items-center gap-1">
-                        <button 
+                        <button
                           onClick={() => agregarAsignaturaMismoDocente(asignacion.docenteId, asignacion.docenteNombre)}
-                          className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded" 
+                          className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
                           title="Agregar otra asignatura a este docente"
                         >
                           <Plus className="w-3.5 h-3.5" />
                         </button>
-                        <button 
+                        <button
                           onClick={() => eliminarAsignacion(asignacion.id)}
-                          className="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded" 
+                          className="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
                           title="Eliminar esta asignación"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1391,147 +1440,49 @@ const CrearHorarios: React.FC = () => {
 
               {vistaResumen === 'totales' && (
                 <div>
-                  <h3 className="text-xl font-semibold mb-6">Resumen de Totales Generales</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                    <div className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 shadow-md">
-                      <h4 className="text-lg font-bold text-blue-800 dark:text-blue-300 mb-2">Total de Horas Lectivas</h4>
-                      <div className="flex items-end justify-between">
-                        <div className="text-4xl font-bold text-blue-600 dark:text-blue-400">
-                          {(() => {
-                            let totalLectivas = 0;
-                            asignaciones.forEach((asig) => {
-                              if (asig.horasPorCurso) Object.values(asig.horasPorCurso).forEach((h) => typeof h === 'number' && (totalLectivas += h));
-                              (asig.funcionesLectivas || []).forEach((f) => typeof f.horas === 'number' && (totalLectivas += f.horas));
-                            });
-                            return totalLectivas;
-                          })()}
+                  <h3 className="text-xl font-semibold mb-6">Resumen Global Simplificado</h3>
+                  {(() => {
+                    let horasContratoTotal = 0;
+                    let horasClasesTotales = 0; // Suma de horas por curso (clases lectivas)
+                    let horasFuncionesTotales = 0; // Suma de horas de funciones lectivas
+                    docentes.forEach(doc => {
+                      horasContratoTotal += typeof doc.horasContrato === 'number' ? doc.horasContrato : 0;
+                    });
+                    asignaciones.forEach(asig => {
+                      if (asig.horasPorCurso) Object.values(asig.horasPorCurso).forEach(h => typeof h === 'number' && (horasClasesTotales += h));
+                      (asig.funcionesLectivas || []).forEach(f => typeof f.horas === 'number' && (horasFuncionesTotales += f.horas));
+                    });
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+                          <h4 className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Horas Contrato (suma)</h4>
+                          <div className="text-4xl font-bold text-gray-900 dark:text-gray-100">{horasContratoTotal}</div>
+                          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Total de horas contratadas de todos los docentes.</p>
                         </div>
-                        <span className="text-sm text-blue-500 dark:text-blue-300">horas</span>
-                      </div>
-                      <p className="mt-3 text-sm text-blue-600 dark:text-blue-400">Total de horas lectivas asignadas (HA)</p>
-                    </div>
-                    <div className="p-6 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-900/20 rounded-xl border border-green-200 dark:border-green-800 shadow-md">
-                      <h4 className="text-lg font-bold text-green-800 dark:text-green-300 mb-2">Total de Horas No Lectivas</h4>
-                      <div className="flex items-end justify-between">
-                        <div className="text-4xl font-bold text-green-600 dark:text-green-400">
-                          {(() => {
-                            let totalNoLectivas = 0;
-                            docentes.forEach((doc) => {
-                              const horasContrato = typeof doc.horasContrato === 'number' ? doc.horasContrato : 0;
-                              totalNoLectivas += calcularHB(horasContrato);
-                            });
-                            return totalNoLectivas;
-                          })()}
+                        <div className="p-6 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 shadow-sm">
+                          <h4 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-1">Horas de Clases (lectivas)</h4>
+                          <div className="text-4xl font-bold text-blue-600 dark:text-blue-400">{horasClasesTotales}</div>
+                          <p className="mt-2 text-xs text-blue-600 dark:text-blue-300">Suma de horas asignadas a cursos en todas las asignaciones.</p>
                         </div>
-                        <span className="text-sm text-green-500 dark:text-green-300">horas</span>
-                      </div>
-                      <p className="mt-3 text-sm text-green-600 dark:text-green-400">Total de horas no lectivas (HB)</p>
-                    </div>
-                    <div className="p-6 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 shadow-md">
-                      <h4 className="text-lg font-bold text-amber-800 dark:text-amber-300 mb-2">Total de Horas Contrato</h4>
-                      <div className="flex items-end justify-between">
-                        <div className="text-4xl font-bold text-amber-600 dark:text-amber-400">
-                          {(() => {
-                            // Calcular el total real de horas contrato sumando las horas de cada docente
-                            const totalContrato = docentes.reduce((total, doc) => {
-                              const horasContrato = typeof doc.horasContrato === 'number' ? doc.horasContrato : 0;
-                              return total + horasContrato;
-                            }, 0);
-                            return totalContrato;
-                          })()}
+                        <div className="p-6 rounded-xl border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 shadow-sm">
+                          <h4 className="text-sm font-medium text-green-700 dark:text-green-300 mb-1">Horas Otras Funciones</h4>
+                          <div className="text-4xl font-bold text-green-600 dark:text-green-400">{horasFuncionesTotales}</div>
+                          <p className="mt-2 text-xs text-green-600 dark:text-green-300">Suma de horas de funciones lectivas declaradas (coordinaciones, etc.).</p>
                         </div>
-                        <span className="text-sm text-amber-500 dark:text-amber-300">horas</span>
                       </div>
-                      <p className="mt-3 text-sm text-amber-600 dark:text-amber-400">Total de horas contratadas (Lectivas + No lectivas)</p>
+                    );
+                  })()}
+                  {validaciones.length > 0 && (
+                    <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Advertencias/Errores ({validaciones.length})</h4>
+                      <ul className="text-xs space-y-1 max-h-40 overflow-y-auto pr-1">
+                        {validaciones.slice(0, 10).map((v,i) => (
+                          <li key={i} className={`flex items-center gap-1 ${v.tipo === 'error' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>{v.tipo === 'error' ? '❌' : '⚠️'}<span>{v.mensaje}</span></li>
+                        ))}
+                        {validaciones.length > 10 && <li className="italic text-gray-500 dark:text-gray-400">Y {validaciones.length - 10} más...</li>}
+                      </ul>
                     </div>
-                  </div>
-
-                  <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-md">
-                    <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-3">Distribución de Horas</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <h5 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-2">Distribución Porcentual</h5>
-                        {(() => {
-                          let totalLectivas = 0;
-                          let totalNoLectivas = 0;
-                          asignaciones.forEach((asig) => {
-                            if (asig.horasPorCurso) Object.values(asig.horasPorCurso).forEach((h) => typeof h === 'number' && (totalLectivas += h));
-                            (asig.funcionesLectivas || []).forEach((f) => typeof f.horas === 'number' && (totalLectivas += f.horas));
-                          });
-                          docentes.forEach((doc) => {
-                            const horasContrato = typeof doc.horasContrato === 'number' ? doc.horasContrato : 0;
-                            totalNoLectivas += calcularHB(horasContrato);
-                          });
-                          const totalContratoReal = totalLectivas + totalNoLectivas;
-                          const pctL = totalContratoReal > 0 ? Math.round((totalLectivas / totalContratoReal) * 100) : 0;
-                          const pctNL = totalContratoReal > 0 ? Math.round((totalNoLectivas / totalContratoReal) * 100) : 0;
-                          return (
-                            <div>
-                              <div className="mb-4">
-                                <div className="flex justify-between text-xs mb-1">
-                                  <span className="font-medium text-blue-700 dark:text-blue-300">Horas Lectivas (HA)</span>
-                                  <span className="font-bold">{pctL}%</span>
-                                </div>
-                                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                  <div className="h-full bg-blue-500 dark:bg-blue-600 rounded-full" style={{ width: `${pctL}%` }}></div>
-                                </div>
-                              </div>
-                              <div className="mb-4">
-                                <div className="flex justify-between text-xs mb-1">
-                                  <span className="font-medium text-green-700 dark:text-green-300">Horas No Lectivas (HB)</span>
-                                  <span className="font-bold">{pctNL}%</span>
-                                </div>
-                                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                  <div className="h-full bg-green-500 dark:bg-green-600 rounded-full" style={{ width: `${pctNL}%` }}></div>
-                                </div>
-                              </div>
-                              <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-750 rounded-lg text-xs text-gray-700 dark:text-gray-300">
-                                <p>
-                                  <strong>Distribución Objetivo:</strong>
-                                </p>
-                                <p>• Horas Lectivas (HA): 65% del contrato</p>
-                                <p>• Horas No Lectivas (HB): 35% del contrato</p>
-                                <p>• Horas Contrato Total = Horas Lectivas + Horas No Lectivas</p>
-                                <div className="mt-2">{Math.abs(pctL - 65) <= 5 ? <p className="text-green-600 dark:text-green-400 font-medium">✓ La distribución está dentro de los parámetros recomendados</p> : <p className="text-orange-600 dark:text-orange-400 font-medium">⚠️ La distribución difiere de los parámetros recomendados</p>}</div>
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                      <div className="space-y-4">
-                        <div>
-                          <h5 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-2">Estadísticas Generales</h5>
-                          <ul className="space-y-3 text-sm">
-                            <li className="flex justify-between border-b border-gray-100 dark:border-gray-700 pb-2">
-                              <span className="text-gray-600 dark:text-gray-400">Total de docentes:</span>
-                              <span className="font-semibold">{docentes.length}</span>
-                            </li>
-                            <li className="flex justify-between border-b border-gray-100 dark:border-gray-700 pb-2">
-                              <span className="text-gray-600 dark:text-gray-400">Total de asignaciones:</span>
-                              <span className="font-semibold">{asignaciones.length}</span>
-                            </li>
-                            <li className="flex justify-between border-b border-gray-100 dark:border-gray-700 pb-2">
-                              <span className="text-gray-600 dark:text-gray-400">Promedio horas contrato:</span>
-                              <span className="font-semibold">{docentes.length > 0 ? (docentes.reduce((t, d) => t + (typeof d.horasContrato === 'number' ? d.horasContrato : 0), 0) / docentes.length).toFixed(1) : '0'} horas</span>
-                            </li>
-                          </ul>
-                        </div>
-                        {validaciones.length > 0 && (
-                          <div className="mt-4">
-                            <h5 className="text-md font-medium text-red-700 dark:text-red-300 mb-2">Advertencias ({validaciones.length})</h5>
-                            <div className="max-h-32 overflow-y-auto p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                              <ul className="text-xs space-y-1 text-red-600 dark:text-red-400">
-                                {validaciones.slice(0, 5).map((v, i) => (
-                                  <li key={i} className="flex items-center gap-1">{v.tipo === 'error' ? '❌' : '⚠️'}<span>{v.mensaje}</span></li>
-                                ))}
-                                {validaciones.length > 5 && <li className="italic">Y {validaciones.length - 5} más...</li>}
-                              </ul>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>

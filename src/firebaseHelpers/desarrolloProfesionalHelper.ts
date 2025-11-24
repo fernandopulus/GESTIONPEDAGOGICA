@@ -43,6 +43,7 @@ export interface DPDActivity {
   creadorId: string;
   creadorNombre: string;
   creadorPerfil: PerfilCreador;
+  orientaciones?: string;
   preguntas: DPDQuestion[];
   createdAt: Timestamp;
   updatedAt: Timestamp;

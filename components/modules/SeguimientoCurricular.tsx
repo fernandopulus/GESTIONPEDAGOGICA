@@ -111,7 +111,8 @@ const PlanDetailModal: React.FC<{ plan: PlanificacionUnidad; onClose: () => void
                     {plan.reflexionUnidad && (
                         <div>
                             <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 border-b pb-2 mt-6">Reflexión Docente</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-100 dark:bg-slate-800 rounded-lg mt-4">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-4 bg-slate-100 dark:bg-slate-800 rounded-lg mt-4">
+                                {/* Columna 1: Habilidades priorizadas manualmente */}
                                 <div>
                                     <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Habilidades Desarrolladas (Priorizadas)</h4>
                                     {plan.reflexionUnidad.ordenHabilidades && plan.reflexionUnidad.ordenHabilidades.length > 0 ? (
@@ -124,6 +125,8 @@ const PlanDetailModal: React.FC<{ plan: PlanificacionUnidad; onClose: () => void
                                         </ul>
                                     ) : <p className="text-sm text-slate-500 dark:text-slate-400">No priorizadas.</p>}
                                 </div>
+
+                                {/* Columna 2: Texto de reflexión */}
                                 <div className="space-y-4">
                                     <div>
                                         <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-1">Fortalezas</h4>
@@ -137,6 +140,56 @@ const PlanDetailModal: React.FC<{ plan: PlanificacionUnidad; onClose: () => void
                                         <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-1">Desafíos</h4>
                                         <p className="text-sm text-slate-600 dark:text-slate-400 p-2 bg-white dark:bg-slate-700 rounded-md">{plan.reflexionUnidad.debilidades || 'N/A'}</p>
                                     </div>
+                                </div>
+
+                                {/* Columna 3: Resumen automático desde Planificación Docente */}
+                                <div className="space-y-3">
+                                    <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Síntesis automática (clases realizadas)</h4>
+                                    {Array.isArray((plan.reflexionUnidad as any).resumenHabilidades) && (plan.reflexionUnidad as any).resumenHabilidades.length > 0 ? (
+                                        <div>
+                                            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Habilidades Bloom más trabajadas</p>
+                                            <div className="space-y-1.5">
+                                                {(plan.reflexionUnidad as any).resumenHabilidades.slice(0,6).map((item: any) => (
+                                                    <div key={item.habilidad}>
+                                                        <div className="flex justify-between text-[11px] text-slate-600 dark:text-slate-300 mb-0.5">
+                                                            <span className="truncate mr-2" title={item.habilidad}>{item.habilidad}</span>
+                                                            <span>{item.clases} clase{item.clases !== 1 ? 's' : ''}</span>
+                                                        </div>
+                                                        <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
+                                                            <div
+                                                                className="h-full bg-emerald-500 dark:bg-emerald-400"
+                                                                style={{ width: `${item.porcentaje || 0}%` }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Aún no hay síntesis automática registrada para esta unidad.</p>
+                                    )}
+
+                                    {Array.isArray((plan.reflexionUnidad as any).resumenContenidos) && (plan.reflexionUnidad as any).resumenContenidos.length > 0 && (
+                                        <div className="mt-3">
+                                            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Contenidos más desarrollados</p>
+                                            <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                                                {(plan.reflexionUnidad as any).resumenContenidos.slice(0,8).map((item: any) => (
+                                                    <div key={item.contenido}>
+                                                        <div className="flex justify-between text-[11px] text-slate-600 dark:text-slate-300 mb-0.5">
+                                                            <span className="truncate mr-2" title={item.contenido}>{item.contenido}</span>
+                                                            <span>{item.clases} clase{item.clases !== 1 ? 's' : ''}</span>
+                                                        </div>
+                                                        <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
+                                                            <div
+                                                                className="h-full bg-sky-500 dark:bg-sky-400"
+                                                                style={{ width: `${item.porcentaje || 0}%` }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

@@ -40,6 +40,7 @@ import {
   subscribeToUsuariosByPerfiles,
   subscribeToRespuestasByActividad,
   createActividad,
+  updateActividad,
   deleteActividad,
   createRespuesta,
   countWords,
@@ -53,7 +54,7 @@ import { User } from "../../types";
 /*                         Tipos y utilidades del módulo                      */
 /* -------------------------------------------------------------------------- */
 
-type Tab = "responder" | "dashboard" | "crear" | "respuestas_individuales";
+type Tab = "responder" | "dashboard" | "crear" | "respuestas_individuales" | "documentacion";
 
 const MAX_WORDS = 500;
 
@@ -83,6 +84,7 @@ interface FormState {
   creadorPerfil: PerfilCreador;
   creadorId: string;
   creadorNombre: string;
+  orientaciones: string;
   preguntas: ExtendedDPDQuestion[];
   aiTema: string;
   aiCantidad: number;
@@ -95,6 +97,7 @@ const defaultForm = (): FormState => ({
   creadorPerfil: "PROFESORADO",
   creadorId: "",
   creadorNombre: "",
+   orientaciones: "",
   preguntas: [],
   aiTema: "",
   aiCantidad: 3,
@@ -128,7 +131,8 @@ const Tabs: React.FC<{
   value: Tab;
   onChange: (t: Tab) => void;
   canCreate: boolean;
-}> = React.memo(({ value, onChange, canCreate }) => {
+  onGoToDocumentacion: () => void;
+}> = React.memo(({ value, onChange, canCreate, onGoToDocumentacion }) => {
   const btn = (t: Tab, label: string) => (
     <button
       key={t}
@@ -145,10 +149,21 @@ const Tabs: React.FC<{
     </button>
   );
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 flex-wrap">
       {btn("responder", "Responder")}
       {btn("dashboard", "Dashboard")}
       {btn("crear", "Nueva actividad")}
+      <button
+        key="documentacion"
+        onClick={onGoToDocumentacion}
+        className={`px-3 py-1.5 rounded-lg text-sm border transition ${
+          value === "documentacion"
+            ? "bg-indigo-600 text-white border-indigo-600"
+            : "bg-white hover:bg-indigo-50"
+        }`}
+      >
+        Ver Documentación
+      </button>
     </div>
   );
 });
@@ -632,6 +647,28 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
 
   const resetForm = useCallback(() => setForm(defaultForm()), []);
 
+  // Cargar una actividad existente en el formulario para edición
+  const loadActivityIntoForm = useCallback((activity: DPDActivity) => {
+    setForm({
+      titulo: activity.titulo,
+      dimension: activity.dimension,
+      subdimension: activity.subdimension,
+      creadorPerfil: activity.creadorPerfil,
+      creadorId: activity.creadorId,
+      creadorNombre: activity.creadorNombre,
+      orientaciones: (activity as any).orientaciones || "",
+      preguntas: (activity.preguntas || []).map((q) => {
+        if (q.tipo === "abierta") return q as any;
+        return {
+          ...q,
+          opciones: (q.opciones || []).map((text) => ({ id: crypto.randomUUID(), text })),
+        } as any;
+      }),
+      aiTema: "",
+      aiCantidad: 3,
+    });
+  }, []);
+
   const handleSave = useCallback(async () => {
     if (!form.titulo.trim()) return alert("Debes ingresar un título");
     if (!form.creadorId) return alert("Debes seleccionar un creador");
@@ -643,12 +680,23 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
       creadorId: form.creadorId,
       creadorNombre: form.creadorNombre,
       creadorPerfil: form.creadorPerfil,
+      orientaciones: form.orientaciones?.trim() || "",
       preguntas: convertToSaveFormat(form.preguntas),
     };
-    const id = await createActividad(payload as any);
-    resetForm();
-    setSelectedId(id);
-    setTab("responder");
+    // Si hay una actividad seleccionada y el usuario es su creador (o admin), actualizamos; si no, creamos nueva
+    const selected = actividades.find((a) => a.id === selectedId);
+    const isAdmin = (currentUser as any)?.isAdmin;
+    const isCreator = selected && selected.creadorId === (currentUser as any)?.uid;
+
+    if (selected && (isCreator || isAdmin)) {
+      await updateActividad(selected.id, payload as any);
+      setTab("responder");
+    } else {
+      const id = await createActividad(payload as any);
+      resetForm();
+      setSelectedId(id);
+      setTab("responder");
+    }
   }, [form, convertToSaveFormat, resetForm]);
 
   const handleDeleteActivity = useCallback(
@@ -760,9 +808,9 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
     (a: DPDActivity) => {
       const isAdmin = (currentUser as any)?.isAdmin;
       const isCreator = a.creadorId === (currentUser as any)?.uid;
-      return canCreate && (isAdmin || isCreator);
+      return isAdmin || isCreator;
     },
-    [currentUser, canCreate]
+    [currentUser]
   );
 
   /* ------------------------------ Responder ----------------------------- */
@@ -806,6 +854,20 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
     alert("¡Respuestas enviadas!");
   }, [selectedActivity, respuestas, currentUser]);
 
+  // Navegación rápida al módulo Documentación (usa el estado global gestionado por Dashboard)
+  const goToDocumentacion = useCallback(() => {
+    try {
+      // 1. Disparar evento para cambio inmediato si el componente está montado
+      const ev = new CustomEvent('gp:navigate-module', { detail: { moduleName: 'Documentación' } });
+      window.dispatchEvent(ev);
+      
+      // 2. Actualizar hash para persistencia y deep-linking
+      window.location.hash = 'documentacion';
+    } catch (e) {
+      console.warn('No se pudo solicitar navegación a Documentación', e);
+    }
+  }, []);
+
   /* ------------------------------- Render ------------------------------- */
   return (
     <div className="w-full max-w-7xl mx-auto p-4 md:p-6 space-y-6">
@@ -819,7 +881,7 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
             </p>
           </div>
         </div>
-        <Tabs value={tab} onChange={setTab} canCreate={canCreate} />
+        <Tabs value={tab} onChange={setTab} canCreate={canCreate} onGoToDocumentacion={goToDocumentacion} />
       </header>
 
       {/* Layout principal: lista de actividades a la izquierda y contenido a la derecha */}
@@ -836,6 +898,20 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
               canDelete={canDelete}
               onDelete={handleDeleteActivity}
             />
+            {selectedActivity && canCreate && (
+              <div className="mt-4 border-t pt-3 border-slate-200">
+                <button
+                  onClick={() => {
+                    loadActivityIntoForm(selectedActivity);
+                    setTab("crear");
+                  }}
+                  className="inline-flex items-center gap-2 text-xs font-medium text-indigo-700 hover:text-indigo-900"
+                >
+                  <NotebookPen className="w-4 h-4" />
+                  Editar actividad seleccionada
+                </button>
+              </div>
+            )}
           </Section>
         </aside>
 
@@ -931,6 +1007,26 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
                 </div>
               </div>
 
+              {/* ORIENTACIONES / INSTRUCCIONES PARA LA SESIÓN */}
+              <div className="mt-4 space-y-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <NotebookPen className="w-4 h-4 text-indigo-600" />
+                  Orientaciones / instrucciones para la actividad
+                </label>
+                <p className="text-xs text-slate-500">
+                  Espacio para que quien diseña la actividad deje indicaciones, objetivos específicos,
+                  acuerdos previos o sugerencias de conducción de la sesión. Solo es editable por el
+                  creador o perfiles con permisos.
+                </p>
+                <textarea
+                  value={form.orientaciones}
+                  onChange={(e) => patchForm({ orientaciones: e.target.value })}
+                  rows={4}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Ej.: Explicar el propósito de la sesión, acordar normas de participación, conectar con el PME o el plan de formación interna, etc."
+                />
+              </div>
+
               {/* PREGUNTAS */}
               <div className="mt-6">
                 <h4 className="font-semibold mb-2 flex items-center gap-2">
@@ -1016,6 +1112,18 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
                   <InfoRow pill label="Subdimensión" value={selectedActivity.subdimension} />
                   <InfoRow pill label="Creador" value={`${selectedActivity.creadorNombre} • ${selectedActivity.creadorPerfil}`} />
                 </div>
+
+                {selectedActivity.orientaciones?.trim() && (
+                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm text-slate-800">
+                    <div className="flex items-center gap-2 mb-1">
+                      <NotebookPen className="w-4 h-4 text-indigo-600" />
+                      <span className="font-semibold">Orientaciones del creador para esta actividad</span>
+                    </div>
+                    <p className="whitespace-pre-wrap text-xs md:text-sm text-slate-700">
+                      {selectedActivity.orientaciones}
+                    </p>
+                  </div>
+                )}
 
                 {selectedActivity.preguntas.map((q) => (
                   <AnswerCard key={q.id} q={q} respuestas={respuestas} onChange={changeRespuesta} />
@@ -1218,17 +1326,31 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
                 </div>
               }
             >
-              {/* Botón de descarga */}
-              <div className="mb-6">
-                <button
-                  onClick={downloadReport}
-                  disabled={!respuestasActividad.length}
-                  className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg font-medium"
-                  title={!respuestasActividad.length ? "No hay respuestas para generar informe" : "Descargar informe en PDF"}
-                >
-                  <Download className="w-5 h-5" />
-                  Descargar Informe Global
-                </button>
+              {/* Botón de descarga + resumen de orientaciones */}
+              <div className="mb-6 flex flex-col gap-4">
+                <div>
+                  <button
+                    onClick={downloadReport}
+                    disabled={!respuestasActividad.length}
+                    className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg font-medium"
+                    title={!respuestasActividad.length ? "No hay respuestas para generar informe" : "Descargar informe en PDF"}
+                  >
+                    <Download className="w-5 h-5" />
+                    Descargar Informe Global
+                  </button>
+                </div>
+
+                {selectedActivity.orientaciones?.trim() && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
+                    <div className="flex items-center gap-2 mb-1">
+                      <NotebookPen className="w-4 h-4 text-indigo-600" />
+                      <span className="font-semibold">Orientaciones del creador</span>
+                    </div>
+                    <p className="whitespace-pre-wrap text-xs md:text-sm text-slate-700">
+                      {selectedActivity.orientaciones}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Stats Cards */}
@@ -1349,6 +1471,8 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
               </div>
             </Section>
           )}
+
+          {/* El tab "documentacion" ahora redirige directo al módulo principal, por lo que no renderiza contenido propio aquí */}
         </main>
       </div>
     </div>

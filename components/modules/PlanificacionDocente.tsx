@@ -360,14 +360,34 @@ interface LessonPlanViewerProps {
   isLoading?: boolean;
 }
 
+// Conjunto estándar de habilidades Bloom usadas en planificación de unidad
+const HABILIDADES_BLOOM = ['Recordar','Comprender','Aplicar','Analizar','Evaluar','Crear'];
+
 const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson, onUseLesson, isLoading = false, onUpdatePlan }) => {
-  const [progreso, setProgreso] = useState<number>(plan.progreso ?? 0);
+  // Estado de clases realizadas (persistido en plan.estadoClases)
+  const [estadoClases, setEstadoClases] = useState<boolean[]>(() => {
+    const total = plan.detallesLeccion.length;
+    const base = (plan as any).estadoClases as boolean[] | undefined;
+    if (Array.isArray(base) && base.length === total) return base;
+    if (Array.isArray(base) && base.length !== total) {
+      return Array.from({ length: total }, (_, i) => base[i] ?? false);
+    }
+    return Array.from({ length: total }, () => false);
+  });
+  const progresoCalculado = estadoClases.length > 0 ? Math.round((estadoClases.filter(x => x).length / estadoClases.length) * 100) : 0;
   const [saving, setSaving] = useState(false);
   // Estado local para Reflexión de la Unidad
   const [fortalezas, setFortalezas] = useState<string>(plan.reflexionUnidad?.fortalezas || '');
   const [mejoras, setMejoras] = useState<string>(plan.reflexionUnidad?.mejoras || '');
   const [debilidades, setDebilidades] = useState<string>(plan.reflexionUnidad?.debilidades || '');
-  const HABILIDADES_BLOOM = ['Recordar','Comprender','Aplicar','Analizar','Evaluar','Crear'];
+  // Motivos por los cuales NO se realizaron clases
+  const [motivosNoRealizacion, setMotivosNoRealizacion] = useState<Record<number,string>>(() => {
+    const existing = (plan.reflexionUnidad as any)?.noRealizadasMotivos as Record<string,string> | undefined;
+    if (!existing) return {};
+    const parsed: Record<number,string> = {};
+    Object.entries(existing).forEach(([k,v]) => { const idx = parseInt(k,10); if (!isNaN(idx)) parsed[idx] = v as string; });
+    return parsed;
+  });
   const initialRanks: Record<string, number | ''> = (() => {
     const ranks: Record<string, number | ''> = Object.fromEntries(HABILIDADES_BLOOM.map(h => [h, '']));
     (plan.reflexionUnidad?.ordenHabilidades || []).forEach((h, idx) => {
@@ -377,6 +397,37 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
   })();
   const [habilidadRanks, setHabilidadRanks] = useState<Record<string, number | ''>>(initialRanks);
   const [savingReflexion, setSavingReflexion] = useState(false);
+  // Síntesis automática según clases realizadas
+  const clasesRealizadas = plan.detallesLeccion.filter((_, idx) => estadoClases[idx]);
+
+  // Contar habilidades Bloom trabajadas en clases realizadas
+  const habilidadesFrecuencia = useMemo(() => {
+    const freq: Record<string, number> = {};
+    clasesRealizadas.forEach(lesson => {
+      const raw = (lesson.habilidadesBloom || '').toString();
+      const partes = raw.split(/[;,]/).map(p => p.trim()).filter(Boolean);
+      partes.forEach(h => {
+        const encontrado = HABILIDADES_BLOOM.find(std => std.toLowerCase() === h.toLowerCase());
+        const clave = encontrado || h || 'Otras';
+        freq[clave] = (freq[clave] || 0) + 1;
+      });
+    });
+    return Object.entries(freq).sort((a,b) => b[1]-a[1]);
+  }, [clasesRealizadas]);
+
+  // Contar contenidos trabajados en clases realizadas
+  const contenidosFrecuencia = useMemo(() => {
+    const freq: Record<string, number> = {};
+    clasesRealizadas.forEach(lesson => {
+      const raw = (lesson.contenidosConceptuales || '').toString();
+      const partes = raw.split(/[;,]/).map(p => p.trim()).filter(Boolean);
+      partes.forEach(c => {
+        if (!c) return;
+        freq[c] = (freq[c] || 0) + 1;
+      });
+    });
+    return Object.entries(freq).sort((a,b) => b[1]-a[1]);
+  }, [clasesRealizadas]);
   // Sincronizar cuando cambie el plan
   useEffect(() => {
     setFortalezas(plan.reflexionUnidad?.fortalezas || '');
@@ -400,29 +451,33 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
     return textosOk && habilidadesOk;
   };
   
-  const handleProgresoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseInt(e.target.value, 10);
-    // Si intenta marcar 100% sin reflexión completa, bloquear
-    if (value === 100 && !isReflexionCompleta()) {
-      alert('Para marcar la unidad como 100% completada, primero debes completar y guardar la Reflexión Docente (fortalezas, mejoras, desafíos y priorización de habilidades).');
-      return;
-    }
-    setProgreso(value);
+  // Toggle clase realizada
+  const toggleClaseRealizada = async (index: number) => {
+    if (!onUpdatePlan || !plan.id) return;
+    const actualizado = estadoClases.map((v,i) => i === index ? !v : v);
+    setEstadoClases(actualizado);
     setSaving(true);
     try {
-      if (plan.id && onUpdatePlan) {
-        // Usar la función del hook principal en lugar de importar directamente
-        await onUpdatePlan(plan.id, { progreso: value });
-        console.log('✅ Progreso actualizado exitosamente');
-      }
-    } catch (err) {
-      console.error('❌ Error completo:', err);
-      alert(`Error al guardar el avance: ${err.message}`);
-      // Revertir el progreso en caso de error
-      setProgreso(plan.progreso ?? 0);
+      await onUpdatePlan(plan.id, {
+        progreso: Math.round((actualizado.filter(x=>x).length / actualizado.length)*100),
+        estadoClases: actualizado as any,
+        reflexionUnidad: {
+          fortalezas: fortalezas.trim(),
+          mejoras: mejoras.trim(),
+          debilidades: debilidades.trim(),
+          ordenHabilidades: buildOrdenHabilidades(),
+          noRealizadasMotivos: Object.fromEntries(Object.entries(motivosNoRealizacion).filter(([k]) => !actualizado[parseInt(k,10)]))
+        } as any
+      });
+    } catch (err:any) {
+      console.error('❌ Error al actualizar progreso:', err);
+      alert(`Error al actualizar progreso: ${err.message}`);
     } finally {
       setSaving(false);
     }
+  };
+  const updateMotivo = (idx: number, value: string) => {
+    setMotivosNoRealizacion(prev => ({ ...prev, [idx]: value }));
   };
 
   // Handlers Reflexión
@@ -456,13 +511,31 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
     setSavingReflexion(true);
     try {
       const ordenHabilidades = buildOrdenHabilidades();
+
+      // Construir resumen estructurado de habilidades y contenidos para Seguimiento Curricular
+      const totalRealizadas = clasesRealizadas.length;
+      const resumenHabilidades = habilidadesFrecuencia.map(([habilidad, count]) => ({
+        habilidad,
+        clases: count,
+        porcentaje: totalRealizadas > 0 ? Math.round((count / totalRealizadas) * 100) : 0,
+      }));
+      const resumenContenidos = contenidosFrecuencia.map(([contenido, count]) => ({
+        contenido,
+        clases: count,
+        porcentaje: totalRealizadas > 0 ? Math.round((count / totalRealizadas) * 100) : 0,
+      }));
+
       await onUpdatePlan(plan.id, {
+        progreso: Math.round((estadoClases.filter(x=>x).length / estadoClases.length)*100),
         reflexionUnidad: {
           fortalezas: fortalezas.trim(),
           mejoras: mejoras.trim(),
           debilidades: debilidades.trim(),
           ordenHabilidades,
-        },
+          noRealizadasMotivos: Object.fromEntries(Object.entries(motivosNoRealizacion).filter(([k]) => !estadoClases[parseInt(k,10)])),
+          resumenHabilidades,
+          resumenContenidos,
+        } as any
       });
     } catch (err) {
       console.error('❌ Error al guardar reflexión:', err);
@@ -477,12 +550,12 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
         <p><strong>Objetivo de Aprendizaje:</strong> {plan.objetivosAprendizaje}</p>
         <p><strong>Indicadores de Evaluación:</strong> {plan.indicadoresEvaluacion}</p>
         <div className="mt-4">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Avance de la Unidad</label>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Avance de la Unidad (automático)</label>
           <div className="flex items-center gap-3">
-            <input type="range" min={0} max={100} value={progreso} onChange={handleProgresoChange} disabled={saving || isLoading} />
-            <span className="font-bold w-12">{progreso}%</span>
+            <span className="font-bold">{progresoCalculado}%</span>
             {saving && <span className="text-xs text-slate-400">Guardando...</span>}
           </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Cada clase marcada como realizada incrementa el porcentaje.</p>
         </div>
       </div>
       <div className="space-y-4">
@@ -491,6 +564,15 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
             <h4 className="font-bold text-lg text-slate-800 dark:text-slate-200">
               Clase {index + 1}: {lesson.actividades}
             </h4>
+            <div className="flex items-center gap-2 mt-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="h-4 w-4" checked={estadoClases[index] || false} onChange={() => toggleClaseRealizada(index)} disabled={saving || isLoading} />
+                <span className={estadoClases[index] ? 'text-green-600 dark:text-green-400 font-medium' : 'text-amber-600 dark:text-amber-400 font-medium'}>
+                  {estadoClases[index] ? 'Realizada' : 'No realizada'}
+                </span>
+              </label>
+              {!estadoClases[index] && <span className="text-xs text-slate-500 dark:text-slate-400">Se solicitará motivo en reflexión</span>}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 mt-2 text-sm">
               <p><strong>Objetivo:</strong> {lesson.objetivosAprendizaje}</p>
               <p><strong>Contenidos:</strong> {lesson.contenidosConceptuales}</p>
@@ -541,6 +623,24 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Desafíos <span className="text-red-500">*</span></label>
               <textarea value={debilidades} onChange={e => setDebilidades(e.target.value)} rows={3} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" />
             </div>
+            {estadoClases.some(c => !c) && (
+              <div className="space-y-2 mt-4">
+                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Motivos de clases no realizadas</h4>
+                {estadoClases.map((realizada, idx) => !realizada && (
+                  <div key={idx}>
+                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Clase {idx+1}</label>
+                    <textarea
+                      rows={2}
+                      value={motivosNoRealizacion[idx] || ''}
+                      onChange={(e) => updateMotivo(idx, e.target.value)}
+                      placeholder="Explica brevemente el motivo (ausencia, contingencia, ajuste curricular, etc.)"
+                      className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 text-xs"
+                    />
+                  </div>
+                ))}
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">Se almacenan junto a la reflexión para análisis institucional.</p>
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Habilidades Bloom priorizadas (1 = mayor prioridad) <span className="text-red-500">*</span></label>
@@ -561,6 +661,75 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
             </div>
             <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
               Selecciona números sin repetir. Solo se guardan las habilidades con número asignado.
+            </div>
+            {/* Síntesis automática basada en clases realizadas con representación gráfica */}
+            <div className="mt-5 p-3 rounded-md bg-slate-50 dark:bg-slate-700/40 border border-slate-200 dark:border-slate-600">
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">Síntesis automática de la unidad</h4>
+              {clasesRealizadas.length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">Marca al menos una clase como realizada para ver el resumen automático de habilidades y contenidos trabajados.</p>
+              ) : (
+                <div className="space-y-4">
+                  {/* Habilidades Bloom */}
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Habilidades Bloom más trabajadas</p>
+                    {habilidadesFrecuencia.length === 0 ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">No se detectaron habilidades declaradas en las clases realizadas.</p>
+                    ) : (
+                      (() => {
+                        const maxHab = habilidadesFrecuencia[0][1];
+                        return (
+                          <div className="space-y-1.5">
+                            {habilidadesFrecuencia.slice(0,6).map(([hab, count]) => (
+                              <div key={hab}>
+                                <div className="flex justify-between text-[11px] text-slate-600 dark:text-slate-300 mb-0.5">
+                                  <span className="truncate mr-2" title={hab}>{hab}</span>
+                                  <span>{count} clase{count !== 1 ? 's' : ''}</span>
+                                </div>
+                                <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
+                                  <div
+                                    className="h-full bg-emerald-500 dark:bg-emerald-400"
+                                    style={{ width: `${(count / maxHab) * 100}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+                  </div>
+
+                  {/* Contenidos */}
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Contenidos más desarrollados</p>
+                    {contenidosFrecuencia.length === 0 ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">No se detectaron contenidos en las clases realizadas.</p>
+                    ) : (
+                      (() => {
+                        const maxCont = contenidosFrecuencia[0][1];
+                        return (
+                          <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                            {contenidosFrecuencia.slice(0,10).map(([cont, count]) => (
+                              <div key={cont}>
+                                <div className="flex justify-between text-[11px] text-slate-600 dark:text-slate-300 mb-0.5">
+                                  <span className="truncate mr-2" title={cont}>{cont}</span>
+                                  <span>{count} clase{count !== 1 ? 's' : ''}</span>
+                                </div>
+                                <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
+                                  <div
+                                    className="h-full bg-sky-500 dark:bg-sky-400"
+                                    style={{ width: `${(count / maxCont) * 100}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

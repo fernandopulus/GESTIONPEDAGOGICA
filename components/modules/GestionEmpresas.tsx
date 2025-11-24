@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Empresa, CalificacionItem, User, RutaSupervision, Profile } from '../../types';
+import { Empresa, CalificacionItem, User, RutaSupervision, Profile, EvaluacionEmpresaEstudiante, EvaluacionEmpresaIndicador, NivelEvaluacionEmpresa } from '../../types';
 import { 
     subscribeToEmpresas, 
     saveEmpresa, 
@@ -11,6 +11,7 @@ import {
     deleteSavedRoute
 } from '../../src/firebaseHelpers/empresasHelper';
 import { subscribeNotasEstudiante, addNotaPractica, deleteNotaPractica } from '../../src/firebaseHelpers/notasPracticaHelper';
+import { saveEvaluacionEmpresa, subscribeEvaluacionesEmpresa } from '../../src/firebaseHelpers/evaluacionEmpresaHelper';
 import GooglePlacesAutocomplete from 'react-google-places-autocomplete';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import jsPDF from 'jspdf';
@@ -63,6 +64,106 @@ const ELEMENTOS_A_EVALUAR: Omit<CalificacionItem, 'score'>[] = [
 ];
 
 const AREAS_EMPRESA = ["Mecánica Industrial", "Mecánica Automotriz"];
+
+const NIVEL_EVALUACION_OPTIONS: Array<{ key: NivelEvaluacionEmpresa; label: string; rango: string; descripcion: string }> = [
+    { key: 'NL', label: 'NL', rango: '2.0 - 3.9', descripcion: 'Nivel Nulo o Bajo logro' },
+    { key: 'PL', label: 'PL', rango: '4.0 - 4.9', descripcion: 'Nivel Por Lograr' },
+    { key: 'ML', label: 'ML', rango: '5.0 - 5.9', descripcion: 'Nivel Medianamente Logrado' },
+    { key: 'L',  label: 'L',  rango: '6.0 - 7.0', descripcion: 'Nivel Logrado' },
+];
+
+const NIVEL_TO_NOTA: Record<NivelEvaluacionEmpresa, number> = {
+    NL: 3,
+    PL: 4.5,
+    ML: 5.5,
+    L: 6.5,
+};
+
+const EVALUACION_DIMENSIONES = [
+    {
+        id: 'responsabilidad',
+        label: 'Responsabilidad',
+        categoria: 'Habilidades blandas o actitudinales',
+        indicadores: [
+            { id: 'horario', label: 'Cumple con su horario de entrada y salida' },
+            { id: 'asiste', label: 'Asiste a la empresa' },
+            { id: 'compromiso', label: 'Demuestra compromiso con el trabajo o actividades encomendadas' },
+        ],
+    },
+    {
+        id: 'actitud',
+        label: 'Actitud',
+        categoria: 'Habilidades blandas o actitudinales',
+        indicadores: [
+            { id: 'valora_aprendizaje', label: 'Valora el aprendizaje significativo de su especialidad' },
+            { id: 'proactividad', label: 'Es proactivo y demuestra iniciativa cuando se requiere apoyo' },
+            { id: 'trabajo_equipo', label: 'Tiene buena disposición para el trabajo en equipo o para diversos roles' },
+            { id: 'sigue_instrucciones', label: 'Es capaz de seguir instrucciones' },
+            { id: 'actitud_positiva', label: 'Mantiene una actitud positiva y respetuosa con su entorno' },
+            { id: 'respeto_guias', label: 'Respeta a sus maestros guías y jefaturas' },
+            { id: 'vocabulario', label: 'Utiliza un vocabulario apropiado para el contexto' },
+        ],
+    },
+    {
+        id: 'trabajo_procesos',
+        label: 'Trabajo y procesos',
+        categoria: 'Habilidades y conocimientos técnicos',
+        indicadores: [
+            { id: 'respeta_procesos', label: 'Realiza actividades solicitadas respetando procesos y dinámicas de trabajo' },
+            { id: 'explica_procedimientos', label: 'Explica procedimientos y tareas a través de un lenguaje técnico' },
+            { id: 'uso_herramientas', label: 'Realiza un uso adecuado de máquinas, equipos y herramientas' },
+            { id: 'bitacora', label: 'Realiza y envía bitácora semanal por formulario' },
+        ],
+    },
+    {
+        id: 'normas_seguridad',
+        label: 'Normas de Seguridad',
+        categoria: 'Habilidades y conocimientos técnicos',
+        indicadores: [
+            { id: 'respeta_normas', label: 'Conoce y respeta normas de seguridad y utiliza EPP' },
+            { id: 'residuos', label: 'Demuestra conocimiento sobre residuos, desechos o normas de higiene' },
+            { id: 'orden', label: 'Mantiene su área de trabajo limpia y libre de obstáculos' },
+        ],
+    },
+];
+
+const DRAFT_EVALUACION_PREFIX = 'draft-evaluacion-';
+
+const getTodayISODate = () => new Date().toISOString().slice(0, 10);
+
+const formatFechaSupervision = (iso?: string) => {
+    if (!iso) return 'Sin fecha';
+    const fecha = new Date(iso);
+    if (Number.isNaN(fecha.getTime())) return iso;
+    return fecha.toLocaleDateString('es-CL', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+    });
+};
+
+const calcularPromediosPorDimension = (evaluaciones: Record<string, EvaluacionEmpresaIndicador>): Record<string, number> => {
+    const acumuladores: Record<string, { suma: number; count: number }> = {};
+    Object.values(evaluaciones || {}).forEach((item) => {
+        if (!item || typeof item.nota !== 'number') return;
+        if (!acumuladores[item.dimensionId]) acumuladores[item.dimensionId] = { suma: 0, count: 0 };
+        acumuladores[item.dimensionId].suma += item.nota;
+        acumuladores[item.dimensionId].count += 1;
+    });
+    const result: Record<string, number> = {};
+    Object.entries(acumuladores).forEach(([dimension, stats]) => {
+        if (stats.count === 0) return;
+        result[dimension] = parseFloat((stats.suma / stats.count).toFixed(1));
+    });
+    return result;
+};
+
+const calcularPromedioGeneral = (dimensionPromedios: Record<string, number>): number | undefined => {
+    const values = Object.values(dimensionPromedios || {}).filter((v) => typeof v === 'number');
+    if (!values.length) return undefined;
+    const promedio = values.reduce((acc, val) => acc + val, 0) / values.length;
+    return parseFloat(promedio.toFixed(1));
+};
 
 const getInitialFormData = (): Omit<Empresa, 'id' | 'createdAt'> => ({
     nombre: '', 
@@ -360,6 +461,11 @@ const GestionEmpresas: React.FC = () => {
     const [routeSupervisor, setRouteSupervisor] = useState<{ id: string; nombreCompleto: string } | undefined>(undefined);
     const [notasPorEstudiante, setNotasPorEstudiante] = useState<Record<string, { notas: any[]; unsub?: () => void }>>({});
     const [notaNueva, setNotaNueva] = useState<Record<string, { texto: string; color: 'yellow' | 'pink' | 'green' | 'blue' }>>({});
+    const [evaluacionesEstudiantes, setEvaluacionesEstudiantes] = useState<Record<string, EvaluacionEmpresaEstudiante[]>>({});
+    const [savingEvaluaciones, setSavingEvaluaciones] = useState<Record<string, boolean>>({});
+    const [evaluacionPanelAbierto, setEvaluacionPanelAbierto] = useState<Record<string, boolean>>({});
+    const [evaluacionActivaPorEstudiante, setEvaluacionActivaPorEstudiante] = useState<Record<string, string | null>>({});
+    const [evaluacionDrafts, setEvaluacionDrafts] = useState<Record<string, EvaluacionEmpresaEstudiante | undefined>>({});
 
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
     const { isLoaded: isMapScriptLoaded, error: mapScriptError } = useGoogleMapsScript(apiKey);
@@ -387,6 +493,84 @@ const GestionEmpresas: React.FC = () => {
         return list;
     };
 
+    const encontrarEmpresaPorEstudiante = (studentId: string): Empresa | null => {
+        for (const emp of empresas) {
+            const asignados = emp.estudiantesAsignados || [];
+            if (asignados.includes(studentId)) return emp;
+        }
+        return null;
+    };
+
+    const getEvaluacionesPorEstudiante = (studentId: string) => evaluacionesEstudiantes[studentId] || [];
+
+    const getEvaluacionActiva = (studentId: string): { evaluacion?: EvaluacionEmpresaEstudiante; isDraft: boolean } => {
+        const activeId = evaluacionActivaPorEstudiante[studentId];
+        if (activeId && activeId.startsWith(DRAFT_EVALUACION_PREFIX)) {
+            return { evaluacion: evaluacionDrafts[studentId], isDraft: true };
+        }
+        const registros = getEvaluacionesPorEstudiante(studentId);
+        const selected = activeId ? registros.find((reg) => reg.id === activeId) : registros[0];
+        if (selected) {
+            return { evaluacion: selected, isDraft: false };
+        }
+        if (evaluacionDrafts[studentId]) {
+            return { evaluacion: evaluacionDrafts[studentId], isDraft: true };
+        }
+        return { evaluacion: undefined, isDraft: false };
+    };
+
+    const ensureEvaluacionDraft = (student: User, empresa: Empresa | null) => {
+        const draft: EvaluacionEmpresaEstudiante = {
+            estudianteId: student.id,
+            estudianteNombre: student.nombreCompleto,
+            curso: student.curso,
+            empresaId: empresa?.id,
+            empresaNombre: empresa?.nombre,
+            fechaSupervision: getTodayISODate(),
+            evaluaciones: {},
+            dimensionPromedios: {},
+            promedioGeneral: undefined,
+        };
+        setEvaluacionDrafts((prev) => ({ ...prev, [student.id]: draft }));
+        setEvaluacionActivaPorEstudiante((prev) => ({ ...prev, [student.id]: `${DRAFT_EVALUACION_PREFIX}${student.id}` }));
+        return draft;
+    };
+
+    const resolveEvaluacionActiva = (student: User): { evaluacion: EvaluacionEmpresaEstudiante; isDraft: boolean } => {
+        const empresaAsignada = encontrarEmpresaPorEstudiante(student.id);
+        const actual = getEvaluacionActiva(student.id);
+        if (actual.evaluacion) {
+            return { evaluacion: actual.evaluacion, isDraft: actual.isDraft };
+        }
+        const draft = ensureEvaluacionDraft(student, empresaAsignada);
+        return { evaluacion: draft, isDraft: true };
+    };
+
+    const handleToggleEvaluacionPanel = (student: User) => {
+        const isOpening = !evaluacionPanelAbierto[student.id];
+        if (isOpening) {
+            const registros = getEvaluacionesPorEstudiante(student.id);
+            if (!registros.length && !evaluacionDrafts[student.id]) {
+                ensureEvaluacionDraft(student, encontrarEmpresaPorEstudiante(student.id));
+            }
+        }
+        setEvaluacionPanelAbierto((prev) => ({ ...prev, [student.id]: !prev[student.id] }));
+    };
+
+    const handleSeleccionEvaluacion = (studentId: string, evaluacionId: string) => {
+        setEvaluacionActivaPorEstudiante((prev) => ({ ...prev, [studentId]: evaluacionId }));
+        setEvaluacionDrafts((prev) => {
+            if (!prev[studentId]) return prev;
+            const updated = { ...prev };
+            delete updated[studentId];
+            return updated;
+        });
+    };
+
+    const handleNuevaEvaluacion = (student: User) => {
+        ensureEvaluacionDraft(student, encontrarEmpresaPorEstudiante(student.id));
+    };
+
     const canReadEmpresas = useMemo(() => {
         const p = currentUser?.profile as any;
         return p === Profile.SUBDIRECCION || p === Profile.PROFESORADO || p === Profile.COORDINACION_TP;
@@ -403,16 +587,52 @@ const GestionEmpresas: React.FC = () => {
         const unsubProfesores = subscribeToProfesores(setProfesores);
         const unsubEstudiantes = subscribeToEstudiantes(setEstudiantes);
         const unsubSavedRoutes = subscribeToSavedRoutes(setSavedRoutes);
+        const unsubEvaluaciones = subscribeEvaluacionesEmpresa((mapa) => setEvaluacionesEstudiantes(mapa));
         setLoading(false);
         return () => { 
             unsubEmpresas(); 
             unsubProfesores();
             unsubEstudiantes();
             unsubSavedRoutes();
+            unsubEvaluaciones();
             // Limpiar suscripciones de notas
             (Object.values(notasPorEstudiante as Record<string, { notas: any[]; unsub?: () => void }>)).forEach(v => v.unsub?.());
         };
     }, [canReadEmpresas]);
+
+    useEffect(() => {
+        setEvaluacionActivaPorEstudiante((prev) => {
+            let changed = false;
+            const next = { ...prev };
+            (Object.entries(evaluacionesEstudiantes) as [string, EvaluacionEmpresaEstudiante[]][])?.forEach(([studentId, registros]) => {
+                if (!registros || !registros.length) return;
+                const currentId = prev[studentId];
+                const mantieneSeleccion = currentId && !currentId.startsWith(DRAFT_EVALUACION_PREFIX) && registros.some((reg) => reg.id === currentId);
+                if (!mantieneSeleccion) {
+                    next[studentId] = registros[0].id || null;
+                    changed = true;
+                }
+            });
+            return changed ? next : prev;
+        });
+    }, [evaluacionesEstudiantes]);
+
+    useEffect(() => {
+        setEvaluacionDrafts((prev) => {
+            let changed = false;
+            const next = { ...prev };
+            Object.keys(prev).forEach((studentId) => {
+                const activeId = evaluacionActivaPorEstudiante[studentId];
+                if (!activeId || activeId.startsWith(DRAFT_EVALUACION_PREFIX)) return;
+                const registros = getEvaluacionesPorEstudiante(studentId);
+                if (registros.some((reg) => reg.id === activeId)) {
+                    delete next[studentId];
+                    changed = true;
+                }
+            });
+            return changed ? next : prev;
+        });
+    }, [evaluacionesEstudiantes, evaluacionActivaPorEstudiante]);
 
     // Suscripción dinámica a notas para estudiantes visibles (3º/4º + filtro curso)
     useEffect(() => {
@@ -477,6 +697,90 @@ const GestionEmpresas: React.FC = () => {
             ranking
         };
     }, [empresas]);
+
+    const handleEvaluacionCambio = async (student: User, indicadorId: string, dimensionId: string, nivel: NivelEvaluacionEmpresa) => {
+        const empresaAsignada = encontrarEmpresaPorEstudiante(student.id);
+        const { evaluacion, isDraft } = resolveEvaluacionActiva(student);
+
+        if (!evaluacion.fechaSupervision) {
+            alert('Selecciona una fecha de supervisión antes de registrar la evaluación.');
+            return;
+        }
+
+        const evaluacionesActualizadas: Record<string, EvaluacionEmpresaIndicador> = {
+            ...(evaluacion.evaluaciones || {}),
+            [indicadorId]: {
+                indicadorId,
+                dimensionId,
+                nivel,
+                nota: NIVEL_TO_NOTA[nivel],
+                updatedAt: new Date().toISOString(),
+            },
+        };
+
+        const dimensionPromedios = calcularPromediosPorDimension(evaluacionesActualizadas);
+        const promedioGeneral = calcularPromedioGeneral(dimensionPromedios);
+
+        const payload: EvaluacionEmpresaEstudiante = {
+            ...evaluacion,
+            id: isDraft ? undefined : evaluacion.id,
+            estudianteId: student.id,
+            estudianteNombre: student.nombreCompleto,
+            curso: student.curso,
+            empresaId: empresaAsignada?.id,
+            empresaNombre: empresaAsignada?.nombre,
+            fechaSupervision: evaluacion.fechaSupervision,
+            evaluaciones: evaluacionesActualizadas,
+            dimensionPromedios,
+            promedioGeneral,
+            updatedBy: currentUser ? { id: currentUser.id, nombre: currentUser.nombreCompleto || currentUser.email || 'Usuario' } : undefined,
+        };
+
+        if (isDraft) {
+            setEvaluacionDrafts(prev => ({
+                ...prev,
+                [student.id]: {
+                    ...payload,
+                    id: undefined,
+                },
+            }));
+        }
+
+        setSavingEvaluaciones(prev => ({ ...prev, [student.id]: true }));
+        try {
+            const savedId = await saveEvaluacionEmpresa(payload);
+            if (isDraft) {
+                setEvaluacionActivaPorEstudiante(prev => ({ ...prev, [student.id]: savedId }));
+            }
+        } catch (error) {
+            console.error('Error al guardar evaluación de empresa:', error);
+            alert('No se pudo guardar la evaluación. Intenta nuevamente.');
+        } finally {
+            setSavingEvaluaciones(prev => ({ ...prev, [student.id]: false }));
+        }
+    };
+
+    const handleFechaSupervisionChange = async (student: User, nuevaFecha: string) => {
+        if (!nuevaFecha) return;
+        const empresaAsignada = encontrarEmpresaPorEstudiante(student.id);
+        const actual = getEvaluacionActiva(student.id);
+
+        if (actual.isDraft || !actual.evaluacion) {
+            const draft = actual.evaluacion || ensureEvaluacionDraft(student, empresaAsignada);
+            setEvaluacionDrafts((prev) => ({ ...prev, [student.id]: { ...draft, fechaSupervision: nuevaFecha } }));
+            return;
+        }
+
+        setSavingEvaluaciones(prev => ({ ...prev, [student.id]: true }));
+        try {
+            await saveEvaluacionEmpresa({ ...actual.evaluacion, fechaSupervision: nuevaFecha });
+        } catch (error) {
+            console.error('No se pudo actualizar la fecha de supervisión', error);
+            alert('No se pudo guardar la fecha de supervisión. Intenta nuevamente.');
+        } finally {
+            setSavingEvaluaciones(prev => ({ ...prev, [student.id]: false }));
+        }
+    };
 
     const handleSave = async () => {
         if (!currentEmpresa) return;
@@ -1487,16 +1791,6 @@ const GestionEmpresas: React.FC = () => {
                         let lista = estudiantes.filter(e => es3o4(e.curso));
                         if (cursoFiltro !== 'todos') lista = lista.filter(e => (e.curso || '') === cursoFiltro);
 
-                        const encontrarEmpresa = (student: User): Empresa | null => {
-                            // Buscar por id en estudiantesAsignados, o por email si coincidiera
-                            for (const emp of empresas) {
-                                const asignados = emp.estudiantesAsignados || [];
-                                if (asignados.includes(student.id)) return emp;
-                                if (student.email && asignados.includes(student.email)) return emp;
-                            }
-                            return null;
-                        };
-
                         if (lista.length === 0) {
                             return (
                                 <div className="text-center p-8 text-slate-500 bg-slate-50 dark:bg-slate-700/30 rounded-lg">No hay estudiantes para el filtro seleccionado.</div>
@@ -1506,7 +1800,13 @@ const GestionEmpresas: React.FC = () => {
                         return (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {lista.map(st => {
-                                    const emp = encontrarEmpresa(st);
+                                    const emp = encontrarEmpresaPorEstudiante(st.id);
+                                    const evaluacionesAlumno = getEvaluacionesPorEstudiante(st.id);
+                                    const { evaluacion: evaluacionActual, isDraft: evaluacionEsDraft } = getEvaluacionActiva(st.id);
+                                    const savingEval = savingEvaluaciones[st.id];
+                                    const panelAbierto = !!evaluacionPanelAbierto[st.id];
+                                    const resumenEvaluacion = evaluacionesAlumno[0];
+                                    const fechaInputValue = evaluacionActual?.fechaSupervision || '';
                                     return (
                                         <div key={st.id} className="p-4 rounded-xl border bg-white dark:bg-slate-900 flex flex-col gap-3 hover:shadow-md transition-shadow">
                                             <div className="flex items-center gap-3">
@@ -1614,6 +1914,131 @@ const GestionEmpresas: React.FC = () => {
                                                             <div className="text-slate-700 whitespace-pre-wrap">{nota.texto}</div>
                                                         </div>
                                                     ))}
+                                                </div>
+                                                <div className="h-px bg-slate-200 dark:bg-slate-700" />
+                                                <div className="space-y-2">
+                                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                                        <div>
+                                                            <span className="text-xs font-medium text-slate-500 block">Evaluación en la empresa</span>
+                                                            <span className="text-[11px] text-slate-400">
+                                                                {resumenEvaluacion
+                                                                    ? `${formatFechaSupervision(resumenEvaluacion.fechaSupervision)} • Promedio ${typeof resumenEvaluacion.promedioGeneral === 'number' ? resumenEvaluacion.promedioGeneral.toFixed(1) : '—'}`
+                                                                    : 'Sin registros previos'}
+                                                            </span>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleToggleEvaluacionPanel(st)}
+                                                            className="text-xs font-semibold bg-slate-900 text-white px-3 py-1.5 rounded-lg hover:bg-slate-800"
+                                                        >
+                                                            {panelAbierto ? 'Ocultar' : 'Evaluar práctica'}
+                                                        </button>
+                                                    </div>
+                                                    {panelAbierto && (
+                                                        <div className="space-y-4 border rounded-lg p-3 bg-slate-50">
+                                                            <div className="space-y-2">
+                                                                <div className="flex flex-col gap-2">
+                                                                    <div className="flex flex-wrap items-center gap-2">
+                                                                        <span className="text-[11px] uppercase tracking-wide text-slate-500">Historial</span>
+                                                                        <div className="flex flex-wrap gap-2">
+                                                                            {evaluacionesAlumno.length === 0 && (
+                                                                                <span className="text-xs text-slate-500">Sin registros previos.</span>
+                                                                            )}
+                                                                            {evaluacionesAlumno.map((registro) => {
+                                                                                if (!registro.id) return null;
+                                                                                const isActive = !evaluacionEsDraft && evaluacionActual?.id === registro.id;
+                                                                                return (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        key={registro.id}
+                                                                                        onClick={() => handleSeleccionEvaluacion(st.id, registro.id!)}
+                                                                                        className={`px-2 py-1 rounded-full text-xs border transition ${isActive ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-400'}`}
+                                                                                    >
+                                                                                        {formatFechaSupervision(registro.fechaSupervision)} • {typeof registro.promedioGeneral === 'number' ? registro.promedioGeneral.toFixed(1) : '—'}
+                                                                                    </button>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleNuevaEvaluacion(st)}
+                                                                            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                                                                        >
+                                                                            + Nueva evaluación
+                                                                        </button>
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Fecha de supervisión</label>
+                                                                        <input
+                                                                            type="date"
+                                                                            value={fechaInputValue}
+                                                                            onChange={(e) => handleFechaSupervisionChange(st, e.target.value)}
+                                                                            className="w-full border rounded-md px-2 py-1 text-sm bg-white"
+                                                                        />
+                                                                        {savingEval ? (
+                                                                            <p className="text-[10px] text-slate-500 mt-1">Guardando cambios...</p>
+                                                                        ) : evaluacionEsDraft ? (
+                                                                            <p className="text-[10px] text-slate-500 mt-1">Se creará un nuevo registro al guardar.</p>
+                                                                        ) : null}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            {evaluacionActual ? (
+                                                                <div className="space-y-3">
+                                                                    {EVALUACION_DIMENSIONES.map((dimension) => {
+                                                                        const dimensionScore = evaluacionActual?.dimensionPromedios?.[dimension.id];
+                                                                        return (
+                                                                            <div key={dimension.id} className="border rounded-lg p-3 bg-white space-y-2">
+                                                                                <div className="flex items-center justify-between">
+                                                                                    <div>
+                                                                                        <p className="text-sm font-semibold text-slate-800">{dimension.label}</p>
+                                                                                        <p className="text-[11px] text-slate-500">{dimension.categoria}</p>
+                                                                                    </div>
+                                                                                    <span className="text-sm font-bold text-slate-700">{typeof dimensionScore === 'number' ? dimensionScore.toFixed(1) : '—'}</span>
+                                                                                </div>
+                                                                                <div className="space-y-3">
+                                                                                    {dimension.indicadores.map((indicador) => {
+                                                                                        const selected = evaluacionActual?.evaluaciones?.[indicador.id]?.nivel;
+                                                                                        return (
+                                                                                            <div key={indicador.id} className="space-y-1">
+                                                                                                <p className="text-xs font-medium text-slate-600">{indicador.label}</p>
+                                                                                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                                                                                    {NIVEL_EVALUACION_OPTIONS.map((option) => {
+                                                                                                        const isActive = selected === option.key;
+                                                                                                        return (
+                                                                                                            <button
+                                                                                                                key={option.key}
+                                                                                                                type="button"
+                                                                                                                disabled={savingEval}
+                                                                                                                onClick={() => void handleEvaluacionCambio(st, indicador.id, dimension.id, option.key)}
+                                                                                                                className={`text-xs rounded-lg border px-2 py-2 transition ${isActive ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-400'}`}
+                                                                                                            >
+                                                                                                                <span className="font-semibold">{option.label}</span>
+                                                                                                                <span className="block text-[10px] opacity-80">{option.rango}</span>
+                                                                                                            </button>
+                                                                                                        );
+                                                                                                    })}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                    <div className="rounded-lg bg-slate-900 text-white px-3 py-2 flex items-center justify-between">
+                                                                        <span className="text-sm font-semibold">Promedio general</span>
+                                                                        <span className="text-lg font-bold">{typeof evaluacionActual?.promedioGeneral === 'number' ? evaluacionActual.promedioGeneral.toFixed(1) : '—'}</span>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-sm text-slate-600">
+                                                                    Crea una nueva evaluación para comenzar el registro de la práctica.
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>

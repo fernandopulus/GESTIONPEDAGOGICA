@@ -198,6 +198,12 @@ export const subscribeToAllUsers = (cb: (data: User[]) => void) => {
   );
 };
 
+/** Actualiza campos del usuario en colección 'usuarios' */
+export const updateUsuarioFields = async (userId: string, patch: Partial<User>) => {
+  const clean: any = stripUndefined({ ...patch });
+  await updateDoc(doc(db, USERS_COLLECTION, userId), clean);
+};
+
 export const subscribeToPruebasEstandarizadas = (cb: (data: PruebaEstandarizada[]) => void) => {
   const qy = query(collection(db, PRUEBAS_ESTANDARIZADAS_COLLECTION), orderBy('fechaCreacion', 'desc'));
   return onSnapshot(

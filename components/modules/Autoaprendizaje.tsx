@@ -16,6 +16,8 @@ import {
   saveRespuestaActividad,
   debugRespuestasEstudiante,
   checkActividadCompletada,
+  getRespuestasEstudiante,
+  fetchLegacyRespuestasIfUidEmpty,
 } from '../../src/firebaseHelpers/autoaprendizajeHelper';
 import { calcularNota60 } from '../../src/utils/grades';
 import { auth } from '../../src/firebase';
@@ -1095,6 +1097,24 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
     console.log('🎯 IDs completados calculados (normalizados):', ids.size);
     return ids;
   }, [respuestas]);
+
+  // Fallback de recuperación: si no hay respuestas (posible migración pendiente), intentar cargar por email legacy
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!loading && respuestas.length === 0 && auth.currentUser?.uid && currentUser.email) {
+          const legacy = await fetchLegacyRespuestasIfUidEmpty(auth.currentUser.uid, currentUser.email);
+          if (legacy.length > 0) {
+            console.warn('⚠️ Recuperadas respuestas legacy asociadas al email. Mostrar aviso de migración.');
+            setRespuestas(legacy as any);
+            setError('Se recuperaron respuestas antiguas asociadas a tu correo. Solicita migración para consolidar tu progreso.');
+          }
+        }
+      } catch (e) {
+        console.error('Error en recuperación legacy:', e);
+      }
+    })();
+  }, [loading, respuestas.length, currentUser.email]);
 
   // Esta función filtra las actividades para mostrar solo las que NO han sido completadas
   const actividadesPendientes = useMemo(() => {

@@ -12,8 +12,10 @@ import {
   getDoc,
   updateDoc,
 } from 'firebase/firestore';
-import { db } from './config';
-import { auth } from '../firebase';
+// Importar db y auth desde la MISMA app para evitar desincronización de credenciales
+// Antes: db desde './config' y auth desde '../firebase' (podía crear instancias distintas de Firebase App)
+// Ahora: ambos desde '../firebase' para que Firestore adjunte correctamente el token del usuario autenticado
+import { db, auth } from '../firebase';
 import { ActividadRemota, RespuestaEstudianteActividad, User } from '../../types';
 
 // --- CONSTANTES DE COLECCIONES ---
@@ -232,8 +234,8 @@ export const subscribeToRespuestasEstudiante = (
   // Considerar posibles identificadores válidos (UID y/o email)
   const uid = auth.currentUser?.uid;
   const email = auth.currentUser?.email;
-  const candidates = Array.from(new Set([estudianteId, uid, email].filter(Boolean))) as string[];
-  if (candidates.length === 0) {
+  const candidates = new Set<string>([estudianteId, uid || '', email || ''].filter(Boolean) as string[]);
+  if (candidates.size === 0) {
     console.warn('⚠️ Sin identificadores válidos para suscripción de respuestas.');
     onSuccess([]);
     return () => {};
@@ -252,7 +254,11 @@ export const subscribeToRespuestasEstudiante = (
     onSuccess(arr);
   };
 
-  for (const id of candidates) {
+  const startSubscriptionFor = (id: string) => {
+    if (!id) return;
+    if (Array.from(unsubscribers).some(() => false)) {
+      // no-op placeholder; prevenimos advertencias de lint
+    }
     const qSimple = query(
       collection(db, RESPUESTAS_COLLECTION),
       where('estudianteId', '==', id)
@@ -280,7 +286,7 @@ export const subscribeToRespuestasEstudiante = (
           if (error?.code === 'permission-denied') {
             console.warn(`⚠️ Sin permisos para suscripción de respuestas con identificador ${id}. Continuando con otras.`, error);
             failures++;
-            if (failures === candidates.length) {
+            if (failures === candidates.size) {
               const firestoreError = handleFirestoreError(error, 'suscripción a respuestas (todas fallaron)');
               onError?.(firestoreError);
             }
@@ -293,7 +299,46 @@ export const subscribeToRespuestasEstudiante = (
       }
     );
     unsubscribers.push(unsub);
-  }
+  };
+
+  // Suscripciones iniciales (uid/email/estudianteId)
+  for (const id of Array.from(candidates)) startSubscriptionFor(id);
+
+  // Fallback: intentar leer el doc de usuarios/{email} y/o usuarios/{uid} para obtener un ID legacy
+  // que en datos antiguos se usó como estudianteId (reglas ya lo permiten: userDoc().data.id)
+  try {
+    const tryPaths: Array<string> = [];
+    if (email) tryPaths.push(`usuarios/${email}`);
+    if (uid) tryPaths.push(`usuarios/${uid}`);
+    // Leer en secuencia hasta encontrar uno existente
+    (async () => {
+      for (const path of tryPaths) {
+        try {
+          const ref = doc(db, path);
+          const snap = await getDoc(ref);
+          if (snap.exists()) {
+            const data: any = snap.data();
+            const legacyCandidates = [
+              data?.id,
+              data?.usuarioId,
+              data?.idUsuario,
+              data?.legacyId
+            ].filter(Boolean);
+            for (const lc of legacyCandidates) {
+              if (!candidates.has(lc)) {
+                console.log('🧩 Añadiendo identificador legacy desde usuarios:', lc);
+                candidates.add(lc);
+                startSubscriptionFor(lc);
+              }
+            }
+            break; // ya encontramos un doc de usuario válido, no necesitamos revisar más
+          }
+        } catch (e) {
+          // continuar con el siguiente path
+        }
+      }
+    })();
+  } catch {}
 
   return () => {
     for (const u of unsubscribers) try { u(); } catch {}
@@ -611,4 +656,65 @@ export const clearLocalCache = () => {
   } catch (error) {
     console.warn('⚠️ Error al limpiar cache local:', error);
   }
+};
+
+// === AUDITORÍA Y MIGRACIÓN DE RESPUESTAS (RECUPERACIÓN DE PROGRESO) ===
+
+/**
+ * Audita cuántos documentos existen para cada identificador candidato (email, uid, etc.)
+ */
+export const auditRespuestasIdentificadores = async (identificadores: string[]) => {
+  const byId: Record<string, number> = {};
+  for (const id of identificadores.filter(Boolean)) {
+    try {
+      const qDocs = await getDocs(query(collection(db, RESPUESTAS_COLLECTION), where('estudianteId', '==', id)));
+      byId[id] = qDocs.docs.length;
+    } catch (err: any) {
+      console.warn('⚠️ Error auditando identificador', id, err?.code || err?.message);
+      byId[id] = -1; // marcar error
+    }
+  }
+  return { byId, total: Object.values(byId).filter(v => v > 0).reduce((a, b) => a + b, 0) };
+};
+
+/**
+ * Migra respuestas cuyo estudianteId es el email hacia el UID.
+ * Conserva el valor original en estudianteIdOriginal y añade migratedAt.
+ */
+export const migrateRespuestasEmailToUid = async (email: string, uid: string) => {
+  if (!email || !uid || email === uid) {
+    return { updated: 0, skipped: 0, reason: 'Parametros inválidos o ya coinciden.' };
+  }
+  return withRetry(async () => {
+    const snap = await getDocs(query(collection(db, RESPUESTAS_COLLECTION), where('estudianteId', '==', email)));
+    let updated = 0;
+    let skipped = 0;
+    for (const d of snap.docs) {
+      try {
+        const ref = doc(db, RESPUESTAS_COLLECTION, d.id);
+        await updateDoc(ref, {
+          estudianteId: uid,
+          estudianteIdOriginal: email,
+          migratedAt: Timestamp.fromDate(new Date())
+        });
+        updated++;
+      } catch (e) {
+        console.error('❌ Error migrando respuesta', d.id, e);
+        skipped++;
+      }
+    }
+    return { updated, skipped };
+  }, 2, 'migración respuestas email→uid');
+};
+
+/**
+ * Recupera respuestas legacy (solo email) si no hay respuestas para el UID.
+ */
+export const fetchLegacyRespuestasIfUidEmpty = async (uid: string, email: string) => {
+  if (!uid || !email) return [] as RespuestaEstudianteActividad[];
+  // Primero comprobar si hay con uid
+  const uidSnap = await getDocs(query(collection(db, RESPUESTAS_COLLECTION), where('estudianteId', '==', uid)));
+  if (uidSnap.docs.length > 0) return [];
+  const emailSnap = await getDocs(query(collection(db, RESPUESTAS_COLLECTION), where('estudianteId', '==', email)));
+  return emailSnap.docs.map(d => ({ ...convertFirestoreDoc<RespuestaEstudianteActividad>(d), _legacy: true } as any));
 };

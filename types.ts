@@ -29,6 +29,10 @@ export interface User {
   asignaturas?: string[]; // Para profesores
   resetPasswordToken?: string;
   resetPasswordExpires?: number; // Timestamp
+  // Gestión de carpetas (Actividades Remotas)
+  modalidadRemota?: 'Remoto' | 'Semi Remoto'; // sin valor = no marcado
+  carpetaArchivada?: boolean; // true si está archivada
+  carpetaArchivadaAt?: string; // ISO String
 }
 
 // --- Evaluación de Competencias ---
@@ -1248,4 +1252,32 @@ export interface NotaPractica {
   texto: string;
   color?: 'yellow' | 'pink' | 'green' | 'blue';
   createdAt?: any; // serverTimestamp()
+}
+
+// --- Evaluación de desempeño en empresa ---
+export type NivelEvaluacionEmpresa = 'NL' | 'PL' | 'ML' | 'L';
+
+export interface EvaluacionEmpresaIndicador {
+  indicadorId: string;
+  dimensionId: string;
+  nivel: NivelEvaluacionEmpresa;
+  nota: number;
+  observacion?: string;
+  updatedAt?: any;
+}
+
+export interface EvaluacionEmpresaEstudiante {
+  id?: string;
+  estudianteId: string;
+  estudianteNombre?: string;
+  curso?: string;
+  empresaId?: string;
+  empresaNombre?: string;
+  fechaSupervision?: string; // YYYY-MM-DD
+  evaluaciones: Record<string, EvaluacionEmpresaIndicador>;
+  dimensionPromedios?: Record<string, number>;
+  promedioGeneral?: number;
+  updatedAt?: any;
+  updatedBy?: { id?: string; nombre?: string };
+  createdAt?: any;
 }
