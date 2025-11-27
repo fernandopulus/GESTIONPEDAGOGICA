@@ -202,6 +202,8 @@ import { auth } from '../../src/firebase';
 import type { PlanificacionUnidad, PlanificacionClase, DetalleLeccion, ActividadPlanificada, TareaActividad, User, NivelPlanificacion, ActividadFocalizadaEvent, MomentosClase, PlanificacionDocente } from '../../types';
 import { useMemo } from 'react';
 import { EventType } from '../../types';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 import { 
   BookOpen, 
@@ -218,7 +220,8 @@ import {
   School2,
   Sparkles,
   LayoutDashboard,
-  PresentationIcon
+  PresentationIcon,
+  Download
 } from 'lucide-react';
 import MaterialesDidacticosSubmodule from './MaterialesDidacticosSubmodule';
 // import { saveCalendarEvent } from '../../src/firebaseHelpers/calendar'; // Función no disponible
@@ -544,11 +547,158 @@ const LessonPlanViewer: React.FC<LessonPlanViewerProps> = ({ plan, onEditLesson,
       setSavingReflexion(false);
     }
   };
+
+  const handleExportPDF = async () => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'legal'
+    });
+
+    // Load images
+    const logoLeftUrl = "https://res.cloudinary.com/dwncmu1wu/image/upload/v1764096456/Captura_de_pantalla_2025-11-25_a_la_s_3.47.16_p._m._p7m2xy.png";
+    const logoRightUrl = "https://res.cloudinary.com/dwncmu1wu/image/upload/v1753209432/LIR_fpq2lc.png";
+
+    try {
+        // Helper to load image
+        const loadImage = (url: string): Promise<HTMLImageElement> => {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = 'Anonymous';
+                img.src = url;
+                img.onload = () => resolve(img);
+                img.onerror = reject;
+            });
+        };
+
+        const [imgLeft, imgRight] = await Promise.all([
+            loadImage(logoLeftUrl),
+            loadImage(logoRightUrl)
+        ]);
+
+        // Add Header
+        doc.addImage(imgLeft, 'PNG', 10, 10, 15, 20);
+        doc.addImage(imgRight, 'PNG', 215.9 - 10 - 15, 10, 15, 20);
+
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text("PLANIFICACIÓN DE UNIDAD DIDÁCTICA", 215.9 / 2, 20, { align: "center" });
+        
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Asignatura: ${plan.asignatura}`, 215.9 / 2, 26, { align: "center" });
+
+        let yPos = 40;
+
+        // General Info Table
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Antecedentes Generales', '']],
+            body: [
+                ['Nombre Unidad', plan.nombreUnidad],
+                ['Número Unidad', plan.numeroUnidad || 'No especificado'],
+                ['Nivel', plan.nivel],
+                ['Docente', plan.autor || 'No especificado'],
+                ['Fecha Creación', new Date(plan.fechaCreacion).toLocaleDateString()],
+                ['Cantidad Clases', plan.cantidadClases.toString()]
+            ],
+            theme: 'grid',
+            headStyles: { fillColor: [22, 163, 74] }, // Greenish
+            styles: { fontSize: 9, cellPadding: 1.5 },
+            columnStyles: { 0: { fontStyle: 'bold', width: 50 } }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 5;
+
+        // Objectives Table
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Objetivos y Contenidos']],
+            body: [
+                [`Objetivos de Aprendizaje:\n${plan.objetivosAprendizaje}`],
+                [`Indicadores de Evaluación:\n${plan.indicadoresEvaluacion}`],
+                [`Contenidos:\n${plan.contenidos}`]
+            ],
+            theme: 'grid',
+            headStyles: { fillColor: [22, 163, 74] },
+            styles: { fontSize: 9, cellPadding: 2, overflow: 'linebreak' }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 5;
+
+        // Lessons Table
+        const lessonsBody = plan.detallesLeccion.map((lesson, index) => [
+            `Clase ${index + 1}`,
+            lesson.objetivosAprendizaje,
+            lesson.actividades,
+            lesson.contenidosConceptuales,
+            lesson.habilidadesBloom
+        ]);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Clase', 'Objetivo', 'Actividades', 'Contenidos', 'Habilidad']],
+            body: lessonsBody,
+            theme: 'grid',
+            headStyles: { fillColor: [30, 64, 175] }, // Blueish
+            styles: { fontSize: 8, cellPadding: 1.5, overflow: 'linebreak' },
+            columnStyles: {
+                0: { cellWidth: 15, fontStyle: 'bold' },
+                1: { cellWidth: 40 },
+                2: { cellWidth: 50 },
+                3: { cellWidth: 40 },
+                4: { cellWidth: 25 }
+            }
+        });
+        
+        // Reflexion if exists
+        if (plan.reflexionUnidad) {
+             yPos = (doc as any).lastAutoTable.finalY + 5;
+             // Check for page break
+             if (yPos > 300) {
+                 doc.addPage();
+                 yPos = 20;
+             }
+             
+             autoTable(doc, {
+                startY: yPos,
+                head: [['Reflexión Docente']],
+                body: [
+                    [`Fortalezas:\n${plan.reflexionUnidad.fortalezas}`],
+                    [`Mejoras:\n${plan.reflexionUnidad.mejoras}`],
+                    [`Desafíos:\n${plan.reflexionUnidad.debilidades}`]
+                ],
+                theme: 'grid',
+                headStyles: { fillColor: [217, 119, 6] }, // Amber
+                styles: { fontSize: 9 }
+             });
+        }
+
+        doc.save(`Planificacion_${plan.asignatura}_${plan.nombreUnidad.replace(/\s+/g, '_')}.pdf`);
+
+    } catch (error) {
+        console.error("Error generating PDF", error);
+        alert("Error al generar el PDF. Verifique que las imágenes sean accesibles.");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-        <p><strong>Objetivo de Aprendizaje:</strong> {plan.objetivosAprendizaje}</p>
-        <p><strong>Indicadores de Evaluación:</strong> {plan.indicadoresEvaluacion}</p>
+        <div className="flex justify-between items-start">
+          <div className="flex-1">
+            <p><strong>Objetivo de Aprendizaje:</strong> {plan.objetivosAprendizaje}</p>
+            <p><strong>Indicadores de Evaluación:</strong> {plan.indicadoresEvaluacion}</p>
+          </div>
+          <button 
+            onClick={handleExportPDF}
+            className="ml-4 flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md text-sm font-medium transition-colors"
+            title="Descargar Planificación en PDF"
+          >
+            <Download className="w-4 h-4" />
+            <span>PDF</span>
+          </button>
+        </div>
         <div className="mt-4">
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Avance de la Unidad (automático)</label>
           <div className="flex items-center gap-3">
@@ -1531,6 +1681,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     cantidadClases: 8,
     observaciones: '',
     ideasParaUnidad: '',
+    numeroUnidad: '',
   };
   const [unidadFormData, setUnidadFormData] = useState(initialUnidadFormState);
 
@@ -1565,6 +1716,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       asignatura: plan.asignatura,
       nivel: plan.nivel,
       nombreUnidad: plan.nombreUnidad,
+      numeroUnidad: plan.numeroUnidad || '',
       contenidos: plan.contenidos,
       cantidadClases: plan.cantidadClases,
       observaciones: plan.observaciones,
@@ -1683,6 +1835,16 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
 
   const handleGenerateUnidad = async (e: FormEvent) => {
     e.preventDefault();
+    
+    // Validación de Unidad obligatoria (excepto Mecánica)
+    const isMecanica = unidadFormData.asignatura.toLowerCase().includes('mecánica industrial') || 
+                       unidadFormData.asignatura.toLowerCase().includes('mecánica automotriz');
+    
+    if (!isMecanica && !unidadFormData.numeroUnidad) {
+      alert('El campo "Número de Unidad" es obligatorio para esta asignatura.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -1716,6 +1878,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         asignatura: unidadFormData.asignatura,
         nivel: unidadFormData.nivel,
         nombreUnidad: unidadFormData.nombreUnidad,
+        numeroUnidad: unidadFormData.numeroUnidad,
         contenidos: unidadFormData.contenidos,
         cantidadClases: unidadFormData.cantidadClases,
         observaciones: unidadFormData.observaciones,
@@ -1974,6 +2137,23 @@ const renderUnidadTab = () => (
                   disabled={loading}
                 >
                   {assignedNiveles.map(nivel => <option key={nivel} value={nivel}>{nivel}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="numeroUnidad" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Número de Unidad</label>
+                <select 
+                  name="numeroUnidad" 
+                  value={unidadFormData.numeroUnidad} 
+                  onChange={handleUnidadFieldChange} 
+                  className={inputStyles}
+                  disabled={loading}
+                >
+                  <option value="">Seleccionar Unidad</option>
+                  <option value="Unidad 0">Unidad 0</option>
+                  <option value="Unidad 1">Unidad 1</option>
+                  <option value="Unidad 2">Unidad 2</option>
+                  <option value="Unidad 3">Unidad 3</option>
+                  <option value="Unidad 4">Unidad 4</option>
                 </select>
               </div>
               <div className="md:col-span-2 lg:col-span-1">

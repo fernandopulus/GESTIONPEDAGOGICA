@@ -15,10 +15,12 @@ import { saveEvaluacionEmpresa, subscribeEvaluacionesEmpresa } from '../../src/f
 import GooglePlacesAutocomplete from 'react-google-places-autocomplete';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 import { Building, Hash, MapPin, User as UserIcon, Mail, Briefcase, Users, Star, LayoutDashboard } from 'lucide-react';
 import { CURSOS_DUAL } from '../../constants';
 import { useAuth } from '../../src/hooks/useAuth';
+import { generarConIA } from '../../src/ai/geminiHelper';
 
 
 // Hook para cargar Google Maps, asegurando que se incluye la librería 'directions'
@@ -437,6 +439,267 @@ const DashboardView: React.FC<{ data: any }> = ({ data }) => {
     return <DashboardViewModern data={data} />;
 };
 
+const EvaluacionesDashboard: React.FC<{
+    evaluacionesMap: Record<string, EvaluacionEmpresaEstudiante[]>;
+    empresas: Empresa[];
+    estudiantes: User[];
+    profesores: User[];
+}> = ({ evaluacionesMap, empresas, estudiantes, profesores }) => {
+    const [filtroCurso, setFiltroCurso] = useState('todos');
+    const [filtroEspecialidad, setFiltroEspecialidad] = useState('todas');
+    const [filtroSupervisor, setFiltroSupervisor] = useState('todos');
+    const [studentToEvaluate, setStudentToEvaluate] = useState<User | null>(null);
+    const [feedback, setFeedback] = useState<Record<string, string>>({});
+
+    const processedData = useMemo(() => {
+        // 1. Flatten to latest evaluation per student
+        const latestEvaluations = Object.entries(evaluacionesMap).map(([studentId, list]) => {
+            if (!list || list.length === 0) return null;
+            // Assuming list is sorted by date desc (as per previous changes)
+            const latest = list[0]; 
+            const student = estudiantes.find(s => s.id === studentId);
+            if (!student) return null;
+            
+            const empresa = empresas.find(e => e.id === latest.empresaId);
+            const supervisor = empresa?.docenteSupervisor?.nombreCompleto || 'Sin asignar';
+            const especialidad = empresa?.area || 'Sin especificar';
+
+            return {
+                student,
+                empresa,
+                evaluation: latest,
+                curso: student.curso || 'Sin curso',
+                especialidad,
+                supervisor
+            };
+        }).filter(item => item !== null) as Array<{
+            student: User;
+            empresa: Empresa | undefined;
+            evaluation: EvaluacionEmpresaEstudiante;
+            curso: string;
+            especialidad: string;
+            supervisor: string;
+        }>;
+
+        // 2. Apply filters
+        const filtered = latestEvaluations.filter(item => {
+            if (filtroCurso !== 'todos' && item.curso !== filtroCurso) return false;
+            if (filtroEspecialidad !== 'todas' && item.especialidad !== filtroEspecialidad) return false;
+            if (filtroSupervisor !== 'todos' && item.supervisor !== filtroSupervisor) return false;
+            return true;
+        });
+
+        // 3. Calculate KPIs
+        const totalEvaluados = filtered.length;
+        const promedioGeneral = totalEvaluados > 0 
+            ? filtered.reduce((acc, item) => acc + (item.evaluation.promedioGeneral || 0), 0) / totalEvaluados 
+            : 0;
+        
+        // 4. Charts Data
+        // By Especialidad
+        const byEspecialidad: Record<string, { sum: number, count: number }> = {};
+        filtered.forEach(item => {
+            if (!byEspecialidad[item.especialidad]) byEspecialidad[item.especialidad] = { sum: 0, count: 0 };
+            byEspecialidad[item.especialidad].sum += (item.evaluation.promedioGeneral || 0);
+            byEspecialidad[item.especialidad].count += 1;
+        });
+        const chartEspecialidad = Object.entries(byEspecialidad).map(([name, val]) => ({
+            name,
+            promedio: parseFloat((val.sum / val.count).toFixed(1))
+        }));
+
+        // By Curso
+        const byCurso: Record<string, { sum: number, count: number }> = {};
+        filtered.forEach(item => {
+            if (!byCurso[item.curso]) byCurso[item.curso] = { sum: 0, count: 0 };
+            byCurso[item.curso].sum += (item.evaluation.promedioGeneral || 0);
+            byCurso[item.curso].count += 1;
+        });
+        const chartCurso = Object.entries(byCurso).map(([name, val]) => ({
+            name,
+            promedio: parseFloat((val.sum / val.count).toFixed(1))
+        }));
+
+        // Distribution of Levels (NL, PL, ML, L)
+        const levelsCount: Record<string, number> = { NL: 0, PL: 0, ML: 0, L: 0 };
+        filtered.forEach(item => {
+            Object.values(item.evaluation.evaluaciones || {}).forEach(ind => {
+                if (ind.nivel && levelsCount[ind.nivel] !== undefined) {
+                    levelsCount[ind.nivel]++;
+                }
+            });
+        });
+        const chartNiveles = Object.entries(levelsCount).map(([name, value]) => ({ name, value }));
+
+        // 5. Average per Indicator
+        const indicadoresStats: Record<string, { sum: number, count: number, label: string }> = {};
+        // Initialize
+        EVALUACION_DIMENSIONES.forEach(dim => {
+            dim.indicadores.forEach(ind => {
+                indicadoresStats[ind.id] = { sum: 0, count: 0, label: ind.label };
+            });
+        });
+        // Accumulate
+        filtered.forEach(item => {
+            Object.values(item.evaluation.evaluaciones || {}).forEach((indEval: any) => {
+                if (indicadoresStats[indEval.indicadorId]) {
+                    indicadoresStats[indEval.indicadorId].sum += (indEval.nota || 0);
+                    indicadoresStats[indEval.indicadorId].count += 1;
+                }
+            });
+        });
+        const chartIndicadores = Object.values(indicadoresStats).map(stat => ({
+            name: stat.label.length > 50 ? stat.label.substring(0, 50) + '...' : stat.label,
+            fullLabel: stat.label,
+            promedio: stat.count > 0 ? parseFloat((stat.suma / stat.count).toFixed(1)) : 0
+        }));
+
+        return { filtered, totalEvaluados, promedioGeneral, chartEspecialidad, chartCurso, chartNiveles, chartIndicadores };
+    }, [evaluacionesMap, empresas, estudiantes, filtroCurso, filtroEspecialidad, filtroSupervisor]);
+
+    const uniqueEspecialidades = Array.from(new Set(empresas.map(e => e.area || 'Sin especificar')));
+    const uniqueSupervisores = Array.from(new Set(empresas.map(e => e.docenteSupervisor?.nombreCompleto || 'Sin asignar')));
+
+    const COLORS = ['#EF4444', '#F59E0B', '#6366F1', '#22C55E']; // NL, PL, ML, L colors approx
+
+    return (
+        <div className="space-y-6">
+            {/* Filters */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border">
+                <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase">Curso</label>
+                    <select value={filtroCurso} onChange={e => setFiltroCurso(e.target.value)} className="w-full mt-1 border-slate-300 rounded-md text-sm">
+                        <option value="todos">Todos</option>
+                        {CURSOS_DUAL.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                </div>
+                <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase">Especialidad</label>
+                    <select value={filtroEspecialidad} onChange={e => setFiltroEspecialidad(e.target.value)} className="w-full mt-1 border-slate-300 rounded-md text-sm">
+                        <option value="todas">Todas</option>
+                        {uniqueEspecialidades.map(e => <option key={e} value={e}>{e}</option>)}
+                    </select>
+                </div>
+                <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase">Supervisor</label>
+                    <select value={filtroSupervisor} onChange={e => setFiltroSupervisor(e.target.value)} className="w-full mt-1 border-slate-300 rounded-md text-sm">
+                        <option value="todos">Todos</option>
+                        {uniqueSupervisores.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                </div>
+            </div>
+
+            {/* KPIs */}
+            <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-white border shadow-sm">
+                    <div className="text-sm text-slate-500">Estudiantes Evaluados</div>
+                    <div className="text-3xl font-bold text-slate-800">{processedData.totalEvaluados}</div>
+                </div>
+                <div className="p-4 rounded-xl bg-white border shadow-sm">
+                    <div className="text-sm text-slate-500">Promedio General</div>
+                    <div className="text-3xl font-bold text-indigo-600">{processedData.promedioGeneral.toFixed(1)}</div>
+                </div>
+            </div>
+
+            {/* Charts Row 1 */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="p-4 bg-white rounded-xl border shadow-sm">
+                    <h3 className="font-bold mb-4 text-slate-700">Promedio por Especialidad</h3>
+                    <ResponsiveContainer width="100%" height={250}>
+                        <BarChart data={processedData.chartEspecialidad} layout="vertical" margin={{ left: 20 }}>
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                            <XAxis type="number" domain={[0, 7]} hide />
+                            <YAxis type="category" dataKey="name" width={100} tick={{fontSize: 11}} />
+                            <Tooltip />
+                            <Bar dataKey="promedio" fill="#6366F1" radius={[0, 4, 4, 0]} barSize={20} label={{ position: 'right', fill: '#666', fontSize: 12 }} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+
+                <div className="p-4 bg-white rounded-xl border shadow-sm">
+                    <h3 className="font-bold mb-4 text-slate-700">Distribución de Niveles (Indicadores)</h3>
+                    <ResponsiveContainer width="100%" height={250}>
+                        <PieChart>
+                            <Pie data={processedData.chartNiveles} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                                {processedData.chartNiveles.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                ))}
+                            </Pie>
+                            <Tooltip />
+                            <Legend />
+                        </PieChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            {/* New Chart: Indicators Performance */}
+            <div className="p-4 bg-white rounded-xl border shadow-sm">
+                <h3 className="font-bold mb-4 text-slate-700">Nivel de Logro por Indicador</h3>
+                <div className="h-[500px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={processedData.chartIndicadores} layout="vertical" margin={{ left: 10, right: 30, top: 10, bottom: 10 }}>
+                            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={true} />
+                            <XAxis type="number" domain={[0, 7]} ticks={[1,2,3,4,5,6,7]} />
+                            <YAxis type="category" dataKey="name" width={250} tick={{fontSize: 11}} interval={0} />
+                            <Tooltip 
+                                content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                        const data = payload[0].payload;
+                                        return (
+                                            <div className="bg-white p-2 border shadow-lg rounded text-sm">
+                                                <p className="font-bold">{data.fullLabel}</p>
+                                                <p className="text-indigo-600">Promedio: {data.promedio}</p>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                }}
+                            />
+                            <Bar dataKey="promedio" fill="#06B6D4" radius={[0, 4, 4, 0]} barSize={15}>
+                                {processedData.chartIndicadores.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.promedio >= 6.0 ? '#22C55E' : entry.promedio >= 5.0 ? '#6366F1' : entry.promedio >= 4.0 ? '#F59E0B' : '#EF4444'} />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            {/* Table */}
+            <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b">
+                    <h3 className="font-bold text-slate-700">Detalle por Estudiante</h3>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 text-slate-500 font-medium">
+                            <tr>
+                                <th className="px-6 py-3">Estudiante</th>
+                                <th className="px-6 py-3">Curso</th>
+                                <th className="px-6 py-3">Empresa</th>
+                                <th className="px-6 py-3">Supervisor</th>
+                                <th className="px-6 py-3 text-right">Promedio</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                            {processedData.filtered.map((item, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50">
+                                    <td className="px-6 py-3 font-medium">{item.student.nombreCompleto}</td>
+                                    <td className="px-6 py-3">{item.curso}</td>
+                                    <td className="px-6 py-3">{item.empresa?.nombre || '—'}</td>
+                                    <td className="px-6 py-3">{item.supervisor}</td>
+                                    <td className="px-6 py-3 text-right font-bold text-indigo-600">
+                                        {item.evaluation.promedioGeneral?.toFixed(1) || '—'}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const GestionEmpresas: React.FC = () => {
     const { currentUser } = useAuth();
@@ -444,7 +707,7 @@ const GestionEmpresas: React.FC = () => {
     const [profesores, setProfesores] = useState<User[]>([]);
     const [estudiantes, setEstudiantes] = useState<User[]>([]);
     const [cursoFiltro, setCursoFiltro] = useState<'todos' | '3ºA' | '3ºB' | '3ºC' | '3ºD' | '4ºA' | '4ºB' | '4ºC' | '4ºD'>('todos');
-    const [view, setView] = useState<'list' | 'form' | 'map' | 'route' | 'saved-routes' | 'dashboard' | 'estudiantes'>('list');
+    const [view, setView] = useState<'list' | 'form' | 'map' | 'route' | 'saved-routes' | 'dashboard' | 'estudiantes' | 'evaluaciones'>('list');
     const [modernCharts, setModernCharts] = useState(true);
     const [currentEmpresa, setCurrentEmpresa] = useState<Omit<Empresa, 'id' | 'createdAt'> | Empresa | null>(null);
     const [loading, setLoading] = useState(true);
@@ -466,6 +729,10 @@ const GestionEmpresas: React.FC = () => {
     const [evaluacionPanelAbierto, setEvaluacionPanelAbierto] = useState<Record<string, boolean>>({});
     const [evaluacionActivaPorEstudiante, setEvaluacionActivaPorEstudiante] = useState<Record<string, string | null>>({});
     const [evaluacionDrafts, setEvaluacionDrafts] = useState<Record<string, EvaluacionEmpresaEstudiante | undefined>>({});
+
+    const [studentToEvaluate, setStudentToEvaluate] = useState<User | null>(null);
+    const [feedback, setFeedback] = useState<Record<string, string>>({});
+    const [generatingFeedback, setGeneratingFeedback] = useState<Record<string, boolean>>({});
 
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
     const { isLoaded: isMapScriptLoaded, error: mapScriptError } = useGoogleMapsScript(apiKey);
@@ -779,6 +1046,94 @@ const GestionEmpresas: React.FC = () => {
             alert('No se pudo guardar la fecha de supervisión. Intenta nuevamente.');
         } finally {
             setSavingEvaluaciones(prev => ({ ...prev, [student.id]: false }));
+        }
+    };
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            // Opcional: Mostrar un toast o notificación
+        }, (err) => {
+            console.error('Error al copiar: ', err);
+        });
+    };
+
+    const handleSaveFeedback = async (student: User, feedbackText: string) => {
+        if (!feedbackText) return;
+        const { evaluacion, isDraft } = resolveEvaluacionActiva(student);
+        
+        setSavingEvaluaciones(prev => ({ ...prev, [student.id]: true }));
+        try {
+            const payload: EvaluacionEmpresaEstudiante = {
+                ...evaluacion,
+                retroalimentacion: feedbackText,
+                updatedBy: currentUser ? { id: currentUser.id, nombre: currentUser.nombreCompleto || currentUser.email || 'Usuario' } : undefined,
+            };
+
+            if (isDraft) {
+                setEvaluacionDrafts(prev => ({ ...prev, [student.id]: payload }));
+                // Si es draft, no guardamos en DB todavía, solo en estado local draft
+                // Opcional: Podríamos guardar el draft en DB si quisiéramos persistencia parcial
+                alert('Retroalimentación guardada en borrador. Recuerda guardar la evaluación completa para persistir los cambios.');
+            } else {
+                await saveEvaluacionEmpresa(payload);
+                alert('Retroalimentación guardada exitosamente.');
+            }
+        } catch (error) {
+            console.error('Error al guardar retroalimentación:', error);
+            alert('No se pudo guardar la retroalimentación.');
+        } finally {
+            setSavingEvaluaciones(prev => ({ ...prev, [student.id]: false }));
+        }
+    };
+
+    const handleGenerarRetroalimentacion = async (student: User) => {
+        const { evaluacion } = getEvaluacionActiva(student.id);
+        if (!evaluacion) {
+            alert('No hay evaluación activa para generar retroalimentación.');
+            return;
+        }
+
+        setGeneratingFeedback(prev => ({ ...prev, [student.id]: true }));
+        try {
+            const prompt = `
+                Genera una retroalimentación pedagógica formal para el estudiante ${student.nombreCompleto} del curso ${student.curso || 'N/A'}.
+                
+                Contexto de Evaluación de Práctica Profesional:
+                - Promedio General: ${evaluacion.promedioGeneral?.toFixed(1) || 'N/A'}
+                
+                Desempeño por Dimensiones:
+                ${Object.entries(evaluacion.dimensionPromedios || {}).map(([dimId, prom]) => {
+                    const dim = EVALUACION_DIMENSIONES.find(d => d.id === dimId);
+                    return `- ${dim?.label || dimId}: ${prom.toFixed(1)}`;
+                }).join('\n')}
+                
+                Detalle de Indicadores:
+                ${Object.values(evaluacion.evaluaciones || {}).map(ev => {
+                    let label = ev.indicadorId;
+                    for(const d of EVALUACION_DIMENSIONES) {
+                        const ind = d.indicadores.find(i => i.id === ev.indicadorId);
+                        if(ind) { label = ind.label; break; }
+                    }
+                    return `- ${label}: ${ev.nivel} (${ev.nota})`;
+                }).join('\n')}
+                
+                Instrucciones estrictas de redacción:
+                1. Redacta en TERCERA PERSONA (ej: "El estudiante evidencia...", "Se observa...").
+                2. Mantén un tono OBJETIVO y descriptivo, evitando juicios de valor subjetivos o adjetivos calificativos excesivos.
+                3. Enfócate en hechos observables basados en los indicadores evaluados.
+                4. Estructura la respuesta en un solo párrafo cohesivo o dos párrafos breves.
+                5. NO uses formato Markdown, ni listas con viñetas, ni negritas, ni caracteres especiales. Solo texto plano.
+                6. Asegúrate de que la respuesta esté completa y no se corte abruptamente.
+                7. El objetivo es que este texto sea útil para la hoja de vida del estudiante, destacando sus competencias logradas y áreas de desarrollo profesional.
+            `;
+
+            const response = await generarConIA(prompt, 2, true, 'GestionEmpresas', false);
+            setFeedback(prev => ({ ...prev, [student.id]: response || 'No se pudo generar la retroalimentación.' }));
+        } catch (error) {
+            console.error('Error generando retroalimentación:', error);
+            alert('Ocurrió un error al generar la retroalimentación.');
+        } finally {
+            setGeneratingFeedback(prev => ({ ...prev, [student.id]: false }));
         }
     };
 
@@ -1127,7 +1482,7 @@ const GestionEmpresas: React.FC = () => {
             const px0 = cx + (p0.lng - minLng) * scale;
             const py0 = cy + (maxLat - p0.lat) * scale; // invertir Y
             const px1 = cx + (p1.lng - minLng) * scale;
-            const py1 = cy + (maxLat - p1.lat) * scale;
+                       const py1 = cy + (maxLat - p1.lat) * scale;
             pdf.line(px0, py0, px1, py1);
         }
 
@@ -1165,7 +1520,7 @@ const GestionEmpresas: React.FC = () => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(String(reader.result));
             reader.onerror = reject;
-            reader.readAsDataURL(blob);
+                       reader.readAsDataURL(blob);
         });
     };
 
@@ -1487,11 +1842,11 @@ const GestionEmpresas: React.FC = () => {
             }
         }
         if (colIndex !== 0) {
-            // Avanzar si quedó fila incompleta, con separación de sección
-            yCursor = rowStartY + rowMaxH + sectionGap;
+            // Pasar a la siguiente fila
+            yCursor += rowMaxH;
         }
 
-        // Estudiantes por empresa
+        // Estudiantes por empresa seleccionada
         const addBodyText = (txt: string, x: number, maxWidth: number, fontSize = 10) => {
             pdf.setFontSize(fontSize);
             const lines = pdf.splitTextToSize(txt, maxWidth);
@@ -1571,7 +1926,7 @@ const GestionEmpresas: React.FC = () => {
             if (col === 0) ensureSpace(rowH3 + 8);
             const x = colXs[col];
             // línea
-            pdf.line(x, yCursor, x + colWidth3, yCursor);
+            pdf.line(x, yCursor, x + signatureLineWidth, yCursor);
             // etiqueta centrada
             pdf.setFontSize(9);
             const label = `Firma representante: ${empresasParaFirmar[i]}`;
@@ -1580,8 +1935,10 @@ const GestionEmpresas: React.FC = () => {
                 yCursor += rowH3;
             }
         }
-        // si la última fila no se completó, avanzar
-        if (empresasParaFirmar.length % cols !== 0) yCursor += rowH3;
+        if (colIndex !== 0) {
+            // Pasar a la siguiente fila
+            yCursor += rowH3;
+        }
 
         // Firma profesor tutor (3 columnas: ocupar la central)
         ensureSpace(rowH3 + 8);
@@ -1607,6 +1964,138 @@ const GestionEmpresas: React.FC = () => {
         setRouteName(route.nombre);
         setRouteSupervisor(route.supervisor);
         setView('route');
+    };
+
+    const handleExportConsolidadoPDF = async () => {
+        if (savedRoutes.length === 0) {
+            alert('No hay rutas guardadas para generar el reporte.');
+            return;
+        }
+
+        // Filtrar por mes actual
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+
+        const routesInMonth = savedRoutes.filter(r => {
+            if (!r.createdAt) return false;
+            const d = typeof r.createdAt === 'string' ? new Date(r.createdAt) : r.createdAt.toDate ? r.createdAt.toDate() : new Date();
+            return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+        });
+
+        if (routesInMonth.length === 0) {
+            alert('No hay rutas guardadas en el mes actual.');
+            return;
+        }
+
+        // Cargar imágenes para el encabezado
+        let logoLeftData: string | null = null;
+        let logoRightData: string | null = null;
+        try {
+            logoLeftData = await fetchImageAsDataURL('https://res.cloudinary.com/dwncmu1wu/image/upload/v1764096456/Captura_de_pantalla_2025-11-25_a_la_s_3.47.16_p._m._p7m2xy.png');
+            logoRightData = await fetchImageAsDataURL('https://res.cloudinary.com/dwncmu1wu/image/upload/v1753209432/LIR_fpq2lc.png');
+        } catch (e) {
+            console.error('Error cargando logos:', e);
+        }
+
+        const doc = new jsPDF({
+            orientation: 'landscape',
+            unit: 'mm',
+            format: 'legal'
+        });
+
+        const margin = 10;
+        const pageWidth = doc.internal.pageSize.getWidth();
+
+        // Logos
+        if (logoLeftData) {
+            doc.addImage(logoLeftData, 'PNG', margin, margin, 15, 20);
+        }
+        if (logoRightData) {
+            doc.addImage(logoRightData, 'PNG', pageWidth - margin - 15, margin, 15, 20);
+        }
+
+        // Título
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Supervisión de Práctica', pageWidth / 2, 20, { align: 'center' });
+
+        // Datos de identificación
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        let yCursor = 35;
+        doc.text('Liceo Industrial de Recoleta', margin, yCursor);
+        yCursor += 6;
+        doc.text('Nombre de Coordinador Responsable: Nelson Laubreaux Rojas', margin, yCursor);
+        yCursor += 6;
+        doc.text('Rut: 10.122.222-5', margin, yCursor);
+        yCursor += 10;
+
+        // Preparar datos de la tabla
+        const tableBody: any[] = [];
+
+        routesInMonth.forEach(route => {
+            const dateObj = typeof route.createdAt === 'string' ? new Date(route.createdAt) : route.createdAt?.toDate ? route.createdAt.toDate() : new Date();
+            const dateStr = dateObj.toLocaleDateString('es-CL');
+
+            route.empresas.forEach((empLite: any) => {
+                const empFull = getEmpresaCompleta(empLite);
+                const estudiantesAsignados = getEstudiantesDeEmpresa(empFull.id);
+
+                if (estudiantesAsignados.length === 0) {
+                    tableBody.push([
+                        dateStr,
+                        empFull.nombre,
+                        'Sin estudiantes asignados',
+                        '—',
+                        empFull.area || '—'
+                    ]);
+                } else {
+                    estudiantesAsignados.forEach(st => {
+                        tableBody.push([
+                            dateStr,
+                            empFull.nombre,
+                            st.nombreCompleto,
+                            st.curso || '—',
+                            empFull.area || '—'
+                        ]);
+                    });
+                }
+            });
+        });
+
+        autoTable(doc, {
+            startY: yCursor,
+            head: [['Fecha de visita', 'Empresa', 'Nombre del Estudiante', 'Curso', 'Especialidad']],
+            body: tableBody,
+            theme: 'grid',
+            styles: { fontSize: 10, cellPadding: 3 },
+            headStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: 'bold' },
+            margin: { left: margin, right: margin },
+        });
+
+        yCursor = (doc as any).lastAutoTable.finalY + 40;
+        
+        if (yCursor + 30 > doc.internal.pageSize.getHeight()) {
+            doc.addPage();
+            yCursor = 40;
+        }
+
+        const signatureY = yCursor;
+        
+        doc.line(margin + 20, signatureY, margin + 100, signatureY);
+        doc.text('Firma Coordinador Responsable', margin + 60, signatureY + 5, { align: 'center' });
+
+        doc.line(pageWidth - 120, signatureY, pageWidth - 40, signatureY);
+        doc.text('Firma Director/a Establecimiento', pageWidth - 80, signatureY + 5, { align: 'center' });
+
+        const footerY = doc.internal.pageSize.getHeight() - 15;
+        doc.setFontSize(8);
+        doc.text('Fundación de solidaridad Romanos XII', pageWidth / 2, footerY, { align: 'center' });
+        doc.text('Gran Avenida 4688, San Miguel, Santiago de Chile', pageWidth / 2, footerY + 4, { align: 'center' });
+        doc.text('Tel +560227637900 fundacion.solidaridad@romanosxii.org', pageWidth / 2, footerY + 8, { align: 'center' });
+
+        doc.save(`consolidado_supervision_${currentMonth + 1}_${currentYear}.pdf`);
     };
 
     const handleDeleteRoute = async (routeId: string) => {
@@ -1689,9 +2178,9 @@ const GestionEmpresas: React.FC = () => {
 
     return (
         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-6">
                 <h1 className="text-3xl font-bold">Gestión de Empresas</h1>
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-2">
                     {view !== 'list' && (
                          <button 
                             onClick={() => { 
@@ -1720,6 +2209,13 @@ const GestionEmpresas: React.FC = () => {
                                 className="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
                             >
                                 Estudiantes
+                            </button>
+                            <button 
+                                onClick={() => setView('evaluaciones')} 
+                                title="Evaluaciones" 
+                                className="bg-rose-500 hover:bg-rose-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                            >
+                                Evaluaciones
                             </button>
                             {/* Toggle de estilo de gráficos */}
                             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-sm">
@@ -1766,6 +2262,15 @@ const GestionEmpresas: React.FC = () => {
 
             {view === 'dashboard' && (modernCharts ? <DashboardViewModern data={dashboardData} /> : <DashboardView data={dashboardData} />)}
 
+            {view === 'evaluaciones' && (
+                <EvaluacionesDashboard 
+                    evaluacionesMap={evaluacionesEstudiantes} 
+                    empresas={empresas} 
+                    estudiantes={estudiantes} 
+                    profesores={profesores} 
+                />
+            )}
+
             {view === 'estudiantes' && (
                 <div className="space-y-4">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -1808,7 +2313,7 @@ const GestionEmpresas: React.FC = () => {
                                     const resumenEvaluacion = evaluacionesAlumno[0];
                                     const fechaInputValue = evaluacionActual?.fechaSupervision || '';
                                     return (
-                                        <div key={st.id} className="p-4 rounded-xl border bg-white dark:bg-slate-900 flex flex-col gap-3 hover:shadow-md transition-shadow">
+                                        <div key={st.id} className="p-4 rounded-xl border bg-slate-50 dark:bg-slate-900 flex flex-col gap-3 hover:shadow-md transition-shadow">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
                                                     {st.nombreCompleto?.split(' ').map(p=>p[0]).slice(0,2).join('') || 'E'}
@@ -1842,7 +2347,7 @@ const GestionEmpresas: React.FC = () => {
                                                 <select
                                                     value={emp?.id || ''}
                                                     onChange={(e) => handleAssignEmpresaToStudent(st, e.target.value)}
-                                                    className="border rounded-md px-2 py-1 text-sm dark:bg-slate-800 dark:border-slate-600"
+                                                    className="px-3 py-1 border border-gray-300 rounded-md text-sm dark:bg-slate-800 dark:border-slate-600"
                                                 >
                                                     <option value="">Sin empresa</option>
                                                     {empresas
@@ -1919,126 +2424,20 @@ const GestionEmpresas: React.FC = () => {
                                                 <div className="space-y-2">
                                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                                         <div>
-                                                            <span className="text-xs font-medium text-slate-500 block">Evaluación en la empresa</span>
+                                                            <span className="text-xs font-medium text-slate-500 block">Historial</span>
                                                             <span className="text-[11px] text-slate-400">
-                                                                {resumenEvaluacion
-                                                                    ? `${formatFechaSupervision(resumenEvaluacion.fechaSupervision)} • Promedio ${typeof resumenEvaluacion.promedioGeneral === 'number' ? resumenEvaluacion.promedioGeneral.toFixed(1) : '—'}`
-                                                                    : 'Sin registros previos'}
+                                                                {evaluacionesAlumno.length === 0 && 'Sin registros previos.'}
+                                                                {evaluacionesAlumno.length > 0 && `Última evaluación: ${formatFechaSupervision(evaluacionesAlumno[0].fechaSupervision)}`}
                                                             </span>
                                                         </div>
                                                         <button
                                                             type="button"
-                                                            onClick={() => handleToggleEvaluacionPanel(st)}
+                                                            onClick={() => setStudentToEvaluate(st)}
                                                             className="text-xs font-semibold bg-slate-900 text-white px-3 py-1.5 rounded-lg hover:bg-slate-800"
                                                         >
-                                                            {panelAbierto ? 'Ocultar' : 'Evaluar práctica'}
+                                                            Evaluar práctica
                                                         </button>
                                                     </div>
-                                                    {panelAbierto && (
-                                                        <div className="space-y-4 border rounded-lg p-3 bg-slate-50">
-                                                            <div className="space-y-2">
-                                                                <div className="flex flex-col gap-2">
-                                                                    <div className="flex flex-wrap items-center gap-2">
-                                                                        <span className="text-[11px] uppercase tracking-wide text-slate-500">Historial</span>
-                                                                        <div className="flex flex-wrap gap-2">
-                                                                            {evaluacionesAlumno.length === 0 && (
-                                                                                <span className="text-xs text-slate-500">Sin registros previos.</span>
-                                                                            )}
-                                                                            {evaluacionesAlumno.map((registro) => {
-                                                                                if (!registro.id) return null;
-                                                                                const isActive = !evaluacionEsDraft && evaluacionActual?.id === registro.id;
-                                                                                return (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        key={registro.id}
-                                                                                        onClick={() => handleSeleccionEvaluacion(st.id, registro.id!)}
-                                                                                        className={`px-2 py-1 rounded-full text-xs border transition ${isActive ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-400'}`}
-                                                                                    >
-                                                                                        {formatFechaSupervision(registro.fechaSupervision)} • {typeof registro.promedioGeneral === 'number' ? registro.promedioGeneral.toFixed(1) : '—'}
-                                                                                    </button>
-                                                                                );
-                                                                            })}
-                                                                        </div>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleNuevaEvaluacion(st)}
-                                                                            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-                                                                        >
-                                                                            + Nueva evaluación
-                                                                        </button>
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Fecha de supervisión</label>
-                                                                        <input
-                                                                            type="date"
-                                                                            value={fechaInputValue}
-                                                                            onChange={(e) => handleFechaSupervisionChange(st, e.target.value)}
-                                                                            className="w-full border rounded-md px-2 py-1 text-sm bg-white"
-                                                                        />
-                                                                        {savingEval ? (
-                                                                            <p className="text-[10px] text-slate-500 mt-1">Guardando cambios...</p>
-                                                                        ) : evaluacionEsDraft ? (
-                                                                            <p className="text-[10px] text-slate-500 mt-1">Se creará un nuevo registro al guardar.</p>
-                                                                        ) : null}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                            {evaluacionActual ? (
-                                                                <div className="space-y-3">
-                                                                    {EVALUACION_DIMENSIONES.map((dimension) => {
-                                                                        const dimensionScore = evaluacionActual?.dimensionPromedios?.[dimension.id];
-                                                                        return (
-                                                                            <div key={dimension.id} className="border rounded-lg p-3 bg-white space-y-2">
-                                                                                <div className="flex items-center justify-between">
-                                                                                    <div>
-                                                                                        <p className="text-sm font-semibold text-slate-800">{dimension.label}</p>
-                                                                                        <p className="text-[11px] text-slate-500">{dimension.categoria}</p>
-                                                                                    </div>
-                                                                                    <span className="text-sm font-bold text-slate-700">{typeof dimensionScore === 'number' ? dimensionScore.toFixed(1) : '—'}</span>
-                                                                                </div>
-                                                                                <div className="space-y-3">
-                                                                                    {dimension.indicadores.map((indicador) => {
-                                                                                        const selected = evaluacionActual?.evaluaciones?.[indicador.id]?.nivel;
-                                                                                        return (
-                                                                                            <div key={indicador.id} className="space-y-1">
-                                                                                                <p className="text-xs font-medium text-slate-600">{indicador.label}</p>
-                                                                                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                                                                                                    {NIVEL_EVALUACION_OPTIONS.map((option) => {
-                                                                                                        const isActive = selected === option.key;
-                                                                                                        return (
-                                                                                                            <button
-                                                                                                                key={option.key}
-                                                                                                                type="button"
-                                                                                                                disabled={savingEval}
-                                                                                                                onClick={() => void handleEvaluacionCambio(st, indicador.id, dimension.id, option.key)}
-                                                                                                                className={`text-xs rounded-lg border px-2 py-2 transition ${isActive ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-400'}`}
-                                                                                                            >
-                                                                                                                <span className="font-semibold">{option.label}</span>
-                                                                                                                <span className="block text-[10px] opacity-80">{option.rango}</span>
-                                                                                                            </button>
-                                                                                                        );
-                                                                                                    })}
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        );
-                                                                                    })}
-                                                                                </div>
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                    <div className="rounded-lg bg-slate-900 text-white px-3 py-2 flex items-center justify-between">
-                                                                        <span className="text-sm font-semibold">Promedio general</span>
-                                                                        <span className="text-lg font-bold">{typeof evaluacionActual?.promedioGeneral === 'number' ? evaluacionActual.promedioGeneral.toFixed(1) : '—'}</span>
-                                                                    </div>
-                                                                </div>
-                                                            ) : (
-                                                                <div className="text-sm text-slate-600">
-                                                                    Crea una nueva evaluación para comenzar el registro de la práctica.
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -2050,9 +2449,240 @@ const GestionEmpresas: React.FC = () => {
                 </div>
             )}
 
+            {/* Modal de Evaluación */}
+            {studentToEvaluate && (() => {
+                const st = studentToEvaluate;
+                const evaluacionesAlumno = getEvaluacionesPorEstudiante(st.id);
+                const { evaluacion: evaluacionActual, isDraft: evaluacionEsDraft } = getEvaluacionActiva(st.id);
+                const savingEval = savingEvaluaciones[st.id];
+                const fechaInputValue = evaluacionActual?.fechaSupervision || '';
+
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto flex flex-col">
+                            <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center sticky top-0 bg-white dark:bg-slate-900 z-10">
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-800 dark:text-white">Evaluación de Práctica</h3>
+                                    <p className="text-sm text-slate-500">{st.nombreCompleto} - {st.curso}</p>
+                                </div>
+                                <button 
+                                    onClick={() => setStudentToEvaluate(null)}
+                                    className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                </button>
+                            </div>
+                            
+                            <div className="p-6 space-y-6">
+                                <div className="space-y-4 border rounded-lg p-4 bg-slate-50 dark:bg-slate-800/50">
+                                    <div className="space-y-2">
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="text-[11px] uppercase tracking-wide text-slate-500">Historial</span>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {evaluacionesAlumno.length === 0 && (
+                                                        <span className="text-xs text-slate-500">Sin registros previos.</span>
+                                                    )}
+                                                    {evaluacionesAlumno.map((registro) => {
+                                                        if (!registro.id) return null;
+                                                        const isActive = !evaluacionEsDraft && evaluacionActual?.id === registro.id;
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                key={registro.id}
+                                                                onClick={() => handleSeleccionEvaluacion(st.id, registro.id!)}
+                                                                className={`px-2 py-1 rounded-full text-xs border transition ${isActive ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-400'}`}
+                                                            >
+                                                                {formatFechaSupervision(registro.fechaSupervision)} • {typeof registro.promedioGeneral === 'number' ? registro.promedioGeneral.toFixed(1) : '—'}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleNuevaEvaluacion(st)}
+                                                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                                                >
+                                                    + Nueva evaluación
+                                                </button>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-medium text-slate-600 mb-1">Fecha de supervisión</label>
+                                                <input
+                                                    type="date"
+                                                    value={fechaInputValue}
+                                                    onChange={(e) => handleFechaSupervisionChange(st, e.target.value)}
+                                                    className="w-full border rounded-md px-2 py-1 text-sm bg-white dark:bg-slate-700 dark:border-slate-600"
+                                                />
+                                                {savingEval ? (
+                                                    <p className="text-[10px] text-slate-500 mt-1">Guardando cambios...</p>
+                                                ) : evaluacionEsDraft ? (
+                                                    <p className="text-[10px] text-slate-500 mt-1">Se creará un nuevo registro al guardar.</p>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {evaluacionActual ? (
+                                        <div className="space-y-4">
+                                            {EVALUACION_DIMENSIONES.map((dimension) => {
+                                                const dimensionScore = evaluacionActual?.dimensionPromedios?.[dimension.id];
+                                                return (
+                                                    <div key={dimension.id} className="border rounded-lg p-4 bg-white dark:bg-slate-900 space-y-3 shadow-sm">
+                                                        <div className="flex items-center justify-between border-b pb-2 border-slate-100 dark:border-slate-800">
+                                                            <div>
+                                                                <p className="text-base font-bold text-slate-800 dark:text-slate-200">{dimension.label}</p>
+                                                                <p className="text-xs text-slate-500">{dimension.categoria}</p>
+                                                            </div>
+                                                            <span className="text-lg font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">
+                                                                {typeof dimensionScore === 'number' ? dimensionScore.toFixed(1) : '—'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="space-y-4 pt-2">
+                                                            {dimension.indicadores.map((indicador) => {
+                                                                const selected = evaluacionActual?.evaluaciones?.[indicador.id]?.nivel;
+                                                                return (
+                                                                    <div key={indicador.id} className="space-y-2">
+                                                                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{indicador.label}</p>
+                                                                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                                                            {NIVEL_EVALUACION_OPTIONS.map((option) => {
+                                                                                const isActive = selected === option.key;
+                                                                                return (
+                                                                                    <button
+                                                                                        key={option.key}
+                                                                                        type="button"
+                                                                                        disabled={savingEval}
+                                                                                        onClick={() => void handleEvaluacionCambio(st, indicador.id, dimension.id, option.key)}
+                                                                                        className={`text-xs rounded-lg border px-2 py-3 transition flex flex-col items-center justify-center gap-1 ${
+                                                                                            isActive 
+                                                                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105' 
+                                                                                                : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
+                                                                                        }`}
+                                                                                    >
+                                                                                        <span className="font-bold text-sm">{option.label}</span>
+                                                                                        <span className="text-[10px] opacity-90">{option.rango}</span>
+                                                                                    </button>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                            
+                                            <div className="sticky bottom-0 bg-white dark:bg-slate-900 p-4 border-t border-slate-200 dark:border-slate-700 shadow-lg rounded-b-xl mt-6 z-10">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <span className="text-base font-semibold text-slate-700 dark:text-slate-300">Promedio General</span>
+                                                    <span className="text-2xl font-bold text-indigo-700 dark:text-indigo-400">
+                                                        {typeof evaluacionActual?.promedioGeneral === 'number' ? evaluacionActual.promedioGeneral.toFixed(1) : '—'}
+                                                    </span>
+                                                </div>
+
+                                                {/* Sección de Retroalimentación con IA */}
+                                                <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                                                    <div className="flex justify-between items-center mb-3">
+                                                        <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Retroalimentación (IA)</h4>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleGenerarRetroalimentacion(st)}
+                                                            disabled={generatingFeedback[st.id]}
+                                                            className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-2 rounded-full font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                                                        >
+                                                            {generatingFeedback[st.id] ? (
+                                                                <>
+                                                                    <span className="animate-spin">✨</span> Generando...
+                                                                </>
+                                                            ) : (
+                                                                <>✨ Generar Retroalimentación</>
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    {feedback[st.id] && (
+                                                        <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 relative group dark:bg-indigo-900/20 dark:border-indigo-800">
+                                                            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap font-medium mb-2">
+                                                                {feedback[st.id]}
+                                                            </p>
+                                                            <div className="flex justify-end gap-2 mt-2">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSaveFeedback(st, feedback[st.id])}
+                                                                    disabled={savingEval}
+                                                                    className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                                                                    Guardar
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => copyToClipboard(feedback[st.id])}
+                                                                    className="bg-white shadow-sm border border-slate-200 p-1.5 rounded hover:bg-slate-50 text-slate-500 hover:text-indigo-600 transition-colors dark:bg-slate-800 dark:border-slate-700"
+                                                                    title="Copiar al portapapeles"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {!feedback[st.id] && evaluacionActual?.retroalimentacion && (
+                                                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 relative group dark:bg-slate-800 dark:border-slate-700">
+                                                            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap font-medium">
+                                                                {evaluacionActual.retroalimentacion}
+                                                            </p>
+                                                            <div className="absolute top-2 right-2 flex gap-1">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => copyToClipboard(evaluacionActual.retroalimentacion!)}
+                                                                    className="bg-white shadow-sm border border-slate-200 p-1.5 rounded hover:bg-slate-50 text-slate-500 hover:text-indigo-600 transition-colors dark:bg-slate-800 dark:border-slate-700"
+                                                                    title="Copiar"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-12 text-slate-500 bg-white rounded-lg border border-dashed border-slate-300">
+                                            <p className="mb-2">No hay evaluación activa.</p>
+                                            <p className="text-sm">Crea una nueva evaluación para comenzar el registro de la práctica.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-xl flex justify-end">
+                                <button 
+                                    onClick={() => setStudentToEvaluate(null)}
+                                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-medium transition-colors"
+                                >
+                                    Cerrar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {view === 'saved-routes' && (
                 <div>
-                    <h2 className="text-2xl font-bold mb-4">Rutas de Supervisión Guardadas</h2>
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-2xl font-bold">Rutas de Supervisión Guardadas</h2>
+                        <button
+                            onClick={handleExportConsolidadoPDF}
+                            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                            Consolidado Mensual (PDF)
+                        </button>
+                    </div>
                     <div className="space-y-3">
                         {savedRoutes.length === 0 ? (
                             <p className="text-gray-500">No tienes rutas guardadas.</p>
@@ -2367,8 +2997,8 @@ const GestionEmpresas: React.FC = () => {
                                 {AREAS_EMPRESA.map(area => (<option key={area} value={area}>{area}</option>))}
                             </select>
                         </div>
-                        <div className="md:col-span-2 relative flex items-center">
-                             <UserIcon className="absolute left-3 w-5 h-5 text-slate-400" />
+                        <div className="relative flex items-center">
+                            <UserIcon className="absolute left-3 w-5 h-5 text-slate-400" />
                             <select value={currentEmpresa.docenteSupervisor ? JSON.stringify(currentEmpresa.docenteSupervisor) : ''} onChange={e => { const value = e.target.value; handleFormChange('docenteSupervisor', value ? JSON.parse(value) : undefined); }} className="input-style pl-10 w-full">
                                 <option value="">Sin supervisor asignado</option>
                                 {profesores.map(profesor => (<option key={profesor.id} value={JSON.stringify({ id: profesor.id, nombreCompleto: profesor.nombreCompleto })}>{profesor.nombreCompleto}</option>))}
@@ -2377,7 +3007,7 @@ const GestionEmpresas: React.FC = () => {
                         {/* Asignación de estudiantes */}
                         <div className="md:col-span-2 border rounded-lg p-4 bg-white dark:bg-slate-900">
                             <h3 className="text-lg font-semibold mb-3">Estudiantes asignados</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
                                 <div>
                                     <label className="block text-sm text-slate-600 mb-1">Curso</label>
                                     <select
@@ -2439,7 +3069,7 @@ const GestionEmpresas: React.FC = () => {
                     </div>
                     
                     <div className="space-y-4 pt-4">
-                        <h3 className="text-lg font-semibold">Evaluación de la Empresa</h3>
+                        <h3 className="text-lg font-semibold">Evaluación de la Empresa</ h3>
                         {currentEmpresa.calificaciones.map((cal, index) => (
                              <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border">
                                 <Star className="w-5 h-5 text-slate-400" />
@@ -2463,7 +3093,7 @@ const GestionEmpresas: React.FC = () => {
                     <div className="pt-6">
                         <button 
                             onClick={handleSave} 
-                            className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-lg transition-colors"
+                            className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-lg transition-colores"
                             disabled={!currentEmpresa.nombre || !currentEmpresa.rut}
                         >
                             Guardar Empresa

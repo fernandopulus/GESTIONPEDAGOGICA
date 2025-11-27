@@ -346,6 +346,7 @@ interface PlanificacionBase {
   contenidos: string;
   observaciones: string;
   autor?: string;
+  numeroUnidad?: string;
 }
 
 export interface ActividadDetallada {
@@ -774,6 +775,8 @@ export interface RespuestaEstudianteActividad {
   id: string;
   actividadId: string;
   estudianteId: string;
+  estudianteNombre?: string;
+  estudianteEmail?: string;
   fechaCompletado: string; // ISO String
   respuestas: Partial<Record<TipoActividadRemota, any>>;
   puntaje: number;
@@ -782,6 +785,13 @@ export interface RespuestaEstudianteActividad {
   retroalimentacionDetallada?: DetailedFeedback;
   calificacion?: string;
   puntajesPorSeccion?: PuntajesPorSeccion;
+  revisionDocente?: {
+    completada?: boolean;
+    observacionesGenerales?: string;
+    detalle?: Array<{ index: number; puntaje: number; observacion?: string }>;
+    puntajeDocente?: number;
+  };
+  nota?: string;
 }
 
 // --- Inclusión ---
@@ -886,6 +896,7 @@ export interface EvaluacionFormativa {
     curso: string;
     fecha: string; // YYYY-MM-DD
     nombreActividad: string;
+  habilidades?: string[];
 }
 
 export interface GrupoIntegrante {
@@ -1234,6 +1245,7 @@ export interface SolicitudMulticopia {
   rechazadoPor?: string;
   completadoPor?: string;
   motivoRechazo?: string;
+  analisisPedagogico?: string; // Análisis generado por IA
   // Timestamps (ISO en frontend)
   createdAt?: string;
   updatedAt?: string;
@@ -1277,6 +1289,7 @@ export interface EvaluacionEmpresaEstudiante {
   evaluaciones: Record<string, EvaluacionEmpresaIndicador>;
   dimensionPromedios?: Record<string, number>;
   promedioGeneral?: number;
+  retroalimentacion?: string;
   updatedAt?: any;
   updatedBy?: { id?: string; nombre?: string };
   createdAt?: any;

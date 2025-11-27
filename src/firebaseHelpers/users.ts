@@ -25,7 +25,7 @@ export async function getAllUsers(): Promise<User[]> {
       } else {
         console.log(`✅ [ASIGNACION] Usuario con curso:`, { id: doc.id, curso: data.curso, nombre: data.nombreCompleto });
       }
-      return { id: doc.id, ...data } as User;
+      return { ...data, id: doc.id } as User;
     });
     
     // Log de resumen de cursos

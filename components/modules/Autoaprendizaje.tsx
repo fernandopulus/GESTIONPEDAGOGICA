@@ -1038,6 +1038,8 @@ const Autoaprendizaje: React.FC<AutoaprendizajeProps> = ({ currentUser }) => {
     const baseResult: Omit<RespuestaEstudianteActividad, 'id'> = {
       actividadId: selectedActividad.id,
       estudianteId: estudianteAuthId,
+      estudianteNombre: currentUser.nombreCompleto,
+      estudianteEmail: currentUser.email,
       fechaCompletado: new Date().toISOString(),
       ...submission,
       retroalimentacionDetallada: detailedFeedback,

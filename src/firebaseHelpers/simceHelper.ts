@@ -77,7 +77,7 @@ export async function obtenerSetPreguntas(id: string): Promise<SetPreguntas> {
           }
         }
       }
-      return { id: evalSnap.id, ...data } as SetPreguntas;
+      return { ...data, id: evalSnap.id } as SetPreguntas;
     }
   } catch (e) {
     console.warn('[DEBUG] obtenerSetPreguntas - Error al leer simce_evaluaciones, intentando simce_sets:', e);
@@ -99,7 +99,7 @@ export async function obtenerSetPreguntas(id: string): Promise<SetPreguntas> {
           }
         }
       }
-      return { id: setSnap.id, ...data } as SetPreguntas;
+      return { ...data, id: setSnap.id } as SetPreguntas;
     }
   } catch (e) {
     console.warn('[DEBUG] obtenerSetPreguntas - Error al leer simce_sets:', e);
@@ -118,7 +118,7 @@ export async function obtenerSetsPreguntasPorProfesor(profesorId: string): Promi
       orderBy('fechaCreacion', 'desc')
     );
     const querySnapshot = await getDocs(qSets);
-    const setsA = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as SetPreguntas));
+    const setsA = querySnapshot.docs.map(d => ({ ...d.data(), id: d.id } as SetPreguntas));
 
     // Buscar también en la colección de evaluaciones (compatibilidad)
     const qEvals = query(
@@ -127,7 +127,7 @@ export async function obtenerSetsPreguntasPorProfesor(profesorId: string): Promi
       orderBy('fechaCreacion', 'desc')
     );
     const evalsSnapshot = await getDocs(qEvals);
-    const setsB = evalsSnapshot.docs.map(d => ({ id: d.id, ...d.data(), preguntas: (d.data() as any).preguntas || [] } as SetPreguntas));
+    const setsB = evalsSnapshot.docs.map(d => ({ ...d.data(), id: d.id, preguntas: (d.data() as any).preguntas || [] } as SetPreguntas));
 
     return [...setsA, ...setsB];
   } catch (error) {
@@ -174,14 +174,14 @@ export async function obtenerSetsPreguntasPorCurso(cursoId: string): Promise<Set
       ...querySnapshot.docs.map(doc => {
         const data = doc.data();
         console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Set encontrado en ${SETS_COLLECTION}: ${doc.id}, cursosAsignados:`, data.cursosAsignados);
-        return { id: doc.id, ...data } as SetPreguntas;
+        return { ...data, id: doc.id } as SetPreguntas;
       }),
       ...evalsSnapshot.docs.map(doc => {
         const data = doc.data();
         console.log(`[DEBUG] obtenerSetsPreguntasPorCurso - Set encontrado en simce_evaluaciones: ${doc.id}, cursosAsignados:`, data.cursosAsignados);
         return { 
-          id: doc.id, 
           ...data,
+          id: doc.id, 
           preguntas: data.preguntas || []
         } as SetPreguntas;
       })
@@ -215,8 +215,8 @@ export async function obtenerSetsPreguntasPorEstudiante(estudianteId: string): P
     const snapB = await getDocs(qB);
 
     return [
-      ...snapA.docs.map(d => ({ id: d.id, ...d.data() } as SetPreguntas)),
-      ...snapB.docs.map(d => ({ id: d.id, ...d.data(), preguntas: (d.data() as any).preguntas || [] } as SetPreguntas))
+      ...snapA.docs.map(d => ({ ...d.data(), id: d.id } as SetPreguntas)),
+      ...snapB.docs.map(d => ({ ...d.data(), id: d.id, preguntas: (d.data() as any).preguntas || [] } as SetPreguntas))
     ];
   } catch (error) {
     console.error('Error al obtener sets por estudiante:', error);
@@ -253,7 +253,7 @@ export async function obtenerResultadosPorSet(setId: string): Promise<ResultadoI
     );
     
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ResultadoIntento));
+    return querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ResultadoIntento));
   } catch (error) {
     console.error('Error al obtener resultados por set:', error);
     throw new Error('No se pudieron obtener los resultados');
@@ -281,7 +281,7 @@ export async function obtenerResultadosPorCurso(setId: string, estudiantesIds: s
       );
       const snapshot = await getDocs(q);
       resultados.push(
-        ...snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ResultadoIntento))
+        ...snapshot.docs.map((d) => ({ ...d.data(), id: d.id } as ResultadoIntento))
       );
     }
 
@@ -304,7 +304,7 @@ export async function obtenerResultadosPorEstudiante(estudianteId: string): Prom
     );
     
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ResultadoIntento));
+    return querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ResultadoIntento));
   } catch (error) {
     console.error('Error al obtener resultados por estudiante:', error);
     throw new Error('No se pudieron obtener los resultados del estudiante');

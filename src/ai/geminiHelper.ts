@@ -27,7 +27,14 @@ const MODEL_CONFIGS = [
       temperature: 0.7,
       topK: 40,
       topP: 0.95,
-      maxOutputTokens: 2048, // Aumentado para contenido educativo complejo
+      maxOutputTokens: 2048,
+    }
+  },
+  {
+    model: "gemini-2.5-flash",
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 2048,
     }
   },
   {
@@ -244,7 +251,7 @@ async function getProModel(): Promise<any> {
       temperature: 0.7,
       topK: 40,
       topP: 0.95,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 4096, // Aumentado significativamente para evitar cortes
     }
   };
   
@@ -265,25 +272,29 @@ export async function generarConIA(
   prompt: string,
   maxRetries: number = 2,
   useProModel: boolean = true,
-  moduleLabel: string = 'General'
+  moduleLabel: string = 'General',
+  expectJson: boolean = true
 ): Promise<string> {
   // Registrar el tipo de solicitud para diagnóstico
   const promptPreview = prompt.substring(0, 50).replace(/\n/g, ' ') + '...';
   console.log(`Iniciando generación con IA. Prompt: "${promptPreview}"`);
-  console.log(`Configuración: maxRetries=${maxRetries}, useProModel=${useProModel}`);
+  console.log(`Configuración: maxRetries=${maxRetries}, useProModel=${useProModel}, expectJson=${expectJson}`);
   
+  // Configuración para evitar cortes
+  const generationConfig = { maxOutputTokens: 4096 };
+
   // 1) Intentar primero vía Cloud Functions (usa secreto GEMINI_API_KEY en backend)
   try {
     // Primero una versión genérica sin App Check (aiHelpers)
   const callableGeneric = httpsCallable(functions, 'callGeminiGeneric');
-  const resGeneric: any = await callableGeneric({ prompt, module: moduleLabel });
+  const resGeneric: any = await callableGeneric({ prompt, module: moduleLabel, expectJson, config: generationConfig });
     if (resGeneric?.data?.success && typeof resGeneric.data.response === 'string' && resGeneric.data.response.length > 0) {
       console.log('Respuesta obtenida vía Cloud Function (genérica).');
       return resGeneric.data.response as string;
     }
     // Si no hay éxito, intentar variante con App Check
   const callable = httpsCallable(functions, 'callGeminiAI');
-  const res: any = await callable({ prompt, module: moduleLabel });
+  const res: any = await callable({ prompt, module: moduleLabel, expectJson, config: generationConfig });
     if (res?.data?.success && typeof res.data.response === 'string' && res.data.response.length > 0) {
       console.log('Respuesta obtenida vía Cloud Function (secreto en backend).');
       return res.data.response as string;
@@ -329,7 +340,9 @@ export async function generarConIA(
       console.log(`Intento ${attempts + 1}/${maxRetries + 1} de generación con IA`);
       
       // Agregar metadatos al prompt para mejorar la calidad de la respuesta
-      const enhancedPrompt = prompt + `\n\nIMPORTANTE: Devuelve SOLO el JSON estructurado sin comentarios adicionales. El JSON debe ser válido y parseable.`;
+      const enhancedPrompt = expectJson 
+        ? prompt + `\n\nIMPORTANTE: Devuelve SOLO el JSON estructurado sin comentarios adicionales. El JSON debe ser válido y parseable.`
+        : prompt;
       
       const result = await model.generateContent(enhancedPrompt);
       
@@ -341,13 +354,19 @@ export async function generarConIA(
         if (text && text.length > 100) {  // Una respuesta válida debería tener al menos cierta longitud
           console.log(`Respuesta generada exitosamente (${text.length} caracteres)`);
           
-          // Comprobar si la respuesta contiene JSON
-          if ((text.includes('{') && text.includes('}')) || 
-              (text.includes('[') && text.includes(']'))) {
-            console.log("La respuesta contiene estructuras JSON");
-            return text;
+          // Comprobar si la respuesta contiene JSON si se espera JSON
+          if (expectJson) {
+            if ((text.includes('{') && text.includes('}')) || 
+                (text.includes('[') && text.includes(']'))) {
+              console.log("La respuesta contiene estructuras JSON");
+              return text;
+            } else {
+              console.warn("La respuesta no parece contener JSON válido");
+            }
           } else {
-            console.warn("La respuesta no parece contener JSON válido");
+             // Si no esperamos JSON, cualquier texto largo es bueno
+             return text;
+          }
             
             // Guardar esta respuesta si es la mejor hasta ahora
             if (text.length > bestResponseLength) {
@@ -360,7 +379,7 @@ export async function generarConIA(
               console.log("Usando la mejor respuesta disponible en el último intento");
               return bestResponse;
             }
-          }
+          
         } else {
           console.warn("Respuesta de IA demasiado corta, reintentando...");
         }

@@ -109,6 +109,8 @@ const SubjectSelector: React.FC<{ curso: string; asignaturas: string[]; onSelect
     );
 };
 
+const HABILIDADES = ['Recordar', 'Comprender', 'Aplicar', 'Analizar', 'Evaluar', 'Crear'];
+
 const CalificacionesView: React.FC<{
     curso: string;
     asignatura: string;
@@ -117,10 +119,15 @@ const CalificacionesView: React.FC<{
 }> = ({ curso, asignatura, allUsers, onBack }) => {
     const [evaluaciones, setEvaluaciones] = useState<EvaluacionFormativa[]>([]);
     const [calificaciones, setCalificaciones] = useState<CalificacionesFormativas>({});
-    const [formData, setFormData] = useState({ fecha: new Date().toISOString().split('T')[0], nombreActividad: '' });
+    const [formData, setFormData] = useState({
+        fecha: new Date().toISOString().split('T')[0],
+        nombreActividad: '',
+        habilidades: [] as string[],
+    });
     const [editingEval, setEditingEval] = useState<EvaluacionFormativa | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [habilidadFiltro, setHabilidadFiltro] = useState<string | 'TODAS'>('TODAS');
 
     const estudiantesDelCurso = useMemo(() => {
         return allUsers
@@ -153,6 +160,24 @@ const CalificacionesView: React.FC<{
         }
     };
 
+    const handleHabilidadToggle = (habilidad: string) => {
+        if (editingEval) {
+            setEditingEval(prev => prev ? {
+                ...prev,
+                habilidades: prev.habilidades?.includes(habilidad)
+                    ? prev.habilidades.filter(h => h !== habilidad)
+                    : [...(prev.habilidades || []), habilidad],
+            } : null);
+        } else {
+            setFormData(prev => ({
+                ...prev,
+                habilidades: prev.habilidades.includes(habilidad)
+                    ? prev.habilidades.filter(h => h !== habilidad)
+                    : [...prev.habilidades, habilidad],
+            }));
+        }
+    };
+
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         setError(null);
@@ -169,7 +194,11 @@ const CalificacionesView: React.FC<{
 
         try {
             await createEvaluacion(newEvalData, initialCalificaciones);
-            setFormData({ fecha: new Date().toISOString().split('T')[0], nombreActividad: '' });
+            setFormData({
+                fecha: new Date().toISOString().split('T')[0],
+                nombreActividad: '',
+                habilidades: [],
+            });
         } catch (err) {
             console.error(err);
             setError("No se pudo crear la evaluación.");
@@ -202,7 +231,11 @@ const CalificacionesView: React.FC<{
     const handleSaveEdit = async () => {
         if (!editingEval) return;
         try {
-            await updateEvaluacion(editingEval.id, { nombreActividad: editingEval.nombreActividad, fecha: editingEval.fecha });
+            await updateEvaluacion(editingEval.id, {
+                nombreActividad: editingEval.nombreActividad,
+                fecha: editingEval.fecha,
+                habilidades: editingEval.habilidades || [],
+            });
             setEditingEval(null);
         } catch (err) {
             console.error(err);
@@ -224,6 +257,9 @@ const CalificacionesView: React.FC<{
         if (evaluaciones.length === 0) return '-';
         let suma = 0, count = 0;
         evaluaciones.forEach(ev => {
+            if (habilidadFiltro !== 'TODAS' && !(ev.habilidades || []).includes(habilidadFiltro)) {
+                return; // salta evaluaciones que no trabajan la habilidad filtrada
+            }
             const calificacion = calificaciones[ev.id]?.[nombreEstudiante];
             if (calificacion === 'trabajado') { suma += 7.0; count++; }
             else if (calificacion === 'no trabajado') { suma += 2.0; count++; }
@@ -231,7 +267,15 @@ const CalificacionesView: React.FC<{
         });
         if (count === 0) return '-';
         return (suma / count).toFixed(1);
-    }, [calificaciones, evaluaciones]);
+    }, [calificaciones, evaluaciones, habilidadFiltro]);
+
+    const getNivel = (promedioStr: string) => {
+        const p = parseFloat(promedioStr);
+        if (isNaN(p)) return '';
+        if (p >= 6.0) return 'Avanzado';
+        if (p >= 3.0) return 'Adecuado';
+        return 'Inicial';
+    };
     
     if (loading) {
         return <div className="text-center py-10">Cargando calificaciones...</div>;
@@ -245,6 +289,33 @@ const CalificacionesView: React.FC<{
                     {curso} / {asignatura}
                 </div>
             </div>
+
+            <div className="flex flex-wrap items-center gap-3 text-sm bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3">
+                <span className="font-semibold text-slate-700 dark:text-slate-200">Resumen de habilidades trabajadas:</span>
+                <div className="flex flex-wrap gap-2 flex-1">
+                    {HABILIDADES.map(h => {
+                        const count = evaluaciones.filter(ev => (ev.habilidades || []).includes(h)).length;
+                        return (
+                            <button
+                                key={h}
+                                type="button"
+                                onClick={() => setHabilidadFiltro(prev => prev === h ? 'TODAS' : h)}
+                                className={`px-2 py-1 rounded-full border text-xs flex items-center gap-1 transition-colors ${
+                                    habilidadFiltro === h
+                                        ? 'bg-emerald-500 border-emerald-600 text-white'
+                                        : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-500 text-slate-700 dark:text-slate-200'
+                                }`}
+                            >
+                                <span>{h}</span>
+                                <span className="text-[10px] opacity-80">({count})</span>
+                            </button>
+                        );
+                    })}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 md:mt-0">
+                    Promedio / nivel se calcula según el filtro activo.
+                </div>
+            </div>
             
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end p-4 border rounded-lg bg-slate-50 dark:bg-slate-700/50">
                  <h3 className="text-lg font-semibold col-span-full text-slate-700 dark:text-slate-200">Crear Nueva Evaluación</h3>
@@ -255,6 +326,30 @@ const CalificacionesView: React.FC<{
                  <div className="w-full">
                      <label htmlFor="fecha" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Fecha</label>
                      <input id="fecha" type="date" name="fecha" value={formData.fecha} onChange={handleFieldChange} className="w-full border-slate-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600" />
+                 </div>
+                 <div className="w-full md:col-span-2">
+                     <p className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Habilidades trabajadas en la clase</p>
+                     <div className="flex flex-wrap gap-2">
+                         {HABILIDADES.map(h => {
+                             const selected = editingEval
+                                 ? editingEval.habilidades?.includes(h)
+                                 : formData.habilidades.includes(h);
+                             return (
+                                 <button
+                                     key={h}
+                                     type="button"
+                                     onClick={() => handleHabilidadToggle(h)}
+                                     className={`px-3 py-1 rounded-full text-sm border ${
+                                         selected
+                                             ? 'bg-emerald-500 text-white border-emerald-600'
+                                             : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-500'
+                                     }`}
+                                 >
+                                     {h}
+                                 </button>
+                             );
+                         })}
+                     </div>
                  </div>
                  <div className="w-full"><button type="submit" className="w-full bg-slate-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-700 h-10">Crear</button></div>
                  {error && <p className="text-red-500 text-sm col-span-full">{error}</p>}
@@ -277,6 +372,18 @@ const CalificacionesView: React.FC<{
                                         <div className="flex flex-col items-center">
                                             <span className="font-semibold">{ev.nombreActividad}</span>
                                             <span className="font-normal text-slate-500">{ev.fecha}</span>
+                                            {ev.habilidades && ev.habilidades.length > 0 && (
+                                                <div className="flex flex-wrap justify-center gap-1 mt-1">
+                                                    {ev.habilidades.map(h => (
+                                                        <span
+                                                            key={h}
+                                                            className="px-2 py-0.5 rounded-full text-[10px] bg-sky-50 border border-sky-300 text-sky-700"
+                                                        >
+                                                            {h}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
                                             <div className="flex gap-2 mt-1">
                                                 <button onClick={() => handleEditClick(ev)} className="text-blue-500 hover:text-blue-700">✏️</button>
                                                 <button onClick={() => handleDelete(ev.id)} className="text-red-500 hover:text-red-700">🗑️</button>
@@ -285,7 +392,7 @@ const CalificacionesView: React.FC<{
                                     )}
                                 </th>
                             ))}
-                            <th scope="col" className="sticky right-0 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-center text-xs font-medium text-slate-600 dark:text-slate-300 uppercase z-10 w-24">Promedio</th>
+                            <th scope="col" className="sticky right-0 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-center text-xs font-medium text-slate-600 dark:text-slate-300 uppercase z-10 w-28">Promedio / Nivel</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-700">
@@ -312,7 +419,30 @@ const CalificacionesView: React.FC<{
                                         </td>
                                     )
                                 })}
-                                <td className="sticky right-0 bg-white dark:bg-slate-900 px-4 py-2 whitespace-nowrap text-sm font-bold text-slate-800 dark:text-slate-200 w-24 text-center">{calcularPromedio(nombre)}</td>
+                                <td className="sticky right-0 bg-white dark:bg-slate-900 px-4 py-2 whitespace-nowrap text-sm font-bold text-slate-800 dark:text-slate-200 w-28 text-center">
+                                    {(() => {
+                                        const promedio = calcularPromedio(nombre);
+                                        const nivel = getNivel(promedio);
+                                        return (
+                                            <div className="flex flex-col items-center gap-1">
+                                                <span>{promedio}</span>
+                                                {nivel && (
+                                                    <span
+                                                        className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                                            nivel === 'Avanzado'
+                                                                ? 'bg-emerald-50 border-emerald-400 text-emerald-700'
+                                                                : nivel === 'Adecuado'
+                                                                ? 'bg-amber-50 border-amber-400 text-amber-700'
+                                                                : 'bg-rose-50 border-rose-400 text-rose-700'
+                                                        }`}
+                                                    >
+                                                        {nivel}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+                                </td>
                             </tr>
                         ))}
                     </tbody>

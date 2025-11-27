@@ -11,7 +11,8 @@ import {
   setDoc,
   where,
   serverTimestamp,
-  orderBy
+  orderBy,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from './config';
 import { AsignacionCargaHoraria, DocenteCargaHoraria, ValidationResultCarga, TotalesDocenteCarga, CursoId } from '../../types';
@@ -113,6 +114,20 @@ export const actualizarHorasContrato = async (docenteId: string, horasContrato: 
   }
 };
 
+/**
+ * Elimina un docente de Firestore.
+ * @param id El ID del docente a eliminar.
+ */
+export const eliminarDocente = async (id: string): Promise<void> => {
+  try {
+    const docRef = doc(db, USUARIOS_COLLECTION, id);
+    await deleteDoc(docRef);
+  } catch (error) {
+    console.error("Error al eliminar docente:", error);
+    throw new Error("No se pudo eliminar el docente.");
+  }
+};
+
 // --- GESTIÓN DE ASIGNACIONES ---
 
 /**
@@ -185,46 +200,179 @@ export const deleteAsignacionCarga = async (id: string): Promise<void> => {
   }
 };
 
+// --- UTILIDADES INTERNAS ---
+const cleanUndefined = (obj: any): any => {
+  if (Array.isArray(obj)) {
+    return obj.map(v => cleanUndefined(v));
+  } else if (obj !== null && typeof obj === 'object') {
+    return Object.entries(obj).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key] = cleanUndefined(value);
+      }
+      return acc;
+    }, {} as any);
+  }
+  return obj;
+};
+
 /**
  * Guarda todas las asignaciones en batch (útil para importación).
  * @param asignaciones Array de asignaciones a guardar.
  * @param reemplazarTodo Si es true, elimina todas las asignaciones existentes antes de agregar las nuevas.
  */
 export const saveAsignacionesBatch = async (
-  asignaciones: Omit<AsignacionCargaHoraria, 'id'>[],
+  asignaciones: (AsignacionCargaHoraria | Omit<AsignacionCargaHoraria, 'id'>)[],
   reemplazarTodo: boolean = false
 ): Promise<void> => {
   try {
     // Obtener todas las asignaciones existentes si vamos a reemplazarlas
     if (reemplazarTodo) {
       const querySnapshot = await getDocs(collection(db, ASIGNACIONES_CARGA_COLLECTION));
+      const existingDocs = new Map(querySnapshot.docs.map(doc => [doc.id, doc.ref]));
       
-      // Eliminar las asignaciones existentes antes de agregar nuevas
-      const deletePromises = querySnapshot.docs.map(doc => deleteDoc(doc.ref));
-      await Promise.all(deletePromises);
-      
-      console.log(`Se eliminaron ${deletePromises.length} asignaciones existentes`);
+      let currentBatch = writeBatch(db);
+      let operationCount = 0;
+
+      const commitBatch = async () => {
+        if (operationCount > 0) {
+          await currentBatch.commit();
+          currentBatch = writeBatch(db);
+          operationCount = 0;
+        }
+      };
+
+      // 1. Actualizar o Crear
+      for (const asignacion of asignaciones) {
+        const asig = asignacion as any;
+        // Verificar si es un documento existente válido por ID exacto en Firestore
+        const esExistente = !!asig.id && existingDocs.has(asig.id);
+
+        if (esExistente) {
+          // Actualizar existente
+          const docRef = existingDocs.get(asig.id)!;
+          const { id, ...data } = asig;
+          const cleanData = cleanUndefined(data);
+          
+          // FIX: Asegurar que horasPorCurso se procese correctamente
+          // Forzamos la inclusión directa para evitar que cleanUndefined elimine algo indebido
+          // o que se pierda en la limpieza si es un objeto vacío
+          if (asig.horasPorCurso) {
+            // Copia profunda para asegurar que es un objeto plano y evitar referencias extrañas
+            const horasCopy = JSON.parse(JSON.stringify(asig.horasPorCurso));
+            cleanData.horasPorCurso = horasCopy;
+            console.log(`[saveAsignacionesBatch] Actualizando ${asig.docenteNombre} (docId=${docRef.id}):`, horasCopy);
+          }
+
+          currentBatch.set(docRef, { ...cleanData, updatedAt: serverTimestamp() }, { merge: true });
+          existingDocs.delete(asig.id); // Marcar como procesado (no eliminar)
+        } else {
+          // Crear nuevo
+          const newDocRef = doc(collection(db, ASIGNACIONES_CARGA_COLLECTION));
+          const { id, ...data } = asig; // Ignoramos ID temporal
+          const cleanData = cleanUndefined(data);
+
+          if (asig.horasPorCurso) {
+            // Copia profunda para asegurar que es un objeto plano
+            const horasCopy = JSON.parse(JSON.stringify(asig.horasPorCurso));
+            cleanData.horasPorCurso = horasCopy;
+            console.log(`[saveAsignacionesBatch] Creando ${asig.docenteNombre}:`, horasCopy);
+          }
+
+          currentBatch.set(newDocRef, { ...cleanData, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        }
+
+        operationCount++;
+        if (operationCount >= 450) await commitBatch();
+      }
+
+      // 2. Eliminar los restantes (que estaban en Firestore pero no en la nueva lista)
+      for (const [id, ref] of existingDocs) {
+        currentBatch.delete(ref);
+        operationCount++;
+        if (operationCount >= 450) await commitBatch();
+      }
+
+      // Commit final
+      await commitBatch();
+      console.log("Sincronización de asignaciones completada exitosamente.");
+      return;
     }
     
-    // Agregar nuevas asignaciones
-    const addPromises = asignaciones.map(asignacion => 
-      addDoc(collection(db, ASIGNACIONES_CARGA_COLLECTION), {
-        ...asignacion,
+    // Agregar nuevas asignaciones (modo append legacy)
+    const addPromises = asignaciones.map(asignacion => {
+      const cleanData = cleanUndefined(asignacion);
+      
+      // FIX: Asegurar horasPorCurso también en modo legacy
+      if ((asignacion as any).horasPorCurso) {
+        cleanData.horasPorCurso = JSON.parse(JSON.stringify((asignacion as any).horasPorCurso));
+      }
+
+      return addDoc(collection(db, ASIGNACIONES_CARGA_COLLECTION), {
+        ...cleanData,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
-      })
-    );
+      });
+    });
     
     await Promise.all(addPromises);
     console.log(`Se guardaron ${addPromises.length} asignaciones`);
     
   } catch (error) {
     console.error("Error al guardar asignaciones en batch:", error);
-    throw new Error("No se pudieron guardar todas las asignaciones.");
+    throw error; // Re-lanzar para que el componente lo capture
   }
 };
 
 // --- UTILIDADES DE CÁLCULO ---
+
+export const TEACHING_TO_CONTRACT_MAP: Record<number, number> = {
+  38: 44,
+  37: 43,
+  36: 42,
+  35: 40,
+  34: 39,
+  33: 38,
+  32: 37,
+  31: 36,
+  30: 35,
+  29: 33,
+  28: 32,
+  27: 31,
+  26: 30,
+  25: 29,
+  24: 28,
+  23: 27,
+  22: 25,
+  21: 24,
+  20: 23,
+  19: 22,
+  18: 21,
+  17: 20,
+  16: 18,
+  15: 17,
+  14: 16,
+  13: 15,
+  12: 14,
+  11: 13,
+  10: 11,
+  9: 10,
+  8: 9,
+  7: 8,
+  6: 7,
+  5: 6,
+  4: 5,
+  3: 4,
+  2: 4,
+  1: 1
+};
+
+export const calculateRequiredContractHours = (teachingHours: number): number => {
+  const contractHours = TEACHING_TO_CONTRACT_MAP[teachingHours];
+  if (contractHours === undefined) {
+     throw new Error(`No contract hours defined for ${teachingHours} teaching hours.`);
+  }
+  return contractHours;
+};
 
 /**
  * Calcula las horas lectivas basado en el contrato según la tabla oficial.
@@ -249,12 +397,15 @@ export const calcularHA = (horasContrato: number): number => {
 };
 
 /**
- * Calcula las horas no lectivas basado en el contrato y las horas lectivas.
+ * Calcula las horas no lectivas disponibles (remanente) basado en el contrato y las horas lectivas máximas.
+ * Retorna el valor en horas pedagógicas (45 min).
  */
 export const calcularHB = (horasContrato: number): number => {
-  // Las horas no lectivas son la diferencia entre el total y las lectivas
-  const horasLectivas = calcularHA(horasContrato);
-  return horasContrato - horasLectivas;
+  const HA = calcularHA(horasContrato);
+  const minutosContrato = horasContrato * 60;
+  const minutosClases = HA * 45;
+  const minutosRestantes = minutosContrato - minutosClases;
+  return parseFloat((minutosRestantes / 45).toFixed(1));
 };
 
 /**
@@ -266,59 +417,69 @@ export const sumarHorasCursos = (horasPorCurso: Partial<Record<CursoId, number>>
 
 /**
  * Calcula los totales de un docente basado en sus asignaciones.
+ * Ajuste: Contrato (cronológico) vs Clases/Funciones (pedagógicas 45 min).
+ * Ajuste 2: "Otras Funciones" se consideran horas lectivas (suman a HA).
  */
 export const calcularTotalesDocente = (
   docente: DocenteCargaHoraria, 
   asignaciones: AsignacionCargaHoraria[]
 ): TotalesDocenteCarga => {
+  // 1. HA (Max Horas Lectivas - Clases + Otras Funciones) según tabla oficial
   const HA = calcularHA(docente.horasContrato);
-  const HB = calcularHB(docente.horasContrato);
   
   const asignacionesDocente = asignaciones.filter(a => a.docenteId === docente.id);
   
-  // Calcular horas por cursos
+  // 2. Calcular horas por cursos (Clases - Pedagógicas)
   const sumCursos = asignacionesDocente.reduce((sum, asig) => sum + sumarHorasCursos(asig.horasPorCurso), 0);
   
-  // Calcular horas de funciones lectivas (sumadas a HA)
-  const sumFuncionesLectivas = asignacionesDocente.reduce((sum, asig) => {
-    // Usar funcionesLectivas si existen
+  // 3. Calcular horas de otras funciones (Pedagógicas)
+  // AHORA: Se consideran parte de la carga lectiva (HA)
+  const sumFunciones = asignacionesDocente.reduce((sum, asig) => {
     if (asig.funcionesLectivas && asig.funcionesLectivas.length > 0) {
       return sum + asig.funcionesLectivas.reduce((funcSum, func) => funcSum + func.horas, 0);
     }
-    // Para compatibilidad, revisar si hay funcionesNoLectivas (campo antiguo)
     else if (asig.funcionesNoLectivas && asig.funcionesNoLectivas.length > 0) {
       return sum + asig.funcionesNoLectivas.reduce((funcSum, func) => funcSum + func.horas, 0);
     } 
-    // Caso de compatibilidad con el campo anterior (otraFuncion)
     else {
       const horas = asig.otraFuncion ? parseInt(asig.otraFuncion) || 0 : 0;
       return sum + horas;
     }
   }, 0);
   
-  // Total de horas lectivas es la suma de horas por cursos + horas de funciones lectivas
-  const totalHorasLectivas = sumCursos + sumFuncionesLectivas;
+  // Total de horas lectivas (Clases + Otras Funciones)
+  const totalHorasLectivas = sumCursos + sumFunciones;
+
+  // 4. Conversión a minutos para cálculo exacto
+  const minutosContrato = docente.horasContrato * 60;
+  const minutosLectivos = totalHorasLectivas * 45; // Clases + Funciones
   
-  // No hay funciones no lectivas, todas las funciones son lectivas
-  const sumFunciones = 0;
+  const minutosRestantesParaHB = minutosContrato - minutosLectivos;
   
+  // 5. HB (Capacidad Disponible para No Lectivas REALES - recreos, planificación, etc.)
+  // Es el remanente del contrato después de lo lectivo asignado
+  const HB = parseFloat((minutosRestantesParaHB / 45).toFixed(1));
+  
+  // 6. Restantes
   const restantesHA = HA - totalHorasLectivas;
-  const restantesHB = HB - sumFunciones;
+  const restantesHB = HB; // HB es lo que queda disponible
   
   const errors: string[] = [];
   const warnings: string[] = [];
   
+  // Validación 1: Total Lectivo (Clases + Funciones) no debe superar el 65% (HA)
   if (totalHorasLectivas > HA) {
-    errors.push(`Excede horas lectivas: ${totalHorasLectivas}/${HA}`);
+    errors.push(`Excede horas lectivas (Clases + Funciones): ${totalHorasLectivas}/${HA}`);
   }
-  if (sumFunciones > HB) {
-    errors.push(`Excede horas no lectivas: ${sumFunciones}/${HB}`);
+
+  // Validación 2: Total asignado no debe superar el contrato
+  if (minutosLectivos > minutosContrato) {
+    const exceso = ((minutosLectivos - minutosContrato) / 45).toFixed(1);
+    errors.push(`Excede contrato total por ${exceso} hrs ped.`);
   }
+  
   if (totalHorasLectivas < HA && totalHorasLectivas > 0) {
     warnings.push(`Faltan ${restantesHA} horas lectivas`);
-  }
-  if (sumFunciones < HB && sumFunciones > 0) {
-    warnings.push(`Faltan ${restantesHB} horas no lectivas`);
   }
   
   return {
@@ -326,8 +487,8 @@ export const calcularTotalesDocente = (
     HB,
     sumCursos,
     sumFunciones,
-    sumFuncionesLectivas,
-    totalHorasLectivas,
+    sumFuncionesLectivas: sumFunciones, 
+    totalHorasLectivas: totalHorasLectivas,      
     restantesHA,
     restantesHB,
     horasContrato: docente.horasContrato,

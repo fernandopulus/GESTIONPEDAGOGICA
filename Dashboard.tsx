@@ -164,7 +164,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onLogout, onUserUpda
             if (activeModule.name === 'Análisis Taxonómico') return <AnalisisTaxonomico currentUser={currentUser} />;
             if (activeModule.name === 'Interdisciplinario') return <Interdisciplinario />;
             if (activeModule.name === 'Registro de inasistencias y reemplazos docentes') return <RegistroReemplazos currentUser={currentUser} />;
-            if (activeModule.name === 'Crear horarios') return <CrearHorarios />;
+            if (activeModule.name === 'Cargas horarias') return <CrearHorarios />;
             if (activeModule.name === 'Seguimiento de acciones pedagógicas') return <SeguimientoAcciones />;
             if (activeModule.name === 'Inclusión') return <Inclusion currentUser={currentUser} />;
             if (activeModule.name === 'SIMCE') return <SimceFixed currentUser={currentUser} />;

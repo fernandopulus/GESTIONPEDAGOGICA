@@ -1,21 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Reemplazo, AcompanamientoDocente, CalendarEvent, EventType, User } from '../../types';
-import { RUBRICA_ACOMPANAMIENTO_DOCENTE as defaultRubric, EVENT_TYPE_CONFIG } from '../../constants';
+import { Reemplazo, CalendarEvent, EventType, User } from '../../types';
+import { EVENT_TYPE_CONFIG } from '../../constants';
 // Opción 1: Si el archivo está en src/firebaseHelpers/
 import { 
     subscribeToAllReemplazos, 
-    subscribeToAllAcompanamientos, 
     subscribeToAllCalendarEvents 
 } from '../../src/firebaseHelpers/dashboardSubdireccionHelper';
 
 // Opción 2: Si tienes una estructura diferente, prueba:
 // import { 
 //     subscribeToAllReemplazos, 
-//     subscribeToAllAcompanamientos, 
 //     subscribeToAllCalendarEvents 
 // } from '../firebaseHelpers/dashboardSubdireccionHelper';
-
-type RubricStructure = typeof defaultRubric;
 
 interface StatCardProps {
     title: string;
@@ -103,7 +99,6 @@ const BarChart: React.FC<BarChartProps> = ({
 // Hook para cargar datos del dashboard desde Firestore
 const useDashboardData = () => {
     const [registros, setRegistros] = useState<Reemplazo[]>([]);
-    const [acompanamientos, setAcompanamientos] = useState<AcompanamientoDocente[]>([]);
     const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -112,7 +107,7 @@ const useDashboardData = () => {
         console.log('🔄 Iniciando carga de datos del dashboard...');
         
         let loadedSources = 0;
-        const totalSources = 3;
+        const totalSources = 2;
         
         const checkAllLoaded = () => {
             loadedSources++;
@@ -129,12 +124,6 @@ const useDashboardData = () => {
                 checkAllLoaded();
             });
 
-            // Suscribirse a acompañamientos
-            const unsubscribeAcompanamientos = subscribeToAllAcompanamientos((data) => {
-                setAcompanamientos(data);
-                checkAllLoaded();
-            });
-
             // Suscribirse a eventos del calendario
             const unsubscribeCalendar = subscribeToAllCalendarEvents((data) => {
                 setCalendarEvents(data);
@@ -144,7 +133,6 @@ const useDashboardData = () => {
             // Cleanup function
             return () => {
                 unsubscribeReemplazos();
-                unsubscribeAcompanamientos();
                 unsubscribeCalendar();
             };
         } catch (err) {
@@ -154,7 +142,7 @@ const useDashboardData = () => {
         }
     }, []);
 
-    return { registros, acompanamientos, calendarEvents, loading, error };
+    return { registros, calendarEvents, loading, error };
 };
 
 interface DashboardSubdireccionProps {
@@ -173,32 +161,15 @@ const DashboardSubdireccion: React.FC<DashboardSubdireccionProps> = ({ currentUs
     console.log('🔍 Dashboard - Comparación con trim:', currentUser?.profile?.trim() === 'SUBDIRECCION');
     console.log('=====================================');
     
-    const { registros, acompanamientos, calendarEvents, loading, error } = useDashboardData();
-    const [rubrica, setRubrica] = useState<RubricStructure>(defaultRubric);
+    const { registros, calendarEvents, loading, error } = useDashboardData();
 
     console.log('🔍 Dashboard - Datos recibidos:', {
         registros: registros.length,
-        acompanamientos: acompanamientos.length,
         calendarEvents: calendarEvents.length,
         loading,
         error,
         currentUser: currentUser?.profile
     });
-
-    // Cargar rúbrica personalizada desde localStorage (si existe)
-    useEffect(() => {
-        try {
-            const customRubricData = localStorage.getItem('acompanamientoDocenteCustomRubrica');
-            if (customRubricData) {
-                setRubrica(JSON.parse(customRubricData));
-            } else {
-                setRubrica(defaultRubric);
-            }
-        } catch (e) {
-            console.error("Error al leer rúbrica personalizada", e);
-            setRubrica(defaultRubric);
-        }
-    }, []);
 
     // Verificar permisos con debug detallado
     console.log('🔍 Dashboard - Verificando permisos...');
@@ -305,62 +276,6 @@ const DashboardSubdireccion: React.FC<DashboardSubdireccionProps> = ({ currentUs
         };
     }, [registros]);
     
-    const acompanamientoStats = useMemo(() => {
-        const totalAcompanamientos = acompanamientos.length;
-        if (totalAcompanamientos === 0) {
-            return { totalAcompanamientos: 0, promedioGeneral: 'N/A', desempenoPorDocente: [], desempenoPorDominio: [] };
-        }
-
-        const criterionToDomainMap = new Map<string, string>();
-        rubrica.forEach(domain => {
-            domain.criteria.forEach(criterion => {
-                criterionToDomainMap.set(criterion.name, domain.domain);
-            });
-        });
-
-        let totalScore = 0;
-        let totalCriteriaCount = 0;
-        const scoresByTeacher: { [name: string]: { total: number, count: number } } = {};
-        const scoresByDomain: { [name: string]: { total: number, count: number } } = {};
-
-        acompanamientos.forEach(record => {
-            if (!scoresByTeacher[record.docente]) {
-                scoresByTeacher[record.docente] = { total: 0, count: 0 };
-            }
-
-            Object.entries(record.rubricaResultados).forEach(([criterion, score]) => {
-                totalScore += score;
-                totalCriteriaCount++;
-
-                scoresByTeacher[record.docente].total += score;
-                scoresByTeacher[record.docente].count++;
-
-                const domain = criterionToDomainMap.get(criterion);
-                if (domain) {
-                    if (!scoresByDomain[domain]) {
-                        scoresByDomain[domain] = { total: 0, count: 0 };
-                    }
-                    scoresByDomain[domain].total += score;
-                    scoresByDomain[domain].count++;
-                }
-            });
-        });
-
-        const promedioGeneral = totalCriteriaCount > 0 ? (totalScore / totalCriteriaCount).toFixed(2) : 'N/A';
-        
-        const desempenoPorDocente = Object.entries(scoresByTeacher).map(([label, data]) => ({
-            label,
-            value: data.count > 0 ? (data.total / data.count).toFixed(2) : 0
-        }));
-
-        const desempenoPorDominio = Object.entries(scoresByDomain).map(([label, data]) => ({
-            label,
-            value: data.count > 0 ? (data.total / data.count).toFixed(2) : 0
-        }));
-
-        return { totalAcompanamientos, promedioGeneral, desempenoPorDocente, desempenoPorDominio };
-    }, [acompanamientos, rubrica]);
-    
     const calendarStats = useMemo(() => {
         const counts: Record<EventType, number> = {
             [EventType.EVALUACION]: 0,
@@ -403,7 +318,7 @@ const DashboardSubdireccion: React.FC<DashboardSubdireccionProps> = ({ currentUs
     }
 
     // Pantalla cuando no hay datos
-    if (inasistenciaStats.totalInasistencias === 0 && acompanamientoStats.totalAcompanamientos === 0 && calendarEvents.length === 0) {
+    if (inasistenciaStats.totalInasistencias === 0 && calendarEvents.length === 0) {
         return (
             <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-md h-full w-full flex flex-col items-center justify-center text-center animate-fade-in">
                 <span className="text-6xl mb-4">📊</span>
@@ -413,7 +328,6 @@ const DashboardSubdireccion: React.FC<DashboardSubdireccionProps> = ({ currentUs
                 </p>
                 <div className="text-sm text-slate-400 dark:text-slate-500">
                     <p>• Módulo de Inasistencias y Reemplazos</p>
-                    <p>• Módulo de Acompañamiento Docente</p>
                     <p>• Calendario Académico</p>
                 </div>
             </div>
@@ -486,45 +400,6 @@ const DashboardSubdireccion: React.FC<DashboardSubdireccionProps> = ({ currentUs
                             title="Distribución de Resultados" 
                             data={inasistenciaStats.distribucionResultados} 
                             colorClass="bg-green-400" 
-                            isLoading={loading}
-                        />
-                    </div>
-                </div>
-            )}
-           
-            {/* Acompañamiento Dashboard */}
-            {acompanamientos.length > 0 && (
-                <div className="space-y-8">
-                    <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700 pb-2">
-                        👥 Dashboard de Acompañamiento Docente
-                    </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <StatCard 
-                            title="Total Acompañamientos" 
-                            value={acompanamientoStats.totalAcompanamientos} 
-                            description="Registros realizados" 
-                            isLoading={loading}
-                        />
-                        <StatCard 
-                            title="Promedio General" 
-                            value={acompanamientoStats.promedioGeneral} 
-                            description="Calificación promedio (1-4)" 
-                            isLoading={loading}
-                        />
-                    </div>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        <BarChart 
-                            title="Desempeño Promedio por Docente" 
-                            data={acompanamientoStats.desempenoPorDocente} 
-                            colorClass="bg-indigo-400"
-                            valueFormatter={(v) => Number(v).toFixed(2)}
-                            isLoading={loading}
-                        />
-                        <BarChart 
-                            title="Desempeño Promedio por Dominio" 
-                            data={acompanamientoStats.desempenoPorDominio} 
-                            colorClass="bg-teal-400" 
-                            valueFormatter={(v) => Number(v).toFixed(2)}
                             isLoading={loading}
                         />
                     </div>
@@ -627,7 +502,7 @@ const DashboardSubdireccion: React.FC<DashboardSubdireccionProps> = ({ currentUs
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="text-center">
                         <div className="text-3xl font-bold text-amber-600 dark:text-amber-400">
-                            {registros.length + acompanamientos.length + calendarEvents.length}
+                            {registros.length + calendarEvents.length}
                         </div>
                         <div className="text-sm text-slate-600 dark:text-slate-400 mt-1">
                             Total de registros en el sistema
@@ -635,7 +510,7 @@ const DashboardSubdireccion: React.FC<DashboardSubdireccionProps> = ({ currentUs
                     </div>
                     <div className="text-center">
                         <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                            {new Set([...registros.map(r => r.docenteAusente), ...acompanamientos.map(a => a.docente)]).size}
+                            {new Set([...registros.map(r => r.docenteAusente)]).size}
                         </div>
                         <div className="text-sm text-slate-600 dark:text-slate-400 mt-1">
                             Docentes con registros

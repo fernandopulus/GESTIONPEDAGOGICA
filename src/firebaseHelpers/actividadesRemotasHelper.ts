@@ -119,8 +119,8 @@ const dataUrlToUint8Array = (dataUrl: string): { bytes: Uint8Array; contentType:
 const convertActividadDoc = (snap: any): ActividadRemota => {
   const data = snap.data() || {};
   return {
-    id: snap.id,
     ...data,
+    id: snap.id,
     // Siempre strings en el modelo que consume React:
     fechaCreacion: toISO(data.fechaCreacion) || new Date().toISOString(),
     plazoEntrega: toYYYYMMDD(data.plazoEntrega) || toYYYYMMDD(new Date())!,
@@ -130,8 +130,8 @@ const convertActividadDoc = (snap: any): ActividadRemota => {
 const convertRespuestaDoc = (snap: any): RespuestaEstudianteActividad => {
   const data = snap.data() || {};
   return {
-    id: snap.id,
     ...data,
+    id: snap.id,
     // Siempre string ISO:
     fechaCompletado: toISO(data.fechaCompletado) || new Date().toISOString(),
   } as RespuestaEstudianteActividad;
@@ -139,17 +139,23 @@ const convertRespuestaDoc = (snap: any): RespuestaEstudianteActividad => {
 
 const convertUserDoc = (snap: any): User => {
   const data = snap.data() || {};
+  if (data.id && data.id !== snap.id) {
+    console.warn(`[convertUserDoc] ID Mismatch fixed. DocID: ${snap.id}, DataID: ${data.id}`);
+  }
   return {
-    id: snap.id,
     ...data,
+    id: snap.id,
+    // Priorizar usuarioId explícito, luego fallback a ID legacy si existe y es diferente
+    usuarioId: data.usuarioId || ((data.id && data.id !== snap.id) ? data.id : undefined),
+    legacyId: data.id, // Exponer legacy ID explícitamente
   } as User;
 };
 
 const convertPruebaDoc = (snap: any): PruebaEstandarizada => {
   const data = snap.data() || {};
   return {
-    id: snap.id,
     ...data,
+    id: snap.id,
     fechaCreacion: toISO(data.fechaCreacion) || new Date().toISOString(),
     plazoEntrega: toYYYYMMDD(data.plazoEntrega) || toYYYYMMDD(new Date())!,
   } as PruebaEstandarizada;
@@ -157,10 +163,16 @@ const convertPruebaDoc = (snap: any): PruebaEstandarizada => {
 
 /* ============================ Suscripciones ============================ */
 export const subscribeToActividades = (cb: (data: ActividadRemota[]) => void) => {
-  const qy = query(collection(db, ACTIVIDADES_COLLECTION), orderBy('fechaCreacion', 'desc'));
+  // Se elimina orderBy de la query para evitar errores de índice faltante
+  const qy = query(collection(db, ACTIVIDADES_COLLECTION));
   return onSnapshot(
     qy,
-    (qs) => cb(qs.docs.map(convertActividadDoc)),
+    (qs) => {
+      const docs = qs.docs.map(convertActividadDoc);
+      // Ordenamiento en cliente
+      docs.sort((a, b) => new Date(b.fechaCreacion).getTime() - new Date(a.fechaCreacion).getTime());
+      cb(docs);
+    },
     (err) => {
       console.error('subscribeToActividades error:', err);
       cb([]);
@@ -173,12 +185,19 @@ export const subscribeToRespuestas = (
   actividadId?: string
 ) => {
   const base = collection(db, RESPUESTAS_COLLECTION);
+  // Se elimina orderBy para evitar errores de índice compuesto (actividadId + fechaCompletado)
   const qy = actividadId
-    ? query(base, where('actividadId', '==', actividadId), orderBy('fechaCompletado', 'desc'))
-    : query(base, orderBy('fechaCompletado', 'desc'));
+    ? query(base, where('actividadId', '==', actividadId))
+    : query(base);
+    
   return onSnapshot(
     qy,
-    (qs) => cb(qs.docs.map(convertRespuestaDoc)),
+    (qs) => {
+      const docs = qs.docs.map(convertRespuestaDoc);
+      // Ordenamiento en cliente
+      docs.sort((a, b) => new Date(b.fechaCompletado).getTime() - new Date(a.fechaCompletado).getTime());
+      cb(docs);
+    },
     (err) => {
       console.error('subscribeToRespuestas error:', err);
       cb([]);
@@ -187,10 +206,14 @@ export const subscribeToRespuestas = (
 };
 
 export const subscribeToAllUsers = (cb: (data: User[]) => void) => {
-  const qy = query(collection(db, USERS_COLLECTION), orderBy('nombreCompleto', 'asc'));
+  const qy = query(collection(db, USERS_COLLECTION));
   return onSnapshot(
     qy,
-    (qs) => cb(qs.docs.map(convertUserDoc)),
+    (qs) => {
+      const docs = qs.docs.map(convertUserDoc);
+      docs.sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
+      cb(docs);
+    },
     (err) => {
       console.error('subscribeToAllUsers error:', err);
       cb([]);
@@ -200,15 +223,22 @@ export const subscribeToAllUsers = (cb: (data: User[]) => void) => {
 
 /** Actualiza campos del usuario en colección 'usuarios' */
 export const updateUsuarioFields = async (userId: string, patch: Partial<User>) => {
+  console.log(`[updateUsuarioFields] Attempting to update user: ${userId}`, patch);
   const clean: any = stripUndefined({ ...patch });
   await updateDoc(doc(db, USERS_COLLECTION, userId), clean);
 };
 
 export const subscribeToPruebasEstandarizadas = (cb: (data: PruebaEstandarizada[]) => void) => {
-  const qy = query(collection(db, PRUEBAS_ESTANDARIZADAS_COLLECTION), orderBy('fechaCreacion', 'desc'));
+  // Se elimina orderBy de la query
+  const qy = query(collection(db, PRUEBAS_ESTANDARIZADAS_COLLECTION));
   return onSnapshot(
     qy,
-    (qs) => cb(qs.docs.map(convertPruebaDoc)),
+    (qs) => {
+      const docs = qs.docs.map(convertPruebaDoc);
+      // Ordenamiento en cliente
+      docs.sort((a, b) => new Date(b.fechaCreacion).getTime() - new Date(a.fechaCreacion).getTime());
+      cb(docs);
+    },
     (err) => {
       console.error('subscribeToPruebasEstandarizadas error:', err);
       cb([]);
@@ -301,21 +331,21 @@ export const calcularNota60 = (puntaje: number, puntajeMax: number): string => {
 export const getRespuestasByActividad = async (actividadId: string) => {
   const qy = query(
     collection(db, RESPUESTAS_COLLECTION),
-    where('actividadId', '==', actividadId),
-    orderBy('fechaCompletado', 'desc')
+    where('actividadId', '==', actividadId)
   );
   const qs = await getDocs(qy);
-  return qs.docs.map(convertRespuestaDoc);
+  const docs = qs.docs.map(convertRespuestaDoc);
+  return docs.sort((a, b) => new Date(b.fechaCompletado).getTime() - new Date(a.fechaCompletado).getTime());
 };
 
 export const getRespuestasByEstudiante = async (estudianteId: string) => {
   const qy = query(
     collection(db, RESPUESTAS_COLLECTION),
-    where('estudianteId', '==', estudianteId),
-    orderBy('fechaCompletado', 'desc')
+    where('estudianteId', '==', estudianteId)
   );
   const qs = await getDocs(qy);
-  return qs.docs.map(convertRespuestaDoc);
+  const docs = qs.docs.map(convertRespuestaDoc);
+  return docs.sort((a, b) => new Date(b.fechaCompletado).getTime() - new Date(a.fechaCompletado).getTime());
 };
 
 export const getActividadById = async (actividadId: string) => {

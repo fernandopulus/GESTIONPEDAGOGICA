@@ -16,7 +16,7 @@ import {
 // Antes: db desde './config' y auth desde '../firebase' (podía crear instancias distintas de Firebase App)
 // Ahora: ambos desde '../firebase' para que Firestore adjunte correctamente el token del usuario autenticado
 import { db, auth } from '../firebase';
-import { ActividadRemota, RespuestaEstudianteActividad, User } from '../../types';
+import { ActividadRemota, RespuestaEstudianteActividad, User, Profile } from '../../types';
 
 // --- CONSTANTES DE COLECCIONES ---
 const ACTIVIDADES_COLLECTION = 'actividades_remotas';
@@ -66,8 +66,8 @@ const toYYYYMMDD = (v: any): string | undefined => {
 const convertFirestoreDoc = <T>(docSnapshot: any): T => {
   const data = docSnapshot.data();
   return {
-    id: docSnapshot.id,
     ...data,
+    id: docSnapshot.id,
     fechaCreacion: toISO(data.fechaCreacion) || data.fechaCreacion,
     plazoEntrega: toYYYYMMDD(data.plazoEntrega) || data.plazoEntrega,
     fechaCompletado: toISO(data.fechaCompletado) || data.fechaCompletado,
@@ -133,92 +133,174 @@ const withRetry = async <T>(
 
 // --- GESTIÓN DE ACTIVIDADES REMOTAS MEJORADA ---
 
+// --- HELPERS DE NORMALIZACIÓN (Paridad con ActividadesRemotas.tsx) ---
+const normalizeStr = (v?: string | null) => (v || '').trim();
+const stripDiacritics = (s: string) => {
+  try {
+    return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  } catch {
+    return s;
+  }
+};
+const normForCompare = (s: string) => stripDiacritics(s.toLowerCase().replace(/\s+/g, ' ').trim());
+const equalsFlex = (a?: string, b?: string) => {
+  const aa = normalizeStr(a);
+  const bb = normalizeStr(b);
+  if (!aa || !bb) return false;
+  if (aa === bb) return true; 
+  return normForCompare(aa) === normForCompare(bb);
+};
+
 /**
- * Suscripción a actividades con manejo robusto de errores
+ * Suscripción a actividades con manejo robusto de errores y filtrado en cliente
+ * para garantizar consistencia con la vista del profesor.
  */
 export const subscribeToActividadesDisponibles = (
   currentUser: User,
   onSuccess: (data: ActividadRemota[]) => void,
   onError?: (error: FirestoreError) => void
 ) => {
-  console.log('🔔 Suscribiéndose a actividades disponibles para:', currentUser.nombreCompleto);
-  
-  // Importante: las reglas requieren que las queries incluyan filtros de destino
-  const subs: Array<() => void> = [];
-  const combined = new Map<string, ActividadRemota>();
+  // Detectar si el usuario tiene permisos privilegiados (Admin/Profe)
+  // Si es estudiante, DEBE usar consultas específicas para cumplir con las reglas de seguridad.
+  const isPrivileged = 
+    (currentUser.profile as any) === 'ADMINISTRADOR' || 
+    currentUser.profile === Profile.SUBDIRECCION || 
+    currentUser.profile === Profile.PROFESORADO;
 
-  const pushAndEmit = (docs: any[]) => {
-    for (const d of docs) {
-      const conv = convertFirestoreDoc<ActividadRemota>(d);
-      combined.set(conv.id, conv);
-    }
-    const arr = Array.from(combined.values());
-    // Ordenar en cliente por fecha si existe
-    arr.sort((a, b) => new Date(b.fechaCreacion || '').getTime() - new Date(a.fechaCreacion || '').getTime());
-    console.log('✅ Actividades combinadas para el estudiante:', arr.length);
-    onSuccess(arr);
-  };
+  if (isPrivileged) {
+    console.log('🔔 Suscribiéndose a TODAS las actividades (Privilegiado):', currentUser.nombreCompleto);
+    
+    // Estrategia original: Traer todas y filtrar en memoria (Client-side filtering)
+    // Esto resuelve discrepancias por case-sensitivity, acentos o espacios en los nombres de cursos/estudiantes
+    // que Firestore no maneja nativamente en array-contains.
+    
+    const q = query(collection(db, ACTIVIDADES_COLLECTION));
 
-  try {
-    // 1) Por curso asignado
-    const curso = currentUser.curso || '';
-    if (curso) {
-      const qCurso = query(collection(db, ACTIVIDADES_COLLECTION), where('cursosDestino', 'array-contains', curso));
-      const unsubCurso = onSnapshot(qCurso, {
-        next: (snap) => {
-          console.log('📋 Actividades por curso:', snap.docs.length);
-          pushAndEmit(snap.docs);
-        },
-        error: (err) => {
-          // Si es permission-denied, degradar a warning y continuar (puede faltar usuarios/{email} o curso)
-          if (err?.code === 'permission-denied') {
-            console.warn('⚠️ Sin permisos para actividades por curso; verificando doc usuarios/{email} y campo curso.', err);
-          } else {
-            const firestoreError = handleFirestoreError(err, 'suscripción a actividades por curso');
-            onError?.(firestoreError);
-          }
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        try {
+          const allActivities = snapshot.docs.map(doc => convertFirestoreDoc<ActividadRemota>(doc));
+          
+          // Filtrado robusto (paridad con ActividadesRemotas.tsx)
+          const filtered = allActivities.filter(act => {
+            // 1. Por Curso
+            const cursoUsuario = currentUser.curso || '';
+            const porCurso = (act.cursosDestino || []).some(c => equalsFlex(c, cursoUsuario));
+            
+            // 2. Por Estudiante (Nombre, Email, ID, AuthUID)
+            const dest = act.estudiantesDestino || [];
+            const candidates = [
+              currentUser.nombreCompleto,
+              currentUser.email,
+              currentUser.id,
+              auth.currentUser?.uid
+            ].filter(Boolean) as string[];
+            
+            const porEstudiante = dest.some(d => candidates.some(cand => equalsFlex(d, cand)));
+            
+            return porCurso || porEstudiante;
+          });
+
+          // Ordenar por fecha de creación descendente
+          filtered.sort((a, b) => new Date(b.fechaCreacion || '').getTime() - new Date(a.fechaCreacion || '').getTime());
+          
+          console.log(`✅ Actividades filtradas (Privilegiado): ${filtered.length} de ${allActivities.length} totales.`);
+          onSuccess(filtered);
+        } catch (err: any) {
+          console.error('❌ Error filtrando actividades:', err);
+          onError?.(handleFirestoreError(err, 'filtrado de actividades'));
         }
-      });
-      subs.push(unsubCurso);
-    }
+      },
+      (error) => {
+        console.error('❌ Error en suscripción de actividades (Privilegiado):', error);
+        onError?.(handleFirestoreError(error, 'suscripción a actividades'));
+      }
+    );
 
-  // 2) Por destinatario específico (email o uid del Auth). Evitamos nombreCompleto e IDs internos.
-  const authUid = auth.currentUser?.uid;
-  const email = currentUser.email;
-  const nombre = currentUser.nombreCompleto;
-  const candidates = [email, authUid, nombre].filter(Boolean);
-    // array-contains-any admite hasta 10 elementos
-    if (candidates.length) {
-      const qEst = query(collection(db, ACTIVIDADES_COLLECTION), where('estudiantesDestino', 'array-contains-any', candidates as any));
-      const unsubEst = onSnapshot(qEst, {
-        next: (snap) => {
-          console.log('📋 Actividades por estudiante:', snap.docs.length);
-          pushAndEmit(snap.docs);
-        },
-        error: (err) => {
-          // Si es permission-denied, degradar a warning y continuar con otras subscripciones
-          if (err?.code === 'permission-denied') {
-            console.warn('⚠️ Sin permisos para actividades por estudiante; continuando con filtro por curso.', err);
-          } else {
-            const firestoreError = handleFirestoreError(err, 'suscripción a actividades por estudiante');
-            onError?.(firestoreError);
-          }
-        }
-      });
-      subs.push(unsubEst);
-    }
-
-    // Si no hay curso ni identificadores válidos, emitimos vacío y avisamos
-    if (subs.length === 0) {
-      console.warn('⚠️ Usuario sin curso ni identificadores para filtrar actividades.');
-      onSuccess([]);
-    }
-  } catch (outerErr: any) {
-    const firestoreError = handleFirestoreError(outerErr, 'configuración de suscripciones de actividades');
-    onError?.(firestoreError);
+    return unsubscribe;
   }
 
-  return () => subs.forEach(u => u && u());
+  // --- ESTRATEGIA PARA ESTUDIANTES (Consultas Específicas) ---
+  console.log('🔔 Suscribiéndose a actividades asignadas (Estudiante):', currentUser.nombreCompleto);
+  
+  // Construir consultas específicas para cumplir con las reglas de seguridad (allow read if ... hasAny ...)
+  const queries = [];
+  
+  // 1. Por Curso
+  if (currentUser.curso) {
+    queries.push(query(collection(db, ACTIVIDADES_COLLECTION), where('cursosDestino', 'array-contains', currentUser.curso)));
+  }
+  
+  // 2. Por Email
+  if (currentUser.email) {
+    queries.push(query(collection(db, ACTIVIDADES_COLLECTION), where('estudiantesDestino', 'array-contains', currentUser.email)));
+  }
+  
+  // 3. Por UID (Auth)
+  const uid = auth.currentUser?.uid;
+  if (uid) {
+    queries.push(query(collection(db, ACTIVIDADES_COLLECTION), where('estudiantesDestino', 'array-contains', uid)));
+  }
+  
+  // 4. Por Nombre (si está disponible)
+  if (currentUser.nombreCompleto) {
+    queries.push(query(collection(db, ACTIVIDADES_COLLECTION), where('estudiantesDestino', 'array-contains', currentUser.nombreCompleto)));
+  }
+
+  // 5. Por ID de usuario (si es diferente a email/uid)
+  if (currentUser.id && currentUser.id !== currentUser.email && currentUser.id !== uid) {
+     queries.push(query(collection(db, ACTIVIDADES_COLLECTION), where('estudiantesDestino', 'array-contains', currentUser.id)));
+  }
+
+  if (queries.length === 0) {
+    console.warn('⚠️ Usuario estudiante sin identificadores suficientes para buscar actividades.');
+    onSuccess([]);
+    return () => {};
+  }
+
+  // Manejo de múltiples suscripciones
+  const unsubscribers: (() => void)[] = [];
+  const resultsMap = new Map<number, ActividadRemota[]>(); // index -> results
+
+  const updateResults = () => {
+    const allDocs = new Map<string, ActividadRemota>();
+    resultsMap.forEach((docs) => {
+      docs.forEach(doc => allDocs.set(doc.id, doc));
+    });
+    
+    const merged = Array.from(allDocs.values());
+    // Ordenar por fecha de creación descendente
+    merged.sort((a, b) => new Date(b.fechaCreacion || '').getTime() - new Date(a.fechaCreacion || '').getTime());
+    
+    console.log(`✅ Actividades fusionadas (Estudiante): ${merged.length}`);
+    onSuccess(merged);
+  };
+
+  queries.forEach((q, index) => {
+    const unsub = onSnapshot(q, 
+      (snapshot) => {
+        const docs = snapshot.docs.map(doc => convertFirestoreDoc<ActividadRemota>(doc));
+        resultsMap.set(index, docs);
+        updateResults();
+      },
+      (error) => {
+        // Ignorar errores de permisos en consultas individuales si otras funcionan
+        // (ej. si falla por nombre pero funciona por curso)
+        console.warn(`⚠️ Error en query parcial ${index} de actividades:`, error.code);
+        if (error.code !== 'permission-denied') {
+             // Solo reportar si no es permiso denegado (que es esperado si la regla es estricta)
+             // Aunque nuestras queries deberían cumplir la regla.
+             console.error('Error detallado:', error);
+        }
+      }
+    );
+    unsubscribers.push(unsub);
+  });
+
+  return () => {
+    unsubscribers.forEach(u => u());
+  };
 };
 
 /**

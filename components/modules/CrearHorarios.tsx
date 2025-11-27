@@ -26,6 +26,7 @@ import {
   Loader2,
   HelpCircle,
   Users,
+  Edit,
 } from 'lucide-react';
 import { exportCargasHorariasDocentes } from '../../src/utils/exportCargasHorariasDocentes';
 
@@ -103,9 +104,13 @@ import {
   validarDocente,
   normalizarHeaderCurso,
   crearNuevoDocente,
+  actualizarHorasContrato,
+  calculateRequiredContractHours,
+  eliminarDocente,
+  deleteAsignacionCarga,
 } from '../../src/firebaseHelpers/cargaHorariaHelper';
 import { saveHorarios, subscribeToHorarios } from '../../src/firebaseHelpers/horariosHelper';
-import { generarHorarioSemanalConIA, ResultadoGeneracionHorario, ReglasGeneracion } from '../../src/ai/horarioAI';
+import type { ResultadoGeneracionHorario, ReglasGeneracion } from '../../src/ai/horarioAI';
 import type { 
   HorariosGenerados, 
   CursoId, 
@@ -140,7 +145,7 @@ const CrearHorarios: React.FC = () => {
   const [horariosActuales, setHorariosActuales] = useState<HorariosGenerados | null>(null);
   const [horariosGenerados, setHorariosGenerados] = useState<HorariosGenerados | null>(null);
   const [conflictosHorario, setConflictosHorario] = useState<string[]>([]);
-  const [fuenteHorario, setFuenteHorario] = useState<'IA' | 'fallback' | null>(null);
+  const [fuenteHorario, setFuenteHorario] = useState<'fallback' | null>(null);
   const [cursoVista, setCursoVista] = useState<string>(CURSOS[0] || '');
   const [showReglasModal, setShowReglasModal] = useState(false);
   const [reglas, setReglas] = useState<ReglasGeneracion>({
@@ -159,6 +164,11 @@ const CrearHorarios: React.FC = () => {
     perfil: 'PROFESORADO' | 'SUBDIRECCION' | 'COORDINACION_TP';
   }>({ nombre: '', email: '', departamento: 'General', horasContrato: 44, perfil: 'PROFESORADO' });
   const [docenteSearch, setDocenteSearch] = useState('');
+  
+  const [editingDocente, setEditingDocente] = useState<DocenteCargaHoraria | null>(null);
+  const [showEditDocenteModal, setShowEditDocenteModal] = useState(false);
+  const [tempHorasContrato, setTempHorasContrato] = useState<number>(44);
+
   // Nota: estados exportandoPDF y errorExportacion ya declarados arriba; se eliminaron duplicados.
 
   useEffect(() => {
@@ -201,6 +211,25 @@ const CrearHorarios: React.FC = () => {
     });
     return totales;
   }, [docentes, asignaciones]);
+
+  // Sugerir horas de contrato si hay discrepancia
+  useEffect(() => {
+    docentes.forEach(doc => {
+      const totales = totalesByDocente[doc.id];
+      if (totales && totales.totalHorasLectivas > 0) {
+        try {
+          const requiredContract = calculateRequiredContractHours(totales.totalHorasLectivas);
+          if (requiredContract !== doc.horasContrato) {
+            // Aquí podríamos mostrar una alerta o sugerencia visual
+            // Por ahora, solo lo logueamos o lo usamos en la UI para mostrar una advertencia
+            console.log(`Docente ${doc.nombre} tiene ${totales.totalHorasLectivas} lectivas. Requiere ${requiredContract} contrato. Actual: ${doc.horasContrato}`);
+          }
+        } catch (e) {
+          // Ignorar si no hay mapeo
+        }
+      }
+    });
+  }, [totalesByDocente, docentes]);
 
   useEffect(() => {
     const nuevas: ValidationResultCarga[] = [];
@@ -462,23 +491,16 @@ const CrearHorarios: React.FC = () => {
 
   // Eliminado: flujo de exportación PDF antiguo con plantilla del liceo previo
 
-  // Generar horario con IA (con fallback automático)
+  // Generar horario automático solo con algoritmo local (sin IA)
   const generarHorarioIA = useCallback(async () => {
     try {
       setLoading(true);
-      const cursos = CURSOS as string[];
-      const resultado: ResultadoGeneracionHorario = await generarHorarioSemanalConIA(asignaciones, docentes, cursos, reglas);
-      setHorariosGenerados(resultado.horarios);
-      setConflictosHorario(resultado.conflictos || []);
-      setFuenteHorario(resultado.fuente);
-      if (!cursoVista && cursos.length) setCursoVista(cursos[0]);
-    } catch (err) {
-      console.error('Error al generar horario:', err);
-      alert('No se pudo generar el horario.');
+      // Por ahora deshabilitamos la generación con IA.
+      alert('La generación automática de horario con IA ha sido deshabilitada en esta versión.');
     } finally {
       setLoading(false);
     }
-  }, [asignaciones, docentes, cursoVista, reglas]);
+  }, []);
 
   const guardarHorarioGenerado = useCallback(async () => {
     if (!horariosGenerados) {
@@ -507,14 +529,19 @@ const CrearHorarios: React.FC = () => {
   const guardar = useCallback(async () => {
     const errores = validaciones.filter((v) => v.tipo === 'error');
     if (errores.length > 0) {
-      alert('No se puede guardar. Hay errores que deben corregirse primero.');
-      return;
+      const confirmar = window.confirm(`Hay ${errores.length} errores de validación. ¿Desea guardar de todos modos?`);
+      if (!confirmar) return;
     }
     try {
       setLoading(true);
-      const conId: AsignacionCargaHoraria[] = [];
-      const nuevas: Omit<AsignacionCargaHoraria, 'id'>[] = [];
-      asignaciones.forEach((asignacion) => {
+      // Filtrar asignaciones completamente vacías (sin horas ni funciones)
+      const asignacionesValidas = asignaciones.filter((asignacion) => {
+        const tieneHorasCurso = asignacion.horasPorCurso && Object.values(asignacion.horasPorCurso).some((h) => (h || 0) > 0);
+        const tieneFunciones = (asignacion.funcionesLectivas || []).some((f) => (f.horas || 0) > 0);
+        return tieneHorasCurso || tieneFunciones;
+      });
+
+      const paraGuardar = asignacionesValidas.map((asignacion) => {
         let funcionesLectivasActualizadas = asignacion.funcionesLectivas || [];
         if ((asignacion as any).funcionesNoLectivas && (asignacion as any).funcionesNoLectivas.length > 0 && funcionesLectivasActualizadas.length === 0) {
           funcionesLectivasActualizadas = (asignacion as any).funcionesNoLectivas.map((f: any) => ({ id: `func_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, nombre: f.nombre, horas: f.horas }));
@@ -524,20 +551,26 @@ const CrearHorarios: React.FC = () => {
           ];
         }
         const { funcionesNoLectivas, otraFuncion, ...rest } = asignacion as any;
-        const asignacionActualizada: any = { ...rest, funcionesLectivas: funcionesLectivasActualizadas };
-        if (asignacion.id.startsWith('asig_') || asignacion.id.startsWith('import_')) {
-          const { id, ...sinId } = asignacionActualizada;
-          nuevas.push(sinId);
-        } else {
-          conId.push(asignacionActualizada);
-        }
+
+        // Recalcular horasXAsig siempre a partir de horasPorCurso para mantener coherencia
+        const horasPorCurso = rest.horasPorCurso || {};
+        const horasXAsig = Object.values(horasPorCurso).reduce((sum: number, h: any) => sum + (typeof h === 'number' ? h : 0), 0);
+
+        return { ...rest, funcionesLectivas: funcionesLectivasActualizadas, horasXAsig };
       });
-      const paraGuardar = [...conId.map(({ id, ...rest }) => rest), ...nuevas];
+
+      console.log('[guardar] paraGuardar', JSON.stringify(paraGuardar, null, 2));
+
       await saveAsignacionesBatch(paraGuardar, true);
+
+      // Sincronizar estado local inmediatamente para evitar "reseteos" visuales
+      setAsignaciones(paraGuardar as AsignacionCargaHoraria[]);
+
       alert('Horarios guardados exitosamente');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error al guardar horarios:', error);
-      alert('Error al guardar los horarios');
+      const message = error?.message || 'Error desconocido, revise la consola del navegador.';
+      alert('Error al guardar los horarios: ' + message);
     } finally {
       setLoading(false);
     }
@@ -575,6 +608,55 @@ const CrearHorarios: React.FC = () => {
     if (totales.errors.length > 0) return 'red';
     if (totales.warnings.length > 0) return 'yellow';
     return 'green';
+  };
+
+  const handleUpdateContrato = async () => {
+    if (!editingDocente) return;
+    try {
+      setLoading(true);
+      await actualizarHorasContrato(editingDocente.id, tempHorasContrato);
+      setShowEditDocenteModal(false);
+      setEditingDocente(null);
+      // alert('Horas de contrato actualizadas'); // Feedback visual es suficiente con el cambio en UI
+    } catch (e) {
+      console.error(e);
+      alert('Error al actualizar horas de contrato');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openEditDocente = (docente: DocenteCargaHoraria) => {
+    setEditingDocente(docente);
+    setTempHorasContrato(docente.horasContrato);
+    setShowEditDocenteModal(true);
+  };
+
+  const handleDeleteDocente = async (id: string, nombre: string) => {
+    const asignacionesDocente = asignaciones.filter(a => a.docenteId === id);
+    const confirmMessage = asignacionesDocente.length > 0
+      ? `¿Estás seguro de que deseas eliminar al docente "${nombre}"? Se eliminarán también sus ${asignacionesDocente.length} asignaciones.`
+      : `¿Estás seguro de que deseas eliminar al docente "${nombre}"?`;
+
+    if (window.confirm(confirmMessage)) {
+      try {
+        setLoading(true);
+        // Eliminar asignaciones primero (si las hay)
+        // Nota: deleteAsignacionCarga elimina de Firestore.
+        // Como estamos suscritos, el estado se actualizará automáticamente.
+        const deletePromises = asignacionesDocente.map(a => deleteAsignacionCarga(a.id));
+        await Promise.all(deletePromises);
+        
+        // Eliminar docente
+        await eliminarDocente(id);
+        // alert('Docente eliminado exitosamente'); // Feedback visual por desaparición es suficiente
+      } catch (e) {
+        console.error(e);
+        alert('Error al eliminar docente');
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   const AddDocenteModal = () => {
@@ -745,7 +827,7 @@ const CrearHorarios: React.FC = () => {
             <div>
               <h1 className="text-3xl font-bold text-white mb-2 flex items-center">
                 <Calendar className="mr-3 h-8 w-8" />
-                Crear Horarios
+                Cargas horarias
               </h1>
               <p className="text-blue-100 dark:text-blue-200 max-w-2xl">
                 Sistema de gestión de carga horaria docente con validación 65%/35% y visualización en tiempo real
@@ -761,7 +843,7 @@ const CrearHorarios: React.FC = () => {
               </button>
               <button 
                 onClick={guardar} 
-                disabled={validaciones.some((v) => v.tipo === 'error') || loading} 
+                disabled={loading} 
                 className="flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
               >
                 <Save className="w-4 h-4" />
@@ -882,20 +964,6 @@ const CrearHorarios: React.FC = () => {
             </button>
             
             <button 
-              onClick={() => setShowReglasModal(true)} 
-              disabled={loading || asignaciones.length === 0} 
-              className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-cyan-500 to-sky-600 hover:from-cyan-600 hover:to-sky-700 text-white rounded-lg transition-all duration-200 shadow-sm group disabled:opacity-50"
-              title="Generar horario semanal automáticamente (IA)"
-            >
-              {loading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <RefreshCw className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
-              )}
-              <span className="text-xs font-medium mt-1">Generar horario (IA)</span>
-            </button>
-            
-            <button 
               onClick={() => setMostrarResumen(true)} 
               className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white rounded-lg transition-all duration-200 shadow-sm group"
             >
@@ -905,7 +973,7 @@ const CrearHorarios: React.FC = () => {
             
             <button 
               onClick={guardar} 
-              disabled={validaciones.some((v) => v.tipo === 'error') || loading} 
+              disabled={loading} 
               className="flex flex-col items-center justify-center gap-1 px-3 py-4 bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-lg transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-amber-500 disabled:hover:to-orange-600 group"
             >
               {loading ? (
@@ -1015,7 +1083,7 @@ const CrearHorarios: React.FC = () => {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <div className="flex items-center gap-1.5">
                     <UserCog className="w-3.5 h-3.5" />
-                    <span>Func. Lectivas</span>
+                    <span>Otras Funciones</span>
                   </div>
                 </th>
                 <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -1080,15 +1148,27 @@ const CrearHorarios: React.FC = () => {
                     <td className="px-1 py-2 sticky left-14 z-10 bg-inherit">
                       {!tieneMultiplesAsignaturas || esPrimeraAsignacionDocente ? (
                         <div>
-                          <select
-                            value={asignacion.docenteId}
-                            onChange={(e) => actualizarAsignacion(asignacion.id, 'docenteId', e.target.value)}
-                            className={`w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs ${tieneMultiplesAsignaturas ? 'font-medium' : ''}`}
-                          >
-                            {(docentesFiltrados.length > 0 ? docentesFiltrados : docentes).map((d) => (
-                              <option key={d.id} value={d.id}>{d.nombre}</option>
-                            ))}
-                          </select>
+                          <div className="flex items-center gap-1">
+                            <select
+                              value={asignacion.docenteId}
+                              onChange={(e) => actualizarAsignacion(asignacion.id, 'docenteId', e.target.value)}
+                              className={`w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs ${tieneMultiplesAsignaturas ? 'font-medium' : ''}`}
+                            >
+                              {(docentesFiltrados.length > 0 ? docentesFiltrados : docentes).map((d) => (
+                                <option key={d.id} value={d.id}>{d.nombre}</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => {
+                                const doc = docentes.find(d => d.id === asignacion.docenteId);
+                                if (doc) openEditDocente(doc);
+                              }}
+                              className="p-1 text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded transition-colors"
+                              title="Editar contrato docente"
+                            >
+                              <Edit className="w-3 h-3" />
+                            </button>
+                          </div>
                           {tieneMultiplesAsignaturas && (
                             <div className="mt-1 text-xs text-blue-600 dark:text-blue-400">
                               {asignacionesDocente.length} asig.
@@ -1191,7 +1271,7 @@ const CrearHorarios: React.FC = () => {
                             HA: {totales.HA} ({totales.restantesHA >= 0 ? '+' : ''}{totales.restantesHA})
                           </div>
                           <div className="text-green-600 dark:text-green-400 text-xs">
-                            HB: {totales.HB} ({totales.restantesHB >= 0 ? '+' : ''}{totales.restantesHB})
+                            HB (Disp): {totales.HB}
                           </div>
                         </div>
                       )}
@@ -1261,7 +1341,16 @@ const CrearHorarios: React.FC = () => {
                       return (
                         <div key={docente.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
                           <div className="flex items-center justify-between mb-2">
-                            <h4 className="font-medium text-gray-900 dark:text-white">{docente.nombre}</h4>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-medium text-gray-900 dark:text-white">{docente.nombre}</h4>
+                              <button
+                                onClick={() => handleDeleteDocente(docente.id, docente.nombre)}
+                                className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
+                                title="Eliminar docente"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                             <div className={`w-3 h-3 rounded-full ${getSemaforoColor(docente.id) === 'green' ? 'bg-green-500' : getSemaforoColor(docente.id) === 'yellow' ? 'bg-yellow-500' : getSemaforoColor(docente.id) === 'red' ? 'bg-red-500' : 'bg-gray-500'}`} />
                           </div>
                           {totales && (
@@ -1269,15 +1358,39 @@ const CrearHorarios: React.FC = () => {
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-2">
                                 <div>
                                   <span className="text-gray-600 dark:text-gray-400">Contrato:</span>
-                                  <span className="ml-1 font-medium">{docente.horasContrato}h</span>
+                                  <button 
+                                    onClick={() => openEditDocente(docente)}
+                                    className={`ml-1 font-medium hover:underline flex items-center gap-1 inline-flex ${
+                                      (() => {
+                                        try {
+                                          const req = calculateRequiredContractHours(totales.totalHorasLectivas);
+                                          return req !== docente.horasContrato ? 'text-amber-600 dark:text-amber-400 font-bold' : 'hover:text-amber-600 dark:hover:text-amber-400';
+                                        } catch { return 'hover:text-amber-600 dark:hover:text-amber-400'; }
+                                      })()
+                                    }`}
+                                    title={(() => {
+                                      try {
+                                        const req = calculateRequiredContractHours(totales.totalHorasLectivas);
+                                        return req !== docente.horasContrato ? `Sugerido: ${req}h (Click para ajustar)` : "Click para editar horas de contrato";
+                                      } catch { return "Click para editar horas de contrato"; }
+                                    })()}
+                                  >
+                                    {docente.horasContrato}h 
+                                    {(() => {
+                                        try {
+                                          const req = calculateRequiredContractHours(totales.totalHorasLectivas);
+                                          return req !== docente.horasContrato ? <AlertTriangle className="w-3 h-3" /> : <Edit className="w-3 h-3 opacity-50" />;
+                                        } catch { return <Edit className="w-3 h-3 opacity-50" />; }
+                                    })()}
+                                  </button>
                                 </div>
                                 <div>
                                   <span className="text-gray-600 dark:text-gray-400">HA:</span>
-                                  <span className="ml-1 font-medium text-blue-600 dark:text-blue-400">{totales.sumCursos}/{totales.HA}</span>
+                                  <span className="ml-1 font-medium text-blue-600 dark:text-blue-400" title="Clases + Funciones / Máximo">{totales.totalHorasLectivas}/{totales.HA}</span>
                                 </div>
                                 <div>
                                   <span className="text-gray-600 dark:text-gray-400">HB:</span>
-                                  <span className="ml-1 font-medium text-green-600 dark:text-green-400">{totales.sumFunciones}/{totales.HB}</span>
+                                  <span className="ml-1 font-medium text-green-600 dark:text-green-400" title="Disponible">{totales.HB}</span>
                                 </div>
                                 <div>
                                   <span className="text-gray-600 dark:text-gray-400">Asignaciones:</span>
@@ -1315,7 +1428,7 @@ const CrearHorarios: React.FC = () => {
                               )}
                               {asignacionesDocente.some((asig) => (asig.funcionesLectivas || []).length > 0) && (
                                 <div className="mt-2 border-t border-gray-100 dark:border-gray-700 pt-2">
-                                  <h5 className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">Funciones lectivas:</h5>
+                                  <h5 className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">Otras funciones:</h5>
                                   <ul className="text-xs text-gray-800 dark:text-gray-200 space-y-1 ml-2">
                                     {asignacionesDocente
                                       .flatMap((asig) => (asig.funcionesLectivas || []).map((funcion) => ({ id: `${asig.id}_${funcion.id}`, nombre: funcion.nombre, horas: funcion.horas })))
@@ -1388,7 +1501,7 @@ const CrearHorarios: React.FC = () => {
 
               {vistaResumen === 'funciones' && (
                 <div>
-                  <h3 className="text-xl font-semibold mb-4">Resumen por Funciones Lectivas</h3>
+                  <h3 className="text-xl font-semibold mb-4">Resumen por Otras Funciones</h3>
                   {(() => {
                     const todas: { nombre: string; docentes: { id: string; nombre: string; horas: number }[]; totalHoras: number }[] = [];
                     asignaciones.forEach((asig) => {
@@ -1409,7 +1522,7 @@ const CrearHorarios: React.FC = () => {
                     if (todas.length === 0) {
                       return (
                         <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-750">
-                          <p className="text-gray-500 dark:text-gray-400 text-center">No hay funciones lectivas asignadas.</p>
+                          <p className="text-gray-500 dark:text-gray-400 text-center">No hay funciones asignadas.</p>
                         </div>
                       );
                     }
@@ -1467,7 +1580,7 @@ const CrearHorarios: React.FC = () => {
                         <div className="p-6 rounded-xl border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 shadow-sm">
                           <h4 className="text-sm font-medium text-green-700 dark:text-green-300 mb-1">Horas Otras Funciones</h4>
                           <div className="text-4xl font-bold text-green-600 dark:text-green-400">{horasFuncionesTotales}</div>
-                          <p className="mt-2 text-xs text-green-600 dark:text-green-300">Suma de horas de funciones lectivas declaradas (coordinaciones, etc.).</p>
+                          <p className="mt-2 text-xs text-green-600 dark:text-green-300">Suma de horas de otras funciones asignadas (coordinaciones, etc.).</p>
                         </div>
                       </div>
                     );
@@ -1532,8 +1645,8 @@ const CrearHorarios: React.FC = () => {
 
         <div className="p-5 space-y-4">
           {fuenteHorario && (
-            <div className={`px-4 py-3 rounded-lg text-sm ${fuenteHorario === 'IA' ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'}`}>
-              Fuente: {fuenteHorario === 'IA' ? 'Generado por IA' : 'Generado por algoritmo (fallback)'}
+            <div className="px-4 py-3 rounded-lg text-sm bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+              Fuente: Generado por algoritmo automático
             </div>
           )}
 
@@ -1656,8 +1769,8 @@ const CrearHorarios: React.FC = () => {
                 <Briefcase className="w-5 h-5" />
               </div>
               <div>
-                <h5 className="font-medium text-green-900 dark:text-green-100">Funciones Lectivas</h5>
-                <p className="text-sm text-green-700 dark:text-green-300">Las horas de las funciones se suman a las horas lectivas (HA)</p>
+                <h5 className="font-medium text-green-900 dark:text-green-100">Otras Funciones</h5>
+                <p className="text-sm text-green-700 dark:text-green-300">Se suman a las horas lectivas (HA)</p>
               </div>
             </div>
             
@@ -1667,7 +1780,7 @@ const CrearHorarios: React.FC = () => {
               </div>
               <div>
                 <h5 className="font-medium text-amber-900 dark:text-amber-100">Horas No Lectivas (HB)</h5>
-                <p className="text-sm text-amber-700 dark:text-amber-300">El resto del contrato (ej: 44h → {calcularHB(44)}h, 30h → {calcularHB(30)}h)</p>
+                <p className="text-sm text-amber-700 dark:text-amber-300">Capacidad disponible tras asignar clases y funciones (en bloques de 45 min)</p>
               </div>
             </div>
           </div>
@@ -1678,15 +1791,15 @@ const CrearHorarios: React.FC = () => {
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                   <div className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-mono">HA</div>
-                  <span className="text-gray-600 dark:text-gray-400">Horas Lectivas = 65% del Contrato</span>
+                  <span className="text-gray-600 dark:text-gray-400">Max (Clases + Funciones) = 65% del Contrato</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded text-xs font-mono">HB</div>
-                  <span className="text-gray-600 dark:text-gray-400">Horas No Lectivas = 35% del Contrato</span>
+                  <span className="text-gray-600 dark:text-gray-400">Disponible = (Contrato - Clases - Funciones) / 45 min</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="px-2 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded text-xs font-mono">HC</div>
-                  <span className="text-gray-600 dark:text-gray-400">Horas Contrato = HA + HB</span>
+                  <span className="text-gray-600 dark:text-gray-400">Contrato (60 min) vs Asignado (45 min)</span>
                 </div>
               </div>
             </div>
@@ -1713,6 +1826,112 @@ const CrearHorarios: React.FC = () => {
       </div>
 
       <AddDocenteModal />
+
+      {showEditDocenteModal && editingDocente && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-96 max-w-full overflow-hidden animate-scaleIn">
+            <div className="p-5 bg-gradient-to-r from-amber-500 to-orange-600 text-white">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                  <Edit className="w-5 h-5" />
+                  Editar Contrato
+                </h2>
+                <button 
+                  onClick={() => setShowEditDocenteModal(false)} 
+                  className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/20 transition-all duration-200"
+                >
+                  <CloseIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              <div className="mb-4">
+                <h3 className="font-medium text-gray-900 dark:text-white">{editingDocente.nombre}</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{editingDocente.email}</p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  Horas de Contrato
+                </label>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    value={tempHorasContrato} 
+                    onChange={(e) => setTempHorasContrato(parseInt(e.target.value) || 0)} 
+                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all duration-200" 
+                    min={1} 
+                    max={44} 
+                  />
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs">
+                    horas
+                  </div>
+                </div>
+                
+                {editingDocente && totalesByDocente[editingDocente.id] && (
+                  <div className="mt-2">
+                     {(() => {
+                        try {
+                          const lectivas = totalesByDocente[editingDocente.id].totalHorasLectivas;
+                          if (lectivas > 0) {
+                            const sugerido = calculateRequiredContractHours(lectivas);
+                            if (sugerido !== tempHorasContrato) {
+                              return (
+                                <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 bg-amber-50 dark:bg-amber-900/20 p-2 rounded">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  <span>Para {lectivas} horas lectivas, se sugiere un contrato de <strong>{sugerido} horas</strong>.</span>
+                                  <button 
+                                    onClick={() => setTempHorasContrato(sugerido)}
+                                    className="ml-1 underline font-medium hover:text-amber-800 dark:hover:text-amber-200"
+                                  >
+                                    Aplicar
+                                  </button>
+                                </div>
+                              );
+                            }
+                          }
+                        } catch (e) {}
+                        return null;
+                     })()}
+                  </div>
+                )}
+
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  Ajuste las horas de contrato para recalcular HA y HB correctamente.
+                </p>
+              </div>
+              
+              <div className="mt-8 flex justify-end gap-3">
+                <button 
+                  onClick={() => setShowEditDocenteModal(false)} 
+                  className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200" 
+                  disabled={loading}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleUpdateContrato} 
+                  className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-lg shadow-sm disabled:opacity-50 transition-all duration-200 flex items-center gap-2" 
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Actualizar</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showReglasModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">

@@ -7,10 +7,12 @@ import {
     resetPassword, 
     getUserProfile 
 } from "./src/firebaseHelpers/authHelper"; // <-- Importamos desde el nuevo helper
+import { getUpcomingEvents } from "./src/firebaseHelpers/calendar";
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
 import ProfileSelector from "./components/ProfileSelector";
-import { Profile, User } from "./types";
+import WelcomeModal from "./components/modals/WelcomeModal";
+import { Profile, User, CalendarEvent } from "./types";
 import { MainLogo } from "./constants";
 
 const App: React.FC = () => {
@@ -24,6 +26,10 @@ const App: React.FC = () => {
   const [isCoordSelectingProfile, setIsCoordSelectingProfile] = useState(false);
   const [coordProfile, setCoordProfile] = useState<Profile | null>(null);
   const [oauthSuccess, setOauthSuccess] = useState<string | null>(null);
+  
+  // Estado para el modal de bienvenida
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [weeklyEvents, setWeeklyEvents] = useState<CalendarEvent[]>([]);
 
   // Verificar parámetros de OAuth al cargar
   useEffect(() => {
@@ -79,15 +85,42 @@ const App: React.FC = () => {
         setFirestoreUser(null);
         setAdminProfile(null);
         setIsAdminSelectingProfile(false);
-  setLoginError(null);
-  setIsCoordSelectingProfile(false);
-  setCoordProfile(null);
+        setLoginError(null);
+        setIsCoordSelectingProfile(false);
+        setCoordProfile(null);
+        // Resetear flag de bienvenida al cerrar sesión para que aparezca al volver a entrar
+        sessionStorage.removeItem('welcomeModalShown');
       }
       setAuthLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
+
+  // Efecto para cargar eventos y mostrar modal de bienvenida
+  useEffect(() => {
+    const checkAndShowWelcome = async () => {
+      // Solo proceder si hay usuario y perfil, y NO se está seleccionando perfil
+      if (currentUser && firestoreUser && !isAdminSelectingProfile && !isCoordSelectingProfile) {
+        const hasShownWelcome = sessionStorage.getItem('welcomeModalShown');
+        
+        if (!hasShownWelcome) {
+          try {
+            const events = await getUpcomingEvents();
+            setWeeklyEvents(events);
+            setShowWelcomeModal(true);
+            sessionStorage.setItem('welcomeModalShown', 'true');
+          } catch (error) {
+            console.error("Error al cargar eventos para bienvenida:", error);
+            // Si falla la carga de eventos, no mostramos el modal o mostramos uno vacío
+            // En este caso, optamos por no bloquear el flujo si falla
+          }
+        }
+      }
+    };
+
+    checkAndShowWelcome();
+  }, [currentUser, firestoreUser, isAdminSelectingProfile, isCoordSelectingProfile]);
 
   const handleLoginAttempt = async (email: string, password: string) => {
     setLoginError(null);
@@ -151,6 +184,31 @@ const App: React.FC = () => {
     }
   };
 
+  const handleUserUpdate = (updatedUser: User) => {
+    setFirestoreUser(updatedUser);
+  };
+
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+
+  const refreshUnreadCount = () => {
+     if (!currentUser?.email || !firestoreUser?.id) return;
+     try {
+         const allMessages: any[] = JSON.parse(localStorage.getItem('mensajesInternos') || '[]');
+         const readStatus = JSON.parse(localStorage.getItem(`lir-read-status-${firestoreUser.id}`) || '{"messages":[]}');
+         const myMessages = allMessages.filter(m => m.para === currentUser.email);
+         const unread = myMessages.filter(m => !readStatus.messages.includes(m.id)).length;
+         setUnreadMessagesCount(unread);
+     } catch (e) {
+         console.error(e);
+     }
+  };
+
+  useEffect(() => {
+      if (currentUser && firestoreUser) {
+          refreshUnreadCount();
+      }
+  }, [currentUser, firestoreUser]);
+
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-100 dark:bg-slate-900">
@@ -186,12 +244,24 @@ const App: React.FC = () => {
           <span>{oauthSuccess}</span>
         </div>
       )}
+
+      {/* Modal de Bienvenida */}
+      {showWelcomeModal && firestoreUser && (
+        <WelcomeModal 
+          userName={firestoreUser.nombreCompleto} 
+          events={weeklyEvents} 
+          onClose={() => setShowWelcomeModal(false)} 
+        />
+      )}
       
       <Dashboard
         currentUser={{ ...firestoreUser, profile: effectiveProfile }}
         onLogout={handleLogout}
-        onChangeProfile={(firestoreUser.profile === Profile.SUBDIRECCION || firestoreUser.profile === Profile.COORDINACION_TP) ? handleChangeProfile : undefined}
+        onUserUpdate={handleUserUpdate}
+        onChangeProfile={(firestoreUser.profile === Profile.SUBDIRECCION || firestoreUser.profile === Profile.COORDINACION_TP) ? handleChangeProfile : () => {}}
         canChangeProfile={firestoreUser.profile === Profile.SUBDIRECCION || firestoreUser.profile === Profile.COORDINACION_TP}
+        unreadMessagesCount={unreadMessagesCount}
+        refreshUnreadCount={refreshUnreadCount}
       />
     </>
   );

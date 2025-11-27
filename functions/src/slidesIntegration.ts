@@ -62,35 +62,50 @@ interface GeneratedSlide {
  */
 export class SlidesIntegration {
   private db: FirebaseFirestore.Firestore;
-  private oauth2Client: OAuth2Client;
-  private genAI: GoogleGenerativeAI;
+  private oauth2Client: OAuth2Client | null = null;
+  private genAI: GoogleGenerativeAI | null = null;
   
   constructor() {
     // Inicializar Firestore
     this.db = admin.firestore();
-    
+    // La inicialización de clientes externos se hace bajo demanda
+    // para evitar errores de despliegue con .value()
+  }
+
+  /**
+   * Inicializa los clientes externos si no existen
+   */
+  private ensureInitialized() {
+    if (this.oauth2Client && this.genAI) return;
+
     // Inicializar cliente OAuth2 (intentar primero parámetros, luego variables de entorno)
     const clientId = googleClientId.value() || envClientId || '1022861144167-0i63eajtaqr3e9rmhll1aebn72gkhq87.apps.googleusercontent.com';
     const clientSecret = googleClientSecret.value() || envClientSecret || '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';
     const redirectUri = envRedirectUri || 'https://us-central1-plania-clase.cloudfunctions.net/oauthCallback';
     
-    this.oauth2Client = new google.auth.OAuth2(
-      clientId,
-      clientSecret,
-      redirectUri
-    );
-    
-    console.log(`OAuth configurado con clientId: ${clientId ? 'CONFIGURADO' : 'NO CONFIGURADO'}`);
+    if (!this.oauth2Client) {
+      this.oauth2Client = new google.auth.OAuth2(
+        clientId,
+        clientSecret,
+        redirectUri
+      );
+      console.log(`OAuth configurado con clientId: ${clientId ? 'CONFIGURADO' : 'NO CONFIGURADO'}`);
+    }
     
     // Inicializar Gemini AI con configuración de headers
-    const apiKey = geminiApiKey.value() || process.env.GEMINI_API_KEY || '';
-    this.genAI = new GoogleGenerativeAI(apiKey);
+    if (!this.genAI) {
+      const apiKey = geminiApiKey.value() || process.env.GEMINI_API_KEY || '';
+      this.genAI = new GoogleGenerativeAI(apiKey);
+    }
   }
   
   /**
    * Genera una URL de autorización para OAuth2
    */
   public getAuthorizationUrl(userId: string): string {
+    this.ensureInitialized();
+    if (!this.oauth2Client) throw new Error("OAuth client not initialized");
+
     // Codificar el ID del usuario en el estado para recuperarlo en el callback
     const state = Buffer.from(JSON.stringify({ userId })).toString('base64');
     
@@ -108,6 +123,9 @@ export class SlidesIntegration {
    * Maneja el callback de OAuth2 y guarda los tokens
    */
   public async handleOAuthCallback(code: string, state: string): Promise<string> {
+    this.ensureInitialized();
+    if (!this.oauth2Client) throw new Error("OAuth client not initialized");
+
     try {
       // Intercambiar el código por tokens de acceso
       const { tokens } = await this.oauth2Client.getToken(code);
@@ -137,6 +155,9 @@ export class SlidesIntegration {
    * Obtiene un cliente OAuth2 autorizado para un usuario
    */
   private async getAuthorizedClient(userId: string): Promise<OAuth2Client> {
+    this.ensureInitialized();
+    if (!this.oauth2Client) throw new Error("OAuth client not initialized");
+
     try {
       // Obtener tokens de Firestore
       const tokenDoc = await this.db.collection('oauth_tokens').doc(userId).get();
@@ -198,6 +219,12 @@ export class SlidesIntegration {
    * Genera contenido para una presentación usando IA
    */
   private async generatePresentationContent(data: PresentationData): Promise<GeneratedSlide[]> {
+    this.ensureInitialized();
+    if (!this.genAI) {
+        console.warn('Gemini AI no inicializado, usando contenido de respaldo');
+        return this.generateFallbackContent(data);
+    }
+
     try {
       const model = this.genAI.getGenerativeModel({ 
         model: "gemini-pro-latest",

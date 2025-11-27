@@ -197,7 +197,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'taxonomico', name: 'Análisis Taxonómico', icon: ICONS.taxonomico, accent: ACCENTS.taxonomico },
         { id: 'interdisciplinario', name: 'Interdisciplinario', icon: ICONS.interdisciplinario, accent: ACCENTS.interdisciplinario },
         { id: 'registro_inasistencias', name: 'Inasistencias y Reemplazos', icon: ICONS.registro_inasistencias, accent: ACCENTS.registro_inasistencias },
-        { id: 'crear_horarios', name: 'Crear Horarios', icon: <Clock4 className="w-6 h-6" />, accent: ACCENTS.asistencia_dual },
+        { id: 'crear_horarios', name: 'Cargas horarias', icon: <Clock4 className="w-6 h-6" />, accent: ACCENTS.asistencia_dual },
         { id: 'seguimiento_acciones', name: 'Seguimiento de Acciones', icon: ICONS.evaluaciones_formativas, accent: ACCENTS.evaluaciones_formativas },
         { id: 'inclusion', name: 'Inclusión', icon: ICONS.inclusion, accent: ACCENTS.inclusion },
         { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },

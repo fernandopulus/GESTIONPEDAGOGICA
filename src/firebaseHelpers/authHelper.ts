@@ -58,7 +58,7 @@ export const getUserProfile = async (email: string): Promise<User | null> => {
         const userDocSnap = await getDoc(userDocRef);
 
         if (userDocSnap.exists()) {
-            return { id: userDocSnap.id, ...userDocSnap.data() } as User;
+            return { ...userDocSnap.data(), id: userDocSnap.id } as User;
         } else {
             console.warn(`No se encontró perfil en Firestore para: ${email}`);
             return null;

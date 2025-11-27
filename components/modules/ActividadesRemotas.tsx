@@ -49,6 +49,7 @@ import {
   ArrowLeft,
   PlusCircle,
   BarChart2,
+  AlertTriangle, // Added
 } from 'lucide-react';
 
 /* ============================================================
@@ -243,6 +244,9 @@ const ActividadesRemotas: React.FC = () => {
 
   // NUEVO: carpeta/historial por estudiante
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  
+  // Debug Modal
+  const [debugResponse, setDebugResponse] = useState<RespuestaEstudianteActividad | null>(null);
 
   // Revisión docente (Desarrollo)
   const [revisionTarget, setRevisionTarget] = useState<RespuestaEstudianteActividad | null>(null);
@@ -286,12 +290,33 @@ const ActividadesRemotas: React.FC = () => {
   /* ---------------------- Subscriptions ---------------------- */
   useEffect(() => {
     setDataLoading(true);
-    const unsubActividades = subscribeToActividades(setActividades);
+    const unsubActividades = subscribeToActividades((data) => {
+      setActividades(data);
+    });
     const unsubPruebas = subscribeToPruebasEstandarizadas(setPruebasEstandarizadas);
-    const unsubRespuestas = subscribeToRespuestas(setRespuestas);
+    const unsubRespuestas = subscribeToRespuestas((data) => {
+      setRespuestas(data);
+    });
     const unsubUsers = subscribeToAllUsers((users) => {
       setAllUsers(users);
       setDataLoading(false);
+
+      // DEBUG: Diagnóstico de estudiante específico
+      const targetId = 'ONnsyXXiFias5O1SGBOOV24w4Fv1';
+      
+      // 1. Búsqueda profunda por valor
+      const foundByValue = users.find(u => Object.values(u).some(val => String(val).includes(targetId)));
+      
+      if (foundByValue) {
+        console.log('✅ [DEBUG] Estudiante encontrado por valor en propiedad:', foundByValue);
+      } else {
+        console.log('⚠️ [DEBUG] Estudiante NO encontrado por valor en ninguna propiedad.');
+        // 2. Imprimir estructura de muestra para entender qué IDs se están usando
+        if (users.length > 0) {
+          console.log('ℹ️ [DEBUG] Estructura de usuario de muestra (índice 0):', users[0]);
+          console.log('ℹ️ [DEBUG] ID del documento muestra:', users[0].id);
+        }
+      }
     });
     return () => {
       unsubActividades();
@@ -300,6 +325,44 @@ const ActividadesRemotas: React.FC = () => {
       unsubUsers();
     };
   }, []);
+
+    // DEBUG: Monitor de respuestas para el estudiante
+    useEffect(() => {
+      if (respuestas.length > 0) {
+        const targetId = 'ONnsyXXiFias5O1SGBOOV24w4Fv1';
+        // Buscar respuestas con este ID
+        const targetResponses = respuestas.filter(r => 
+          r.estudianteId === targetId || 
+          (r as any).estudianteUID === targetId ||
+          (r as any).uid === targetId
+        );
+        
+        console.log(`🔍 [DEBUG] Respuestas encontradas para ID ${targetId}: ${targetResponses.length}`);
+        
+        if (targetResponses.length > 0) {
+          const sampleResp = targetResponses[0];
+          console.log('📄 [DEBUG] Muestra de respuesta:', sampleResp);
+          
+          // Intentar encontrar al usuario que coincida con esta respuesta
+          if (allUsers.length > 0) {
+             const matchedUser = allUsers.find(u => respuestaMatchesStudent(sampleResp, u));
+             if (matchedUser) {
+               console.log('✅ [DEBUG] Usuario coincidente encontrado:', matchedUser.nombreCompleto, matchedUser.id);
+             } else {
+               console.log('❌ [DEBUG] NO se encontró usuario coincidente para esta respuesta.');
+               console.log('   Email en respuesta:', sampleResp.estudianteEmail);
+               console.log('   Nombre en respuesta:', sampleResp.estudianteNombre);
+               
+               // Buscar por email manualmente
+               if (sampleResp.estudianteEmail) {
+                 const byEmail = allUsers.find(u => equalsFlex(u.email, sampleResp.estudianteEmail));
+                 console.log('   Búsqueda manual por email:', byEmail ? 'ENCONTRADO: ' + byEmail.id : 'NO ENCONTRADO');
+               }
+             }
+          }
+        }
+      }
+    }, [respuestas, allUsers]);
 
   /* ---------------------- Handlers básicos ---------------------- */
   const handleFieldChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -849,6 +912,7 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
     if ((u as any).rut) out.push((u as any).rut);
     if ((u as any).usuarioId) out.push((u as any).usuarioId);
     if ((u as any).idUsuario) out.push((u as any).idUsuario);
+    if ((u as any).legacyId) out.push((u as any).legacyId);
     return out.filter(Boolean);
   };
 
@@ -962,24 +1026,31 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
     const actividad = selectedActividad || selectedPrueba;
     if (!actividad || !allUsers.length) return [];
     const mapa = new Map<string, User>();
-    // Si no hay destinos de ningún tipo, no mostramos nada
-    if (!actividad.cursosDestino?.length && !actividad.estudiantesDestino?.length) {
-      return [];
-    }
-    // Incluir por lista explícita de estudiantes
+
+    // 1. Incluir estudiantes que YA respondieron esta actividad (prioridad para no perder datos)
+    // Esto asegura que si un estudiante cambió de curso o fue desasignado pero ya respondió, siga apareciendo.
+    const respuestasDeEstaActividad = respuestas.filter(r => respuestaMatchesActividad(r, actividad.id));
+    respuestasDeEstaActividad.forEach(r => {
+      const student = allUsers.find(u => respuestaMatchesStudent(r, u));
+      if (student) {
+        mapa.set(student.id, student);
+      }
+    });
+
+    // 2. Incluir por lista explícita de estudiantes
     if (actividad.estudiantesDestino?.length) {
       allUsers
         .filter((u) => u.profile === Profile.ESTUDIANTE && actividad.estudiantesDestino.includes(u.nombreCompleto))
         .forEach((u) => mapa.set(u.id, u));
     }
-    // Incluir por cursos de destino (paridad con vista estudiante)
+    // 3. Incluir por cursos de destino (paridad con vista estudiante)
     if (actividad.cursosDestino?.length) {
       allUsers
         .filter((u) => u.profile === Profile.ESTUDIANTE && !!u.curso && actividad.cursosDestino.includes(u.curso))
         .forEach((u) => mapa.set(u.id, u));
     }
     return Array.from(mapa.values()).sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto));
-  }, [selectedActividad, selectedPrueba, allUsers]);
+  }, [selectedActividad, selectedPrueba, allUsers, respuestas]);
 
   const resultadosDeActividad = useMemo(() => {
     const actividadId = selectedActividad?.id || selectedPrueba?.id;
@@ -1063,6 +1134,27 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
   ============================================================ */
   const renderTabs = () => (
     <div className="flex flex-wrap gap-2 mb-6">
+      {/* Warning Banner for Orphans */}
+      {Object.keys(orphanResponses).length > 0 && (
+        <div className="w-full mb-4 p-3 bg-amber-100 border border-amber-300 rounded-lg flex items-center justify-between text-amber-900 animate-pulse">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="text-amber-600" size={20} />
+            <span className="font-semibold">
+              Atención: Hay {Object.keys(orphanResponses).length} estudiante(s) con respuestas no vinculadas.
+            </span>
+            <span className="text-sm hidden md:inline">
+              Esto puede causar que no veas su progreso.
+            </span>
+          </div>
+          <button 
+            onClick={() => setActiveTab('gestion')}
+            className="px-3 py-1 bg-amber-600 text-white text-sm font-bold rounded hover:bg-amber-700 transition"
+          >
+            Solucionar en Gestión
+          </button>
+        </div>
+      )}
+
       {DEBUG_ACT && (
         <div className="w-full mb-2 px-3 py-2 rounded-lg bg-amber-100 text-amber-900 text-sm">
           Modo diagnóstico activo
@@ -1195,6 +1287,46 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
     });
   }, [trabajos, filtroAsignatura, filtroNivel]);
 
+  // Identificar respuestas huérfanas (sin usuario asociado)
+  const orphanResponses = useMemo(() => {
+    const orphans: Record<string, RespuestaEstudianteActividad[]> = {};
+    respuestas.forEach(r => {
+      const match = allUsers.find(u => respuestaMatchesStudent(r, u));
+      if (!match) {
+        const key = r.estudianteId || (r as any).estudianteUID || (r as any).uid || 'unknown';
+        if (!orphans[key]) orphans[key] = [];
+        orphans[key].push(r);
+      }
+    });
+    return orphans;
+  }, [respuestas, allUsers]);
+
+  const [orphanLinkTarget, setOrphanLinkTarget] = useState<Record<string, string>>({}); // orphanId -> userId
+
+  const handleLinkOrphan = async (orphanId: string) => {
+    const targetUserId = orphanLinkTarget[orphanId];
+    if (!targetUserId) return;
+    
+    try {
+      setIsSaving(true);
+      // Actualizamos el usuario para agregar el ID huérfano como 'usuarioId'
+      await updateUsuarioFields(targetUserId, { usuarioId: orphanId } as any);
+      
+      // Limpiar estado local
+      const newLinks = { ...orphanLinkTarget };
+      delete newLinks[orphanId];
+      setOrphanLinkTarget(newLinks);
+      
+      // Feedback visual simple (podría mejorarse con un toast)
+      alert('Usuario vinculado correctamente. Las respuestas deberían aparecer en breve.');
+    } catch (e) {
+      console.error('Error vinculando usuario:', e);
+      setError('Error al vincular usuario.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const renderGestionView = () => (
     <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
       <div className="flex flex-col md:flex-row md:items-end gap-4 mb-6">
@@ -1217,6 +1349,65 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
           </div>
         </div>
       </div>
+
+      {/* Sección de Reparación de Respuestas Huérfanas */}
+      {Object.keys(orphanResponses).length > 0 && (
+        <div className="mb-8 p-6 bg-amber-50 border border-amber-200 rounded-xl animate-fade-in">
+          <h3 className="text-lg font-bold text-amber-800 mb-2 flex items-center gap-2">
+            <span className="text-xl">⚠️</span> Respuestas sin estudiante asociado
+          </h3>
+          <p className="text-sm text-amber-700 mb-4">
+            Se encontraron respuestas que no coinciden con ningún estudiante de la lista actual. 
+            Esto ocurre cuando el ID interno del estudiante (UID) no coincide con su identificador de documento (Email). 
+            <strong>Vincula manualmente estas respuestas al estudiante correcto para corregir el problema.</strong>
+          </p>
+          
+          <div className="space-y-3">
+            {Object.entries(orphanResponses).map(([orphanId, resps]) => (
+              <div key={orphanId} className="flex flex-col md:flex-row md:items-center gap-4 p-3 bg-white rounded-lg border border-amber-100 shadow-sm">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-mono text-xs text-slate-500 bg-slate-100 inline-block px-1 rounded">ID: {orphanId}</p>
+                    <button 
+                      onClick={() => setDebugResponse(resps[0])}
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      Ver datos crudos
+                    </button>
+                  </div>
+                  <p className="font-semibold text-slate-800 mt-1">{resps.length} respuesta(s) encontrada(s)</p>
+                  <p className="text-xs text-slate-500">
+                    Última actividad: {formatDateTime(resps[0].fechaCompletado)}
+                    {resps[0].estudianteNombre && <span className="ml-2">• Nombre registrado: <strong>{resps[0].estudianteNombre}</strong></span>}
+                    {resps[0].estudianteEmail && <span className="ml-2">• Email registrado: <strong>{resps[0].estudianteEmail}</strong></span>}
+                  </p>
+                </div>
+                
+                <div className="flex items-center gap-2 w-full md:w-auto bg-slate-50 p-2 rounded-lg">
+                  <span className="text-xs font-semibold text-slate-500 mr-1">Es:</span>
+                  <select
+                    className="flex-1 md:w-64 border-slate-300 rounded-md text-sm focus:ring-amber-500 focus:border-amber-500"
+                    value={orphanLinkTarget[orphanId] || ''}
+                    onChange={(e) => setOrphanLinkTarget(prev => ({ ...prev, [orphanId]: e.target.value }))}
+                  >
+                    <option value="">Seleccionar estudiante...</option>
+                    {students.map(s => (
+                      <option key={s.id} value={s.id}>{s.nombreCompleto} ({s.curso || 'S/C'})</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => handleLinkOrphan(orphanId)}
+                    disabled={!orphanLinkTarget[orphanId] || isSaving}
+                    className="px-3 py-2 bg-amber-500 text-white rounded-md text-sm font-semibold hover:bg-amber-600 disabled:bg-slate-300 transition-colors shadow-sm"
+                  >
+                    Vincular
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
@@ -1373,24 +1564,51 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
               {groups[curso].map((s) => {
-                // Avance alineado con Autoaprendizaje: solo actividades remotas, no pruebas
-                // Coincidencias por nombre, email, UID y curso (igual que Autoaprendizaje)
-                const assignedActividadIds = actividades
-                  .filter(a => {
+                // --- CÁLCULO DE PROGRESO ROBUSTO ---
+                // 1. Identificar todas las respuestas del estudiante
+                const allStudentResponses = respuestas.filter(r => respuestaMatchesStudent(r, s));
+
+                // 2. Identificar qué actividades/pruebas corresponden a esas respuestas
+                const completedActivityIds = new Set<string>();
+                const validResponses: RespuestaEstudianteActividad[] = [];
+                
+                allStudentResponses.forEach(r => {
+                    const act = actividades.find(a => respuestaMatchesActividad(r, a.id));
+                    if (act) { 
+                      completedActivityIds.add(act.id); 
+                      validResponses.push(r);
+                      return; 
+                    }
+                    const prueba = pruebasEstandarizadas.find(p => respuestaMatchesActividad(r, p.id));
+                    if (prueba) { 
+                      completedActivityIds.add(prueba.id); 
+                      validResponses.push(r);
+                      return; 
+                    }
+                });
+
+                // 3. Calcular asignadas por regla (Actividades + Pruebas)
+                const assignedByRuleIds = new Set([
+                  ...actividades.filter(a => {
                     const porCurso = (a.cursosDestino || []).some(c => equalsFlex(c, s.curso || ''));
                     const dest = a.estudiantesDestino || [];
                     const porEstudiante = dest.some(d => equalsFlex(d, s.nombreCompleto) || equalsFlex(d, s.email) || equalsFlex(d, s.id));
                     return porCurso || porEstudiante;
-                  })
-                  .map(a => a.id);
+                  }).map(a => a.id),
+                  ...pruebasEstandarizadas.filter(p => {
+                    const porCurso = (p.cursosDestino || []).some(c => equalsFlex(c, s.curso || ''));
+                    const dest = p.estudiantesDestino || [];
+                    const porEstudiante = dest.some(d => equalsFlex(d, s.nombreCompleto) || equalsFlex(d, s.email) || equalsFlex(d, s.id));
+                    return porCurso || porEstudiante;
+                  }).map(p => p.id)
+                ]);
 
-                // Respuestas del estudiante que corresponden a actividades asignadas
-                const entregas = respuestas.filter((r) =>
-                  respuestaMatchesStudent(r, s) && assignedActividadIds.some(id => respuestaMatchesActividad(r, id))
-                );
+                // 4. Unión: Asignadas Efectivas = Asignadas por Regla U Completadas
+                const effectiveAssignedIds = new Set([...assignedByRuleIds, ...completedActivityIds]);
 
-                const completadas = entregas.length;
-                const asignadas = assignedActividadIds.length;
+                const asignadas = effectiveAssignedIds.size;
+                const completadas = completedActivityIds.size;
+                const entregas = validResponses;
 
                 // Porcentaje de avance
                 const avancePct = asignadas > 0 ? Math.round((completadas / asignadas) * 100) : 0;
@@ -1561,7 +1779,7 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
           <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">
             {selectedActividad ? (
               <>
-                <UltraSafeRenderer content={selectedActividad.asignatura} context="actividad-asignatura" /> - {selectedActividad.tipos.join(', ')}
+                <UltraSafeRenderer content={selectedActividad.asignatura} context={`actividad-asignatura`} /> - {selectedActividad.tipos.join(', ')}
               </>
             ) : (
               <UltraSafeRenderer content={selectedPrueba?.titulo || 'Prueba Estandarizada'} context="prueba-titulo" />
@@ -2336,14 +2554,16 @@ IMPORTANTE: Generar un instrumento de evaluación de ALTA CALIDAD que pueda ser 
                 <p className="font-semibold">
                   {p.numero}. <UltraSafeRenderer content={p.pregunta} context={`preview-pregunta-texto-${i}`} />
                 </p>
-                <ul className="list-disc pl-6 text-sm mt-1">
-                  {p.opciones.map((o: string, j: number) => (
-                    <li key={j}>
-                      <UltraSafeRenderer content={o} context={`preview-pregunta-opcion-${i}-${j}`} />
+                <ul className="list-decimal pl-6 text-sm mt-1 space-y-1">
+                  {p.opciones.map((o: string, idx: number) => (
+                    <li key={idx} className="ml-4">
+                      <UltraSafeRenderer content={o} context={`preview-pregunta-opcion-${i}-${idx}`} />
                     </li>
                   ))}
                 </ul>
-                <p className="text-xs text-green-600 font-semibold mt-1">Correcta: {p.respuestaCorrecta}</p>
+                <p className="text-xs text-green-600 font-semibold mt-1">
+                  Respuesta Correcta: <UltraSafeRenderer content={p.respuestaCorrecta} context={`preview-pregunta-respuesta-${i}`} />
+                </p>
               </div>
             ))}
           </div>

@@ -4,7 +4,6 @@ import { Profile } from '../types';
 import { HomeIcon, BellIcon, MessageSquareIcon, MenuIcon } from '../constants';
 import Dropdown from './common/Dropdown';
 import ProfileModal from './modals/ProfileModal';
-import SettingsModal from './modals/SettingsModal';
 
 // 👇 Importa lucide para el ícono PIE
 import { Puzzle } from 'lucide-react';
@@ -59,7 +58,6 @@ const TopBar: React.FC<TopBarProps> = ({
   const [unreadAnnouncements, setUnreadAnnouncements] = useState<Anuncio[]>([]);
   const [recentMessages, setRecentMessages] = useState<MensajeInterno[]>([]);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   // Notificaciones PIE en memoria (ya filtradas)
   const [pieNotifications, setPieNotifications] = useState<NotificacionDocente[]>([]);
@@ -301,7 +299,6 @@ const TopBar: React.FC<TopBarProps> = ({
                 </div>
                 <ul className="mt-2 text-slate-700 dark:text-slate-300">
                   <li><button onClick={() => setIsProfileModalOpen(true)} className="w-full text-left p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-600">Editar Perfil</button></li>
-                  <li><button onClick={() => setIsSettingsModalOpen(true)} className="w-full text-left p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-600">Configuración</button></li>
                   {canChangeProfile && (
                     <li><button onClick={onChangeProfile} className="w-full text-left p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-600">👑 Cambiar Vista</button></li>
                   )}
@@ -317,14 +314,6 @@ const TopBar: React.FC<TopBarProps> = ({
         <ProfileModal
           user={currentUser}
           onClose={() => setIsProfileModalOpen(false)}
-          onSave={onUserUpdate}
-        />
-      )}
-
-      {isSettingsModalOpen && (
-        <SettingsModal
-          user={currentUser}
-          onClose={() => setIsSettingsModalOpen(false)}
           onSave={onUserUpdate}
         />
       )}

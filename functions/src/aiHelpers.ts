@@ -307,17 +307,27 @@ export const callGeminiAI = onCall({
   secrets: [geminiApiKey]
 }, async (request) => {
   isAuthenticated(request);
-  const {prompt, context, module} = request.data;
+  const {prompt, context, module, config} = request.data;
   if (!prompt) {
     throw new HttpsError("invalid-argument", "El prompt es requerido.");
   }
+  
+  // Si el prompt ya contiene instrucciones detalladas, no agregar el sufijo genérico
+  const isDetailedPrompt = prompt.includes("Instrucciones") || prompt.includes("IMPORTANTE");
+  
   const composedPrompt =
     "Contexto del módulo: " + (module || "General") + "\n" +
     (context ? "Información adicional: " + context + "\n" : "") +
     "Prompt del usuario: " + prompt + "\n\n" +
-    "Por favor, proporciona una respuesta útil y educativa.";
+    (isDetailedPrompt ? "" : "Por favor, proporciona una respuesta útil y educativa.");
+    
   try {
-    const { text: aiResponseText, modelUsed } = await callGemini({prompt: composedPrompt});
+    // Pasar la configuración recibida (o defaults) a la función interna
+    const { text: aiResponseText, modelUsed } = await callGemini({
+      prompt: composedPrompt,
+      config: config || { maxOutputTokens: 4096 } // Aumentar default para evitar cortes
+    });
+    
     console.log(
       "IA utilizada en módulo: " +
       module +
