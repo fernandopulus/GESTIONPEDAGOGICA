@@ -12,7 +12,6 @@ import {
   Layers3,
   GraduationCap,
   FlaskConical,
-  ClipboardList,
   LineChart,
   Wrench,
   BriefcaseBusiness,
@@ -27,7 +26,6 @@ import {
   Search,
   ArrowRight,
   Shield,
-  Target,
   FileQuestion,
   Copy
 } from 'lucide-react';
@@ -65,9 +63,7 @@ const ICONS: Record<string, React.ReactNode> = {
   interdisciplinario: <Layers3 className="w-5 h-5" aria-hidden />,
   inclusion: <GraduationCap className="w-5 h-5" aria-hidden />,
   actividades_remotas: <FlaskConical className="w-5 h-5" aria-hidden />,
-  evaluacion_aprendizajes: <ClipboardList className="w-5 h-5" aria-hidden />,
   evaluaciones_formativas: <LineChart className="w-5 h-5" aria-hidden />,
-  evaluacion_competencias: <Target className="w-5 h-5" aria-hidden />,
   simce: <FileQuestion className="w-5 h-5" aria-hidden />,
   mensajeria: <MessageSquare className="w-5 h-5" aria-hidden />,
   seguimiento_dual: <UserCheck className="w-5 h-5" aria-hidden />,
@@ -98,7 +94,6 @@ const ACCENTS: Record<string, string> = {
   inclusion: 'from-green-500/20 to-emerald-500/10',
   actividades_remotas: 'from-orange-500/20 to-amber-500/10',
   simce: 'from-purple-500/20 to-violet-500/10',
-  evaluacion_aprendizajes: 'from-purple-500/20 to-indigo-500/10',
   evaluaciones_formativas: 'from-cyan-500/20 to-sky-500/10',
   mensajeria: 'from-teal-500/20 to-emerald-500/10',
   seguimiento_dual: 'from-lime-500/20 to-green-500/10',
@@ -161,9 +156,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'inclusion', name: 'Inclusión', icon: ICONS.inclusion, accent: ACCENTS.inclusion },
         { id: 'actividades_remotas', name: 'Actividades Remotas', icon: ICONS.actividades_remotas, accent: ACCENTS.actividades_remotas },
         { id: 'documentacion', name: 'Documentación', icon: ICONS.documentacion, accent: ACCENTS.documentacion },
-        { id: 'evaluacion_aprendizajes', name: 'Evaluación de Aprendizajes', icon: ICONS.evaluacion_aprendizajes, accent: ACCENTS.evaluacion_aprendizajes },
         { id: 'evaluaciones_formativas', name: 'Evaluaciones Formativas', icon: ICONS.evaluaciones_formativas, accent: ACCENTS.evaluaciones_formativas },
-        { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
         { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
         { id: 'desarrollo_profesional', name: 'Desarrollo Profesional', icon: ICONS.desarrollo_profesional, accent: ACCENTS.desarrollo_profesional },
         ...commonModules,
@@ -180,7 +173,6 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'desarrollo_profesional', name: 'Desarrollo Profesional', icon: ICONS.desarrollo_profesional, accent: ACCENTS.desarrollo_profesional },
         { id: 'evaluacion_ensayo', name: 'Evaluación de Ensayo', icon: ICONS.evaluacion_ensayo, accent: ACCENTS.evaluacion_ensayo },
         { id: 'documentacion', name: 'Documentación', icon: ICONS.documentacion, accent: ACCENTS.documentacion },
-        { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
         { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
         ...commonModules,
         { id: 'multicopias', name: 'Multicopias', icon: ICONS.multicopias, accent: ACCENTS.multicopias },
@@ -200,7 +192,6 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'crear_horarios', name: 'Cargas horarias', icon: <Clock4 className="w-6 h-6" />, accent: ACCENTS.asistencia_dual },
         { id: 'seguimiento_acciones', name: 'Seguimiento de Acciones', icon: ICONS.evaluaciones_formativas, accent: ACCENTS.evaluaciones_formativas },
         { id: 'inclusion', name: 'Inclusión', icon: ICONS.inclusion, accent: ACCENTS.inclusion },
-        { id: 'evaluacion_competencias', name: 'Evaluación por Competencias', icon: ICONS.evaluacion_competencias, accent: ACCENTS.evaluacion_aprendizajes },
         { id: 'documentacion', name: 'Documentación', icon: ICONS.documentacion, accent: ACCENTS.documentacion },
         { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
         ...commonModules,
@@ -348,11 +339,9 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
       {
         id: 'grp_evaluacion',
         title: 'Evaluación',
-        icon: ICONS.evaluacion_aprendizajes,
+        icon: ICONS.evaluaciones_formativas,
         modules: [
-          pick('evaluacion_aprendizajes', 'Evaluación de Aprendizajes'),
           pick('evaluaciones_formativas', 'Evaluaciones Formativas'),
-          pick('evaluacion_competencias', 'Evaluación de Competencias'),
           pick('actividades_remotas', 'Actividades Remotas'),
           pick('simce', 'SIMCE'),
         ].filter(Boolean) as Module[],
@@ -546,7 +535,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
               {/* Acceso a vista completa/otros (opcional) */}
               {currentUser.profile === Profile.PROFESORADO && filtered.some((m) => ![
                 'planificacion','recursos','interdisciplinario','inclusion',
-                'evaluacion_aprendizajes','evaluaciones_formativas','evaluacion_competencias','actividades_remotas','simce',
+                'evaluaciones_formativas','actividades_remotas','simce',
                 'taxonomico','acompañamientos','desarrollo_profesional',
                 'actas',
               ].includes(m.id)) && (

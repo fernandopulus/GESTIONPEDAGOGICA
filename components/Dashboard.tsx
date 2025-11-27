@@ -12,7 +12,6 @@ import SeguimientoAcciones from './modules/SeguimientoAcciones';
 import PlanificacionDocente from './modules/PlanificacionDocente';
 import CalendarioAcademico from './modules/CalendarioAcademico';
  
-import EvaluacionAprendizajes from './modules/EvaluacionAprendizajes';
 import Administracion from './modules/Administracion';
 import SeguimientoDual from './modules/SeguimientoDual';
 import ActividadesRemotas from './modules/ActividadesRemotas';
@@ -33,7 +32,6 @@ import AnalisisTaxonomico from '../components/modules/AnalisisTaxonomico';
 import GestionEmpresas from '../components/modules/GestionEmpresas';
 import DesarrolloProfesionalDocente from '../components/modules/DesarrolloProfesionalDocente';
 import AlternanciaTP from './modules/AlternanciaTP';
-import EvaluacionCompetencias from './modules/EvaluacionCompetencias';
 import SimceFixed from './modules/SimceFixed';
 import Multicopias from './modules/Multicopias';
 import EvaluacionEnsayo from './modules/EvaluacionEnsayo';
@@ -196,7 +194,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               {
                 id: 'evaluacion',
                 title: 'Evaluación',
-                items: ['Evaluación de Ensayo', 'Evaluación de Aprendizajes', 'Evaluaciones Formativas', 'Evaluación de Competencias', 'Actividades Remotas', 'SIMCE'],
+                items: ['Evaluación de Ensayo', 'Evaluaciones Formativas', 'Actividades Remotas', 'SIMCE'],
               },
               {
                 id: 'reflexion',
@@ -253,7 +251,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             {/* Otros módulos que no estén en los grupos definidos */}
             {modules.filter((m) => ![
               'Intranet','Planificación','Recursos de Aprendizaje','Interdisciplinario','Inclusión',
-              'Evaluación de Aprendizajes','Evaluaciones Formativas','Evaluación de Competencias','Actividades Remotas','SIMCE',
+              'Evaluaciones Formativas','Actividades Remotas','SIMCE',
               'Análisis Taxonómico','Mis Acompañamientos','Desarrollo Profesional',
               
             ].includes(m.name)).length > 0 && (
@@ -263,7 +261,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                   {modules
                     .filter((m) => ![
                       'Intranet','Planificación','Recursos de Aprendizaje','Interdisciplinario','Inclusión',
-                      'Evaluación de Aprendizajes','Evaluaciones Formativas','Evaluación de Competencias','Actividades Remotas','SIMCE',
+                      'Evaluaciones Formativas','Actividades Remotas','SIMCE',
                       'Análisis Taxonómico','Mis Acompañamientos','Desarrollo Profesional',
                       
                     ].includes(m.name))
@@ -575,9 +573,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (activeModule.name === 'Inclusión') return <Inclusion currentUser={currentUser} />;
       if (activeModule.name === 'Actividades Remotas') return <ActividadesRemotas />;
   if (activeModule.name === 'Evaluación de Ensayo') return <EvaluacionEnsayo currentUser={currentUser} />;
-  if (activeModule.name === 'Evaluación de Aprendizajes') return <EvaluacionAprendizajes />;
       if (activeModule.name === 'Evaluaciones Formativas') return <EvaluacionesFormativas currentUser={currentUser} />;
-      if (activeModule.name === 'Evaluación de Competencias') return <EvaluacionCompetencias currentUser={currentUser} />;
     }
 
     if (profile === Profile.COORDINACION_TP) {

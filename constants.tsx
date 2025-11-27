@@ -8,13 +8,6 @@ import React from 'react';
 import { Wrench, Cog as CogLucide } from 'lucide-react';
 import { Profile, Module, NivelPlanificacion, EstadoAccion, EventType, EvaluacionSubtype, TipoReunion, TipoInstrumento, EscalaCalificacion, PruebaItemTipo, NivelLogro, EstadoSeguimientoDual, TipoActividadRemota, DificultadAprendizaje, Insignia } from './types';
 
-// Ícono para evaluación de competencias
-export const TargetIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={iconClass} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 3.75H6A2.25 2.25 0 003.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0120.25 6v1.5m0 9V18A2.25 2.25 0 0118 20.25h-1.5m-9 0H6A2.25 2.25 0 013.75 18v-1.5M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-);
-
 // --- Estilos base ---
 // --- Listas de asignaturas y niveles ---
 // Tamaños base más contenidos para evitar íconos desproporcionados
@@ -147,10 +140,8 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Multicopias', icon: <ClipboardListIcon /> },
         { name: 'Actividades Remotas', icon: <BeakerIcon /> },
         { name: 'Evaluación de Ensayo', icon: <DocumentTextIcon /> },
-        { name: 'Evaluación de Aprendizajes', icon: <DocumentTextIcon /> },
         { name: 'Evaluaciones Formativas', icon: <TrendingUpIcon /> },
         { name: 'Desarrollo Profesional', icon: <AcademicCapIcon /> },
-        { name: 'Evaluación de Competencias', icon: <TargetIcon /> },
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
         
     ],

@@ -13,7 +13,6 @@ import SeguimientoAcciones from './components/modules/SeguimientoAcciones';
 import PlanificacionDocente from './components/modules/PlanificacionDocente';
 import CalendarioAcademico from './components/modules/CalendarioAcademico';
  
-import EvaluacionAprendizajes from './components/modules/EvaluacionAprendizajes';
 import Administracion from './components/modules/Administracion';
 import MaterialesDidacticosSubmodule from './components/modules/MaterialesDidacticosSubmodule';
 import SeguimientoDual from './components/modules/SeguimientoDual';
@@ -33,7 +32,6 @@ import AcompanamientoDocenteProfesor from './components/modules/AcompanamientoDo
 import SeguimientoCurricular from './components/modules/SeguimientoCurricular';
 import AnalisisTaxonomico from './components/modules/AnalisisTaxonomico';
 import DesarrolloProfesionalDocente from './components/modules/DesarrolloProfesionalDocente';
-import EvaluacionCompetencias from './components/modules/EvaluacionCompetencias';
 import SimceFixed from './components/modules/SimceFixed';
 
 interface DashboardProps {
@@ -178,17 +176,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onLogout, onUserUpda
             if (activeModule.name === 'Interdisciplinario') return <Interdisciplinario />;
             if (activeModule.name === 'Inclusión') return <Inclusion currentUser={currentUser} />;
             if (activeModule.name === 'Actividades Remotas') return <ActividadesRemotas />;
-            if (activeModule.name === 'Evaluación de Aprendizajes') return <EvaluacionAprendizajes />;
             if (activeModule.name === 'Evaluaciones Formativas') return <EvaluacionesFormativas currentUser={currentUser} />;
-            if (activeModule.name === 'Evaluación de Competencias') {
-                const user = {
-                    id: currentUser.id,
-                    displayName: currentUser.nombreCompleto,
-                    role: currentUser.profile === Profile.PROFESORADO ? 'Docente' : 'Directivo',
-                    curso: currentUser.curso
-                };
-                return <EvaluacionCompetencias currentUser={user} />;
-            }
             if (activeModule.name === 'SIMCE') {
                 return <SimceFixed currentUser={currentUser} />;
             }
