@@ -15,8 +15,7 @@ import { saveEvaluacionEmpresa, subscribeEvaluacionesEmpresa } from '../../src/f
 import GooglePlacesAutocomplete from 'react-google-places-autocomplete';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import html2canvas from 'html2canvas';
+import autoTable, { UserOptions } from 'jspdf-autotable';
 import { Building, Hash, MapPin, User as UserIcon, Mail, Briefcase, Users, Star, LayoutDashboard } from 'lucide-react';
 import { CURSOS_DUAL } from '../../constants';
 import { useAuth } from '../../src/hooks/useAuth';
@@ -1359,196 +1358,6 @@ const GestionEmpresas: React.FC = () => {
         }
     };
 
-    // --- Utilidades para mapa estático en PDF ---
-    const encodePolyline = (points: { lat: number; lng: number }[]) => {
-        // Implementación mínima del algoritmo de Google Polyline Encoding
-        let lastLat = 0, lastLng = 0;
-        const result: string[] = [];
-        const encode = (num: number) => {
-            let v = num < 0 ? ~(num << 1) : (num << 1);
-            while (v >= 0x20) {
-                result.push(String.fromCharCode((0x20 | (v & 0x1f)) + 63));
-                v >>= 5;
-            }
-            result.push(String.fromCharCode(v + 63));
-        };
-        for (const p of points) {
-            const lat = Math.round(p.lat * 1e5);
-            const lng = Math.round(p.lng * 1e5);
-            encode(lat - lastLat);
-            encode(lng - lastLng);
-            lastLat = lat;
-            lastLng = lng;
-        }
-        return result.join('');
-    };
-
-    const getOverviewPoints = (route: google.maps.DirectionsResult): { lat: number; lng: number }[] | null => {
-        try {
-            const r: any = route?.routes?.[0];
-            if (!r) return null;
-            let pts: { lat: number; lng: number }[] = [];
-            if (r.overview_path && Array.isArray(r.overview_path) && r.overview_path.length) {
-                pts = r.overview_path.map((ll: any) => ({ lat: ll.lat(), lng: ll.lng() }));
-            } else if (r.overview_polyline && typeof r.overview_polyline.getPath === 'function') {
-                const arr = r.overview_polyline.getPath().getArray();
-                pts = arr.map((ll: any) => ({ lat: ll.lat(), lng: ll.lng() }));
-            } else {
-                return null;
-            }
-            // Reducir puntos para evitar URLs demasiado largas y para vector map
-            if (pts.length > 200) {
-                const step = Math.ceil(pts.length / 200);
-                const sampled: { lat: number; lng: number }[] = [];
-                for (let i = 0; i < pts.length; i += step) sampled.push(pts[i]);
-                if (sampled[sampled.length - 1] !== pts[pts.length - 1]) sampled.push(pts[pts.length - 1]);
-                pts = sampled;
-            }
-            return pts;
-        } catch {
-            return null;
-        }
-    };
-
-    const buildStaticMapUrl = (route: google.maps.DirectionsResult): string | null => {
-        try {
-            let pts = getOverviewPoints(route);
-            if (!pts) return null;
-            const enc = encodePolyline(pts);
-            const url = new URL('https://maps.googleapis.com/maps/api/staticmap');
-            // Tamaño soportado (Static Maps): 640x640 con scale=2 para mayor nitidez
-            url.searchParams.set('size', '640x640');
-            url.searchParams.set('scale', '2');
-            url.searchParams.set('maptype', 'roadmap');
-            url.searchParams.set('region', 'CL');
-            // Ruta
-            url.searchParams.append('path', `color:0x1e3a8aff|weight:4|enc:${enc}`);
-            // Marcadores: inicio y paradas (máximo 9 con etiquetas)
-            if (startPointCoords) {
-                url.searchParams.append('markers', `color:green|label:S|${startPointCoords.lat},${startPointCoords.lng}`);
-            }
-            // Reducimos la cantidad de marcadores para acortar la URL
-            selectedRouteCompanies.slice(0, 5).forEach((e, idx) => {
-                if (e.coordenadas?.lat && e.coordenadas?.lng) {
-                    const label = String((idx + 1) % 10); // 1..9, 0 si 10
-                    url.searchParams.append('markers', `color:red|label:${label}|${e.coordenadas.lat},${e.coordenadas.lng}`);
-                }
-            });
-            url.searchParams.set('key', apiKey);
-            return url.toString();
-        } catch {
-            return null;
-        }
-    };
-
-    // Dibuja un "mapa vectorial" simple si falla Static Maps (sin tiles, pero con la ruta y marcadores)
-    const drawVectorRoute = (
-        pdf: jsPDF,
-        x: number,
-        y: number,
-        side: number,
-        points: { lat: number; lng: number }[],
-        start?: { lat: number; lng: number } | null,
-        stops?: { lat: number; lng: number }[]
-    ) => {
-        if (!points || points.length < 2) return false;
-        const lats = points.map(p => p.lat);
-        const lngs = points.map(p => p.lng);
-        const minLat = Math.min(...lats);
-        const maxLat = Math.max(...lats);
-        const minLng = Math.min(...lngs);
-        const maxLng = Math.max(...lngs);
-        const pad = 3; // mm de padding interno
-        const w = side - pad * 2;
-        const h = side - pad * 2;
-        const dLng = (maxLng - minLng) || 1e-6;
-        const dLat = (maxLat - minLat) || 1e-6;
-        // Mantener aspecto: usar el mayor de ambos para escalar a cuadrado
-        const scale = Math.min(w / dLng, h / dLat);
-        const cx = x + pad;
-        const cy = y + pad;
-
-        // Marco
-        pdf.setDrawColor(200);
-        pdf.setFillColor(255, 255, 255);
-        pdf.rect(x, y, side, side, 'FD');
-
-        // Ruta
-        pdf.setDrawColor(30, 58, 138); // azul oscuro
-        pdf.setLineWidth(0.6);
-        for (let i = 1; i < points.length; i++) {
-            const p0 = points[i - 1];
-            const p1 = points[i];
-            const px0 = cx + (p0.lng - minLng) * scale;
-            const py0 = cy + (maxLat - p0.lat) * scale; // invertir Y
-            const px1 = cx + (p1.lng - minLng) * scale;
-                       const py1 = cy + (maxLat - p1.lat) * scale;
-            pdf.line(px0, py0, px1, py1);
-        }
-
-        // Marcadores
-        const drawCircle = (px: number, py: number, r: number, color: [number, number, number]) => {
-            pdf.setFillColor(...color);
-            pdf.circle(px, py, r, 'F');
-        };
-        if (start) {
-            const sx = cx + (start.lng - minLng) * scale;
-            const sy = cy + (maxLat - start.lat) * scale;
-            drawCircle(sx, sy, 1.6, [34, 197, 94]); // verde
-        }
-        if (stops && stops.length) {
-            stops.slice(0, 5).forEach(st => {
-                const sx = cx + (st.lng - minLng) * scale;
-                const sy = cy + (maxLat - st.lat) * scale;
-                drawCircle(sx, sy, 1.4, [239, 68, 68]); // rojo
-            });
-        }
-
-        return true;
-    };
-
-    // Descarga de imagen via backend builder (usa API Key de servidor)
-    const fetchStaticMapFromServer = async (enc: string, start?: {lat:number;lng:number}|null, stops?: {lat:number;lng:number}[]): Promise<string> => {
-        const res = await fetch('/api/staticMapBuild', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enc, size: '640x640', scale: 2, maptype: 'roadmap', region: 'CL', start, stops: (stops||[]).slice(0,8) })
-        });
-        if (!res.ok) throw new Error(`staticMapBuild HTTP ${res.status}`);
-        const blob = await res.blob();
-        return await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(String(reader.result));
-            reader.onerror = reject;
-                       reader.readAsDataURL(blob);
-        });
-    };
-
-    const fetchStaticMapBuilt = async (route: google.maps.DirectionsResult): Promise<string> => {
-        const pts = getOverviewPoints(route) || [];
-        const enc = encodePolyline(pts);
-        const body = {
-            pathEnc: enc,
-            start: startPointCoords,
-            stops: selectedRouteCompanies.filter(e => e.coordenadas).map(e => e.coordenadas),
-            size: 640,
-            maptype: 'roadmap'
-        };
-        const res = await fetch('/api/staticMapBuild', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-        if (!res.ok) throw new Error(`staticMapBuild HTTP ${res.status}`);
-        const blob = await res.blob();
-        return await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(String(reader.result));
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-    };
-
     // Utilidad: traer imagen remota como dataURL (para encabezado gráfico)
     const fetchImageAsDataURL = async (url: string): Promise<string> => {
         const res = await fetch(url);
@@ -1562,391 +1371,192 @@ const GestionEmpresas: React.FC = () => {
         });
     };
 
-    // Medir dimensiones de una imagen (dataURL) para respetar proporción
-    const getImageNaturalSize = (dataUrl: string): Promise<{ w: number; h: number }> => {
-        return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => resolve({ w: img.naturalWidth || img.width, h: img.naturalHeight || img.height });
-            img.onerror = reject;
-            img.src = dataUrl;
-        });
-    };
-
     const handleExportPDF = async () => {
         if (!calculatedRoute) {
             alert('Falta información para generar el PDF. Primero visualiza la ruta.');
             return;
         }
 
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-    const margin = 10; // 1 cm
-    const contentWidth = pdfWidth - margin * 2;
-    const sectionGap = 10; // espacio vertical fijo entre secciones (1 cm)
-
-        // Encabezado con imagen (banner): 1.5 cm de alto, ancho ajustado al ancho de página útil (dentro de márgenes)
-        let yCursor = margin;
-        const drawTitleAndSubtitle = () => {
-            // Título y subtítulo bajo el banner
-            if (yCursor + 6 > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(14);
-            const title = `Ruta de Supervisión: ${routeName || 'Sin nombre'}`;
-            pdf.text(title, margin, yCursor + 6);
-            yCursor += 9;
-            // Subtítulo (fecha, modo, supervisor)
-            const d = new Date();
-            const dd = String(d.getDate()).padStart(2, '0');
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const yyyy = d.getFullYear();
-            const fechaTxt = `Fecha: ${dd}-${mm}-${yyyy}`;
-            const modoTxt = `Modo: ${travelMode === 'DRIVING' ? 'Automóvil' : 'Transporte Público'}`;
-            const supervisorTxt = routeSupervisor?.nombreCompleto ? `Supervisor: ${routeSupervisor.nombreCompleto}` : '';
-            const subtitle = [fechaTxt, modoTxt, supervisorTxt].filter(Boolean).join('  •  ');
-            pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(10);
-            pdf.setTextColor(100, 116, 139);
-            const subLines = pdf.splitTextToSize(subtitle, contentWidth);
-            for (const ln of subLines) {
-                if (yCursor + 5 > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
-                pdf.text(ln, margin, yCursor);
-                yCursor += 5;
-            }
-            pdf.setTextColor(0, 0, 0);
-            yCursor += 4;
-        };
-
-        try {
-            const bannerUrl = 'https://res.cloudinary.com/dwncmu1wu/image/upload/v1756260600/Captura_de_pantalla_2025-08-26_a_la_s_10.09.17_p._m._aakgkt.png';
-            const dataUrl = await fetchImageAsDataURL(bannerUrl);
-            // Altura fija 15 mm y ancho al ancho de contenido (página dentro de márgenes)
-            const targetH = 15;
-            const targetW = contentWidth;
-            pdf.addImage(dataUrl, 'PNG', margin, yCursor, targetW, targetH);
-            yCursor += targetH + 4;
-            drawTitleAndSubtitle();
-        } catch (e) {
-            // Si falla el banner, dibujar solo títulos manteniendo espaciado
-            yCursor += 4;
-            drawTitleAndSubtitle();
-        }
-        // Asegurar 1 cm de separación después del encabezado (título/subtítulo ya añade 4 mm)
-        yCursor += Math.max(0, sectionGap - 4);
-
-        // Mapa: Static Maps primero, luego fallback a captura, luego placeholder (cuadrado 4:4)
-        const mapElement = document.getElementById('map-container-for-pdf');
-        const mapSide = Math.min(contentWidth, 120); // lado del cuadrado en mm
-        let mapAdded = false;
-        // 1) Intento con builder de backend (server key)
-        try {
-            const dataUrl = await fetchStaticMapBuilt(calculatedRoute);
-            if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
-            pdf.addImage(dataUrl, 'PNG', margin, yCursor, mapSide, mapSide);
-            yCursor += mapSide + sectionGap;
-            mapAdded = true;
-        } catch {}
-        // 2) Fallback a proxy de URL (si builder falla)
-        if (!mapAdded) {
-            try {
-                const pts = getOverviewPoints(calculatedRoute);
-                if (pts && pts.length >= 2) {
-                    const enc = encodePolyline(pts);
-                    const stops = selectedRouteCompanies.filter(e => e.coordenadas).map(e => e.coordenadas!)
-                    const dataUrl = await fetchStaticMapFromServer(enc, startPointCoords || undefined, stops);
-                    if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
-                    pdf.addImage(dataUrl, 'PNG', margin, yCursor, mapSide, mapSide);
-                    yCursor += mapSide + sectionGap;
-                    mapAdded = true;
-                }
-            } catch {}
-        }
-        if (!mapAdded && mapElement) {
-            try {
-                const mapCanvas = await html2canvas(mapElement as HTMLElement, { useCORS: true, allowTaint: true, backgroundColor: '#ffffff', scale: 2 });
-                const mapImgData = mapCanvas.toDataURL('image/png');
-                if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
-                pdf.addImage(mapImgData, 'PNG', margin, yCursor, mapSide, mapSide);
-                yCursor += mapSide + sectionGap;
-                mapAdded = true;
-            } catch {}
-        }
-        if (!mapAdded) {
-            // Intento final: dibujar una representación vectorial de la ruta (sin tiles)
-            const pts = getOverviewPoints(calculatedRoute) || [];
-            if (pts.length >= 2) {
-                if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
-                const success = drawVectorRoute(
-                    pdf,
-                    margin,
-                    yCursor,
-                    mapSide,
-                    pts,
-                    startPointCoords,
-                    selectedRouteCompanies.filter(e => e.coordenadas).map(e => e.coordenadas!)
-                );
-                if (success) {
-                    yCursor += mapSide + sectionGap;
-                    mapAdded = true;
-                }
-            }
-        }
-        if (!mapAdded) {
-            // Como último recurso, placeholder neutro
-            pdf.setDrawColor(200);
-            pdf.setFillColor(245, 245, 245);
-            if (yCursor + mapSide > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
-            pdf.rect(margin, yCursor, mapSide, mapSide, 'FD');
-            pdf.setTextColor(120);
-            pdf.setFontSize(11);
-            pdf.text('Mapa no disponible para captura. (Se omitió en el PDF)', margin + mapSide / 2, yCursor + mapSide / 2, { align: 'center' });
-            pdf.setTextColor(0);
-            yCursor += mapSide + sectionGap;
-        }
-
-        // Detalles renderizados como texto envuelto (alineación izquierda)
-        const lineH = 6;
-        const addSectionTitle = (title: string) => {
-            if (yCursor + lineH > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
-            pdf.setFontSize(12);
-            pdf.setFont('helvetica', 'bold');
-            pdf.text(title, margin, yCursor);
-            pdf.setFont('helvetica', 'normal');
-            yCursor += lineH;
-        };
-    addSectionTitle('Detalles de la Ruta');
-        pdf.setFontSize(10);
-        const legs = calculatedRoute.routes[0].legs || [];
+        const legs = calculatedRoute.routes[0]?.legs || [];
         const travelDurationSec = legs.reduce((acc, leg) => acc + (leg.duration?.value || 0), 0);
-        const numberOfStops = legs.length > 1 ? legs.length - 1 : 0;
+        const numberOfStops = Math.max(0, legs.length - 1);
         const tiempoPorParada = travelMode === 'TRANSIT' ? 45 : 30;
         const stopDurationSec = numberOfStops * tiempoPorParada * 60;
         const totalDurationSec = travelDurationSec + stopDurationSec;
         const totalDistanceM = legs.reduce((acc, leg) => acc + (leg.distance?.value || 0), 0);
-        const PRECIO_BENCINA_POR_LITRO = 1300;
-        const CONSUMO_PROMEDIO_KM_POR_LITRO = 12;
-        const costoBencina = travelMode === 'DRIVING' ? ((totalDistanceM / 1000) / CONSUMO_PROMEDIO_KM_POR_LITRO) * PRECIO_BENCINA_POR_LITRO : 0;
-
-        // Cuadrícula de métricas (5 "cards")
-        const metrics = [
-            { label: 'Tiempo de viaje', value: `${Math.round(travelDurationSec / 60)} min` },
-            { label: 'Tiempo en paradas', value: `${Math.round(stopDurationSec / 60)} min` },
-            { label: 'Duración total', value: `${Math.round(totalDurationSec / 60)} min` },
-            { label: 'Distancia total', value: `${(totalDistanceM / 1000).toFixed(1)} km` },
-            { label: 'Costo estimado', value: travelMode === 'DRIVING' ? `$${Math.round(costoBencina).toLocaleString('es-CL')}` : '—' },
-        ];
-        const cardsPerRow = 5;
-        const gap = 4;
-        const cardW = (contentWidth - gap * (cardsPerRow - 1)) / cardsPerRow;
-        const cardH = 16;
-        let cardX = margin;
-        let cardY = yCursor + 2;
-        for (let i = 0; i < metrics.length; i++) {
-            if (cardY + cardH > pdfHeight - margin) {
-                pdf.addPage();
-                cardY = margin;
-                cardX = margin;
-            }
-            // Fondo y borde de la tarjeta
-            pdf.setFillColor(248, 250, 252); // slate-50
-            pdf.setDrawColor(226, 232, 240); // slate-200
-            pdf.rect(cardX, cardY, cardW, cardH, 'FD');
-
-            // Etiqueta
-            pdf.setTextColor(100, 116, 139); // slate-500
-            pdf.setFontSize(8);
-            pdf.setFont('helvetica', 'normal');
-            pdf.text(metrics[i].label, cardX + 2, cardY + 4);
-
-            // Valor
-            pdf.setTextColor(0, 0, 0);
-            pdf.setFontSize(11);
-            pdf.setFont('helvetica', 'bold');
-            pdf.text(String(metrics[i].value), cardX + 2, cardY + cardH - 5);
-
-            // Avance de grilla
-            if ((i + 1) % cardsPerRow === 0) {
-                cardX = margin;
-                cardY += cardH + 2;
-            } else {
-                cardX += cardW + gap;
-            }
-        }
-    yCursor = cardY + (metrics.length % cardsPerRow === 0 ? 0 : cardH) + sectionGap;
-
-        // Tramos como "cards" (2 columnas), respetando márgenes y evitando interletrado raro
-        const tramoCols = 2;
-        const tramoGap = 4;
-        const tramoCardW = (contentWidth - tramoGap * (tramoCols - 1)) / tramoCols;
-        const innerPad = 2;
-        const labelH = 5;
-        const valueLH = 4.0; // interlineado normal
-
-        // Asegurar fuente antes de medir para consistencia
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(10);
-
-        let colIndex = 0;
-        let rowMaxH = 0;
-        let rowStartY = yCursor;
-
-        for (let i = 0; i < legs.length; i++) {
-            const leg = legs[i];
-            const x = margin + colIndex * (tramoCardW + tramoGap);
-            const origen = (leg.start_address || '').split(',')[0];
-            const destino = (leg.end_address || '').split(',')[0];
-            // Evitar caracteres fuera de WinAnsi para built-in fonts
-            const detalle = `${origen} -> ${destino}\n${leg.duration?.text || ''} • ${leg.distance?.text || ''}`;
-            const valueMaxWidth = tramoCardW - innerPad * 2;
-            const valueLines = pdf.splitTextToSize(detalle, valueMaxWidth);
-            const valueH = valueLines.length * valueLH;
-            const contentH = labelH + 2 + valueH + 2;
-            const minH = 18;
-            const h = Math.max(minH, contentH);
-
-            // Salto de página si esta tarjeta no cabe en la página actual
-            if (rowStartY + h > pdfHeight - margin) {
-                pdf.addPage();
-                rowStartY = margin;
-                yCursor = margin;
-                colIndex = 0;
-                rowMaxH = 0;
-            }
-
-            // Fondo y borde
-            pdf.setFillColor(248, 250, 252); // slate-50
-            pdf.setDrawColor(226, 232, 240); // slate-200
-            pdf.rect(x, rowStartY, tramoCardW, h, 'FD');
-            // Etiqueta
-            pdf.setTextColor(100, 116, 139); // slate-500
-            pdf.setFontSize(8);
-            pdf.text(`Tramo ${i + 1}`, x + innerPad, rowStartY + 4);
-            // Valor
-            pdf.setTextColor(0, 0, 0);
-            pdf.setFontSize(10);
-            pdf.setFont('helvetica', 'normal');
-            let yy = rowStartY + 4 + 2; // debajo de la etiqueta
-            for (const ln of valueLines) {
-                pdf.text(ln, x + innerPad, yy + 5);
-                yy += valueLH;
-            }
-
-            rowMaxH = Math.max(rowMaxH, h);
-            colIndex++;
-            if (colIndex === tramoCols) {
-                // Pasar a la siguiente fila
-                rowStartY += rowMaxH + 3;
-                yCursor = rowStartY;
-                rowMaxH = 0;
-                colIndex = 0;
-            }
-        }
-        if (colIndex !== 0) {
-            // Pasar a la siguiente fila
-            yCursor += rowMaxH;
-        }
-
-        // Estudiantes por empresa seleccionada
-        const addBodyText = (txt: string, x: number, maxWidth: number, fontSize = 10) => {
-            pdf.setFontSize(fontSize);
-            const lines = pdf.splitTextToSize(txt, maxWidth);
-            for (const ln of lines) {
-                if (yCursor + 4 > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
-                pdf.text(ln, x, yCursor);
-                yCursor += 4;
-            }
-        };
-
-    addSectionTitle('Estudiantes por empresa');
-        pdf.setFont('helvetica', 'normal');
-        const maxW = contentWidth;
+        const totalDistanceKm = totalDistanceM / 1000;
+        const travelDurationMin = Math.round(travelDurationSec / 60);
+        const stopDurationMin = Math.round(stopDurationSec / 60);
+        const totalDurationMin = Math.round(totalDurationSec / 60);
+        const fecha = new Date();
+        const fechaTxt = fecha.toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' });
+        const startLabel = startPoint?.label || '—';
+        const supervisorNombre = routeSupervisor?.nombreCompleto || '—';
+        const viajeLabel = travelMode === 'DRIVING' ? 'Automóvil' : 'Transporte Público';
         const empresasForStudents = selectedRouteCompanies.map(e => getEmpresaCompleta(e) as Empresa);
-        for (const emp of empresasForStudents) {
-            if (yCursor + 8 > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
-            // Nombre empresa
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(10);
-            const empName = emp?.nombre || 'Empresa';
-            pdf.text(empName, margin, yCursor);
-            yCursor += 5;
-            pdf.setFont('helvetica', 'normal');
-            const alumnosIds = emp?.estudiantesAsignados || [];
-            if (alumnosIds.length === 0) {
-                addBodyText('• Sin estudiantes asignados', margin, maxW, 10);
-            } else {
-                const alumnos = alumnosIds
-                    .map((id: string) => estudiantesMap.get(id))
-                    .filter(Boolean) as User[];
-                for (const a of alumnos) {
-                    const line = `• ${a.nombreCompleto}${a.curso ? ` (${a.curso})` : ''}`;
-                    addBodyText(line, margin, maxW, 10);
-                }
-            }
-            yCursor += 2;
+        const totalEstudiantes = empresasForStudents.reduce((acc, emp) => acc + ((emp?.estudiantesAsignados || []).length), 0);
+
+        let logoLeftData: string | null = null;
+        let logoRightData: string | null = null;
+        try {
+            const [left, right] = await Promise.all([
+                fetchImageAsDataURL('https://res.cloudinary.com/dwncmu1wu/image/upload/v1764096456/Captura_de_pantalla_2025-11-25_a_la_s_3.47.16_p._m._p7m2xy.png'),
+                fetchImageAsDataURL('https://res.cloudinary.com/dwncmu1wu/image/upload/v1753209432/LIR_fpq2lc.png')
+            ]);
+            logoLeftData = left;
+            logoRightData = right;
+        } catch (err) {
+            console.error('No se pudieron cargar los logos del PDF de ruta:', err);
         }
 
-        // Separación entre "Estudiantes por empresa" y "Firmas"
+        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'legal' });
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        const margin = 10;
+        const contentWidth = pdfWidth - margin * 2;
+        const sectionGap = 8;
+        let yCursor = margin;
+
+        const placeLogo = (dataUrl: string | null, x: number) => {
+            if (!dataUrl) return;
+            pdf.addImage(dataUrl, 'PNG', x, yCursor, 15, 20);
+        };
+        placeLogo(logoLeftData, margin);
+        placeLogo(logoRightData, pdfWidth - margin - 15);
+
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(16);
+        pdf.text('Ruta de Supervisión', pdfWidth / 2, yCursor + 9, { align: 'center' });
+        pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text('Planificación de visitas a empresas', pdfWidth / 2, yCursor + 17, { align: 'center' });
+        yCursor += 24;
+        pdf.setFontSize(9);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text(`Emitido el ${fechaTxt}`, pdfWidth / 2, yCursor, { align: 'center' });
+        pdf.setTextColor(0, 0, 0);
         yCursor += sectionGap;
 
-        // Firmas
+        const drawSectionTitle = (title: string) => {
+            if (yCursor + 6 > pdfHeight - margin) {
+                pdf.addPage();
+                yCursor = margin;
+            }
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(12);
+            pdf.text(title, margin, yCursor);
+            yCursor += 6;
+        };
+
+        const drawTable = (options: UserOptions) => {
+            const mergedStyles = { fontSize: 10, cellPadding: 3, overflow: 'linebreak', ...(options.styles || {}) } as UserOptions['styles'];
+            const mergedHeadStyles = { fillColor: [240, 240, 240], textColor: 20, fontStyle: 'bold', ...(options.headStyles || {}) } as UserOptions['headStyles'];
+            autoTable(pdf, {
+                ...options,
+                margin: { left: margin, right: margin },
+                styles: mergedStyles,
+                headStyles: mergedHeadStyles,
+            });
+            yCursor = (pdf as any).lastAutoTable.finalY + sectionGap;
+        };
+
+        drawSectionTitle('Planificación de la unidad');
+        const planningRows = [
+            ['Nombre de la ruta', routeName || 'Sin nombre'],
+            ['Fecha planificada', fechaTxt],
+            ['Punto de partida', startLabel],
+            ['Modo de transporte', viajeLabel],
+            ['Supervisor responsable', supervisorNombre],
+            ['Empresas consideradas', `${selectedRouteCompanies.length}`],
+            ['Estudiantes implicados', totalEstudiantes ? String(totalEstudiantes) : '—'],
+            ['Distancia total estimada', `${totalDistanceKm.toFixed(1)} km`],
+            ['Tiempo de viaje', `${travelDurationMin} min`],
+            ['Tiempo proyectado en paradas', `${stopDurationMin} min`],
+            ['Duración total estimada', `${totalDurationMin} min`],
+        ];
+        drawTable({
+            startY: yCursor,
+            head: [['Elemento', 'Detalle']],
+            body: planningRows,
+        });
+
+        drawSectionTitle('Itinerario detallado');
+        const itineraryRows = legs.map((leg, idx) => [
+            `Tramo ${idx + 1}`,
+            (leg.start_address || '').split(',')[0] || '—',
+            (leg.end_address || '').split(',')[0] || '—',
+            leg.distance?.text || '—',
+            leg.duration?.text || '—',
+        ]);
+        drawTable({
+            startY: yCursor,
+            head: [['Tramo', 'Origen', 'Destino', 'Distancia', 'Tiempo']],
+            body: itineraryRows.length ? itineraryRows : [['—', 'No hay tramos registrados', '—', '—', '—']],
+        });
+
+        drawSectionTitle('Empresas y estudiantes asignados');
+        const empresasRows = empresasForStudents.map(emp => {
+            const alumnosIds = emp?.estudiantesAsignados || [];
+            const alumnos = alumnosIds
+                .map((id: string) => estudiantesMap.get(id))
+                .filter(Boolean) as User[];
+            const alumnosTxt = alumnos.length
+                ? alumnos.map(a => `${a.nombreCompleto}${a.curso ? ` (${a.curso})` : ''}`).join('\n')
+                : 'Sin estudiantes asignados';
+            return [
+                emp?.nombre || 'Empresa',
+                emp?.direccion || '—',
+                alumnosTxt,
+            ];
+        });
+        drawTable({
+            startY: yCursor,
+            head: [['Empresa', 'Dirección', 'Estudiantes']],
+            body: empresasRows.length ? empresasRows : [['—', '—', '—']],
+            styles: { fontSize: 9 },
+        });
+
         const ensureSpace = (needed: number) => {
-            if (yCursor + needed > pdfHeight - margin) { pdf.addPage(); yCursor = margin; }
+            if (yCursor + needed > pdfHeight - margin) {
+                pdf.addPage();
+                yCursor = margin;
+            }
         };
+
         ensureSpace(20);
-        pdf.setFontSize(11);
         pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(11);
         pdf.text('Firmas', margin, yCursor);
-        pdf.setFont('helvetica', 'normal');
         yCursor += 8;
+        pdf.setFont('helvetica', 'normal');
 
-        const colGap = 12;
-        const colWidth = (contentWidth - colGap) / 2;
-        const leftX = margin;
-        const rightX = margin + colWidth + colGap;
-        const signatureLineWidth = colWidth;
-        const rowH = 12; // alto aproximado por fila de firmas
-        const drawSignature = (x: number, y: number, label: string) => {
-            pdf.line(x, y, x + signatureLineWidth, y);
-            pdf.setFontSize(9);
-            // Truncar etiqueta si es muy larga para que no desborde
-            const maxChars = 60;
-            const txt = label.length > maxChars ? label.slice(0, maxChars - 1) + '…' : label;
-            pdf.text(txt, x, y + 6);
-        };
-
-        // Firmas por empresa (3 columnas por fila)
-        const empresasParaFirmar = selectedRouteCompanies.map(e => e.nombre || 'Empresa');
         const cols = 3;
         const gapCols = 12;
-        const colWidth3 = (contentWidth - gapCols * (cols - 1)) / cols;
-        const rowH3 = 14;
-        const colXs = [margin, margin + colWidth3 + gapCols, margin + (colWidth3 + gapCols) * 2];
-        for (let i = 0; i < empresasParaFirmar.length; i++) {
-            const col = i % cols;
-            if (col === 0) ensureSpace(rowH3 + 8);
+        const colWidth = (contentWidth - gapCols * (cols - 1)) / cols;
+        const colXs = [margin, margin + colWidth + gapCols, margin + (colWidth + gapCols) * 2];
+        const rowH = 14;
+        const empresasParaFirmar = selectedRouteCompanies.map(e => e.nombre || 'Empresa');
+        empresasParaFirmar.forEach((nombre, idx) => {
+            const col = idx % cols;
+            if (col === 0) ensureSpace(rowH + 4);
             const x = colXs[col];
-            // línea
-            pdf.line(x, yCursor, x + signatureLineWidth, yCursor);
-            // etiqueta centrada
+            pdf.line(x, yCursor, x + colWidth, yCursor);
             pdf.setFontSize(9);
-            const label = `Firma representante: ${empresasParaFirmar[i]}`;
-            pdf.text(label.length > 60 ? label.slice(0,59) + '…' : label, x + colWidth3 / 2, yCursor + 6, { align: 'center' });
-            if (col === cols - 1) {
-                yCursor += rowH3;
+            const label = `Firma representante: ${nombre}`;
+            pdf.text(label.length > 60 ? `${label.slice(0, 59)}…` : label, x + colWidth / 2, yCursor + 6, { align: 'center' });
+            if (col === cols - 1 || idx === empresasParaFirmar.length - 1) {
+                yCursor += rowH;
             }
-        }
-        if (colIndex !== 0) {
-            // Pasar a la siguiente fila
-            yCursor += rowH3;
-        }
+        });
 
-        // Firma profesor tutor (3 columnas: ocupar la central)
-        ensureSpace(rowH3 + 8);
+        ensureSpace(rowH + 4);
         const centerX = colXs[1];
-        pdf.line(centerX, yCursor, centerX + colWidth3, yCursor);
+        pdf.line(centerX, yCursor, centerX + colWidth, yCursor);
         pdf.setFontSize(9);
-        const tutorLabel = routeSupervisor?.nombreCompleto ? `Firma profesor tutor: ${routeSupervisor.nombreCompleto}` : 'Firma profesor tutor';
-        pdf.text(tutorLabel, centerX + colWidth3 / 2, yCursor + 6, { align: 'center' });
+        const tutorLabel = routeSupervisor?.nombreCompleto
+            ? `Firma profesor tutor: ${routeSupervisor.nombreCompleto}`
+            : 'Firma profesor tutor';
+        pdf.text(tutorLabel, centerX + colWidth / 2, yCursor + 6, { align: 'center' });
 
         try {
             pdf.save(`ruta-${routeName || 'supervision'}.pdf`);
@@ -1999,31 +1609,41 @@ const GestionEmpresas: React.FC = () => {
         }
 
         const doc = new jsPDF({
-            orientation: 'landscape',
+            orientation: 'portrait',
             unit: 'mm',
             format: 'legal'
         });
 
         const margin = 10;
         const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        let yCursor = margin;
 
-        // Logos
-        if (logoLeftData) {
-            doc.addImage(logoLeftData, 'PNG', margin, margin, 15, 20);
-        }
-        if (logoRightData) {
-            doc.addImage(logoRightData, 'PNG', pageWidth - margin - 15, margin, 15, 20);
-        }
+        const placeLogo = (data: string | null, x: number) => {
+            if (!data) return;
+            doc.addImage(data, 'PNG', x, yCursor, 15, 20);
+        };
 
-        // Título
-        doc.setFontSize(16);
+        placeLogo(logoLeftData, margin);
+        placeLogo(logoRightData, pageWidth - margin - 15);
+
         doc.setFont('helvetica', 'bold');
-        doc.text('Supervisión de Práctica', pageWidth / 2, 20, { align: 'center' });
+        doc.setFontSize(16);
+        doc.text('Supervisión de Práctica', pageWidth / 2, yCursor + 9, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.text('Consolidado mensual de rutas', pageWidth / 2, yCursor + 17, { align: 'center' });
+        yCursor += 26;
+        doc.setFontSize(9);
+        doc.setTextColor(100, 116, 139);
+        const periodoTxt = `Mes ${currentMonth + 1} • ${currentYear}`;
+        doc.text(periodoTxt, pageWidth / 2, yCursor, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
+        yCursor += 8;
 
         // Datos de identificación
         doc.setFontSize(11);
         doc.setFont('helvetica', 'normal');
-        let yCursor = 35;
         doc.text('Liceo Industrial de Recoleta', margin, yCursor);
         yCursor += 6;
         doc.text('Nombre de Coordinador Responsable: Nelson Laubreaux Rojas', margin, yCursor);
@@ -2074,22 +1694,23 @@ const GestionEmpresas: React.FC = () => {
             margin: { left: margin, right: margin },
         });
 
-        yCursor = (doc as any).lastAutoTable.finalY + 40;
+        yCursor = (doc as any).lastAutoTable.finalY + 30;
         
-        if (yCursor + 30 > doc.internal.pageSize.getHeight()) {
+        if (yCursor + 30 > pageHeight - margin) {
             doc.addPage();
-            yCursor = 40;
+            yCursor = margin + 30;
         }
 
         const signatureY = yCursor;
+        const signatureWidth = 80;
         
-        doc.line(margin + 20, signatureY, margin + 100, signatureY);
-        doc.text('Firma Coordinador Responsable', margin + 60, signatureY + 5, { align: 'center' });
+        doc.line(margin + 10, signatureY, margin + 10 + signatureWidth, signatureY);
+        doc.text('Firma Coordinador Responsable', margin + 10 + signatureWidth / 2, signatureY + 5, { align: 'center' });
 
-        doc.line(pageWidth - 120, signatureY, pageWidth - 40, signatureY);
-        doc.text('Firma Director/a Establecimiento', pageWidth - 80, signatureY + 5, { align: 'center' });
+        doc.line(pageWidth - 10 - signatureWidth, signatureY, pageWidth - 10, signatureY);
+        doc.text('Firma Director/a Establecimiento', pageWidth - 10 - signatureWidth / 2, signatureY + 5, { align: 'center' });
 
-        const footerY = doc.internal.pageSize.getHeight() - 15;
+        const footerY = pageHeight - 15;
         doc.setFontSize(8);
         doc.text('Fundación de solidaridad Romanos XII', pageWidth / 2, footerY, { align: 'center' });
         doc.text('Gran Avenida 4688, San Miguel, Santiago de Chile', pageWidth / 2, footerY + 4, { align: 'center' });

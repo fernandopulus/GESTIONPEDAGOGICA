@@ -8,14 +8,33 @@ import { CURSOS } from '../../constants';
  * y espacio para firmas. Devuelve un Blob listo para descarga.
  */
 interface OpcionesExportHorario {
-  titulo?: string;            // Título principal del documento
-  establecimiento?: string;   // Nombre del establecimiento para mostrar en encabezado
-  directora?: string;         // Nombre de la directora para la firma
-  fechaOverride?: string;     // Usar una fecha específica (YYYY-MM-DD) en vez de la actual
-  incluirFecha?: boolean;     // Mostrar/ocultar la línea de fecha
-  headerImageUrl?: string;    // URL de una imagen para cabecera (se escala al ancho disponible)
-  headerImageHeightCm?: number; // Altura deseada en centímetros (default 1.5cm)
+  titulo?: string;              // Título principal del documento
+  establecimiento?: string;     // Nombre del establecimiento para mostrar en encabezado
+  directora?: string;           // Nombre de la directora para la firma
+  fechaOverride?: string;       // Usar una fecha específica (YYYY-MM-DD) en vez de la actual
+  incluirFecha?: boolean;       // Mostrar/ocultar la línea de fecha
+  logoLeftUrl?: string;         // Logo institucional alineado a la izquierda
+  logoRightUrl?: string;        // Logo institucional alineado a la derecha
+  logoHeightCm?: number;        // Altura deseada de los logos (default 2cm)
 }
+
+const fetchImageAsDataURL = async (url?: string): Promise<string | null> => {
+  if (!url) return null;
+  try {
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.warn('No se pudo cargar la imagen remota para el PDF:', err);
+    return null;
+  }
+};
 
 export async function exportCargasHorariasDocentes(
   docentes: DocenteCargaHoraria[],
@@ -23,20 +42,19 @@ export async function exportCargasHorariasDocentes(
   totalesByDocente: Record<string, TotalesDocenteCarga>,
   opciones: OpcionesExportHorario = {}
 ): Promise<Blob> {
-  // 1) Determinar orientación óptima según cantidad máxima de columnas de cursos a renderizar
+  // 1) Determinar si necesitamos más espacio horizontal para columnas
   let maxCursosCols = 0;
   docentes.forEach((d) => {
     const asignacionesDoc = asignaciones.filter(a => a.docenteId === d.id);
     const cursosUsados = CURSOS.filter(c => asignacionesDoc.some(a => a.horasPorCurso[c as CursoId]));
     if (cursosUsados.length > maxCursosCols) maxCursosCols = cursosUsados.length;
   });
-  const isLandscape = maxCursosCols > 8; // umbral: si hay muchos cursos, usar paisaje
+  const isLandscape = true; // forzamos formato horizontal oficio
 
-  const doc = new jsPDF({ format: 'letter', unit: 'mm', orientation: isLandscape ? 'landscape' : 'portrait' });
-  const margin = 15;
+  const doc = new jsPDF({ format: 'legal', unit: 'mm', orientation: 'landscape' });
+  const margin = 10;
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const contentWidth = pageWidth - margin * 2;
   const fecha = opciones.fechaOverride || new Date().toLocaleDateString('es-CL');
   const titulo = opciones.titulo || 'Cargas Horarias Docentes';
   const establecimiento = opciones.establecimiento || '';
@@ -49,57 +67,77 @@ export async function exportCargasHorariasDocentes(
   const totalFuncionesLectivas = asignaciones.reduce((acc, a) => acc + (a.funcionesLectivas || []).reduce((s, f) => s + (typeof f.horas === 'number' ? f.horas : 0), 0), 0);
   const totalHorasAsignadas = totalHorasClases + totalFuncionesLectivas;
 
-  // Pre-cargar imagen si se especifica
-  let headerImageData: string | null = null;
-  const headerImageHeightCm = opciones.headerImageHeightCm || 1.5; // 1.5cm por defecto
-  const headerImageHeightMm = headerImageHeightCm * 10; // conversión cm->mm
-  if (opciones.headerImageUrl) {
-    try {
-      const resp = await fetch(opciones.headerImageUrl, { cache: 'no-store' });
-      const blob = await resp.blob();
-      headerImageData = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    } catch (e) {
-      // Silenciar error y continuar sin imagen
-      headerImageData = null;
-      console.warn('No se pudo cargar la imagen de cabecera:', e);
+  const logoLeftUrl = opciones.logoLeftUrl || 'https://res.cloudinary.com/dwncmu1wu/image/upload/v1764096456/Captura_de_pantalla_2025-11-25_a_la_s_3.47.16_p._m._p7m2xy.png';
+  const logoRightUrl = opciones.logoRightUrl || 'https://res.cloudinary.com/dwncmu1wu/image/upload/v1753209432/LIR_fpq2lc.png';
+  const logoHeightMm = (opciones.logoHeightCm || 2) * 10;
+  const [logoLeftData, logoRightData] = await Promise.all([
+    fetchImageAsDataURL(logoLeftUrl),
+    fetchImageAsDataURL(logoRightUrl)
+  ]);
+
+  const renderedHeaders = new Map<number, number>();
+  const drawHeader = (title: string): number => {
+    let headerY = margin;
+    const placeLogo = (dataUrl: string | null, alignRight = false) => {
+      if (!dataUrl) return;
+      const props = doc.getImageProperties(dataUrl);
+      const ratio = props.width / props.height;
+      const width = logoHeightMm * ratio;
+      const x = alignRight ? pageWidth - margin - width : margin;
+      doc.addImage(dataUrl, 'PNG', x, headerY, width, logoHeightMm, undefined, 'FAST');
+    };
+    if (logoLeftData || logoRightData) {
+      placeLogo(logoLeftData, false);
+      placeLogo(logoRightData, true);
+      headerY += logoHeightMm + 2;
     }
-  }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(title, pageWidth / 2, headerY + 6, { align: 'center' });
+    headerY += 12;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    if (establecimiento) {
+      doc.text(`Establecimiento: ${establecimiento}`, margin, headerY + 2);
+    }
+    if (incluirFecha) {
+      doc.text(`Fecha: ${fecha}`, pageWidth - margin, headerY + 2, { align: 'right' });
+    }
+    headerY += 6;
+    doc.setDrawColor(200);
+    doc.setLineWidth(0.4);
+    doc.line(margin, headerY, pageWidth - margin, headerY);
+    return headerY;
+  };
+  const ensureHeader = (title: string): number => {
+    const pageNumber = doc.getCurrentPageInfo().pageNumber;
+    if (!renderedHeaders.has(pageNumber)) {
+      const bottom = drawHeader(title);
+      renderedHeaders.set(pageNumber, bottom);
+    }
+    return renderedHeaders.get(pageNumber)!;
+  };
+  const renderedFooters = new Set<number>();
+  const drawFooter = () => {
+    doc.setDrawColor(230);
+    doc.setLineWidth(0.2);
+    doc.line(margin, pageHeight - margin + 4, pageWidth - margin, pageHeight - margin + 4);
+    doc.setFontSize(9);
+    doc.setTextColor(100);
+    doc.text(`pág. ${doc.getCurrentPageInfo().pageNumber}`, pageWidth - margin, pageHeight - 6, { align: 'right' });
+    doc.setTextColor(0);
+  };
+  const ensureFooter = () => {
+    const pageNumber = doc.getCurrentPageInfo().pageNumber;
+    if (renderedFooters.has(pageNumber)) return;
+    drawFooter();
+    renderedFooters.add(pageNumber);
+  };
 
   docentes.forEach((d, idx) => {
     if (idx > 0) doc.addPage();
-
-    // 2) Encabezado modernizado con posible imagen
-    let headerY = margin;
-    if (headerImageData) {
-      const usableWidth = pageWidth - margin * 2;
-      // Insertar imagen ocupando el ancho disponible, altura fija declarada
-      doc.addImage(headerImageData, 'PNG', margin, headerY, usableWidth, headerImageHeightMm, undefined, 'FAST');
-      headerY += headerImageHeightMm + 4; // espacio debajo de la imagen
-    }
-    // Título centrado
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text(titulo, pageWidth / 2, headerY, { align: 'center' });
-    // Línea divisoria bajo el título
-    doc.setDrawColor(200);
-    doc.setLineWidth(0.4);
-    doc.line(margin, headerY + 3, pageWidth - margin, headerY + 3);
-    // Meta izquierda/derecha en segunda línea
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    if (establecimiento) {
-      doc.text(`${establecimiento}`, margin, headerY + 8, { align: 'left' });
-    }
-    if (incluirFecha) {
-      doc.text(`Fecha: ${fecha}`, pageWidth - margin, headerY + 8, { align: 'right' });
-    }
-    // Datos del docente en bloque siguiente (simplificado)
-    let infoY = headerY + 16;
+    const headerBottom = ensureHeader(titulo);
+    let infoY = headerBottom + 10;
     doc.text(`Docente: ${d.nombre}`, margin, infoY);
     infoY += 6;
     doc.text(`Email: ${d.email || '—'}`, margin, infoY);
@@ -161,7 +199,7 @@ export async function exportCargasHorariasDocentes(
         head,
         body,
         startY: currentY,
-        margin: { left: margin, right: margin },
+        margin: { left: margin, right: margin, top: headerBottom + 8, bottom: margin },
         tableWidth: 'wrap',
         styles: { fontSize: 9, cellPadding: 3, lineWidth: 0.1, overflow: 'linebreak', valign: 'middle' },
         headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], halign: 'center' },
@@ -174,14 +212,9 @@ export async function exportCargasHorariasDocentes(
           // última (Funciones Lectivas):
           [2 + cursosUsados.length]: { cellWidth: funcionesColWidth, halign: 'left' }
         } as any,
-        didDrawPage: data => {
-          // Footer con número de página y línea superior
-          doc.setDrawColor(230);
-          doc.setLineWidth(0.2);
-          doc.line(margin, margin - 6, pageWidth - margin, margin - 6);
-          doc.setFontSize(9);
-          doc.setTextColor(100);
-          doc.text(`pág. ${doc.getCurrentPageInfo().pageNumber}`, pageWidth - margin, pageHeight - 8, { align: 'right' });
+        didDrawPage: () => {
+          ensureHeader(titulo);
+          ensureFooter();
         }
       });
       // Actualizar Y después de la tabla
@@ -208,9 +241,11 @@ export async function exportCargasHorariasDocentes(
         `Total horas asignadas (clases + funciones lectivas): ${horasLectivasTotales}h`
       ];
       resumenLines.forEach(line => {
-        if (currentY > doc.internal.pageSize.getHeight() - 40) {
+        if (currentY > pageHeight - 40) {
+          ensureFooter();
           doc.addPage();
-          currentY = margin;
+          const headerAfterAdd = ensureHeader(titulo);
+          currentY = headerAfterAdd + 10;
         }
         doc.text(line, margin, currentY);
         currentY += 5;
@@ -221,36 +256,23 @@ export async function exportCargasHorariasDocentes(
     if (currentY < pageHeight - 40) {
       currentY = pageHeight - 40;
     } else {
+      ensureFooter();
       doc.addPage();
-      currentY = margin + 10;
+      const newHeaderBottom = ensureHeader(titulo);
+      currentY = newHeaderBottom + 20;
     }
     doc.setFont('helvetica', 'normal');
     doc.text('Firma Docente:', margin, currentY);
     doc.line(margin, currentY + 2, margin + 70, currentY + 2);
-    doc.text(`Firma Directora: ${nombreDirectora}`, margin + (isLandscape ? 110 : 90), currentY);
-    doc.line(margin + (isLandscape ? 110 : 90), currentY + 2, margin + (isLandscape ? 190 : 170), currentY + 2);
+    doc.text(`Firma Directora: ${nombreDirectora}`, margin + 110, currentY);
+    doc.line(margin + 110, currentY + 2, margin + 190, currentY + 2);
+    ensureFooter();
   });
 
   // Página final: Resumen Global acumulado
   doc.addPage();
-  let headerYGlobal = margin;
-  if (headerImageData) {
-    const usableWidth = pageWidth - margin * 2;
-    doc.addImage(headerImageData, 'PNG', margin, headerYGlobal, usableWidth, headerImageHeightMm, undefined, 'FAST');
-    headerYGlobal += headerImageHeightMm + 4;
-  }
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text('Resumen Global', pageWidth / 2, headerYGlobal, { align: 'center' });
-  doc.setDrawColor(200);
-  doc.setLineWidth(0.4);
-  doc.line(margin, headerYGlobal + 3, pageWidth - margin, headerYGlobal + 3);
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  if (establecimiento) doc.text(`${establecimiento}`, margin, headerYGlobal + 8, { align: 'left' });
-  if (incluirFecha) doc.text(`Fecha: ${fecha}`, pageWidth - margin, headerYGlobal + 8, { align: 'right' });
-
-  let y = headerYGlobal + 18;
+  const headerYGlobal = ensureHeader('Resumen Global');
+  let y = headerYGlobal + 12;
   const lines = [
     `Docentes: ${docentes.length}`,
     `Asignaciones: ${asignaciones.length}`,
@@ -261,10 +283,12 @@ export async function exportCargasHorariasDocentes(
   ];
   doc.setFontSize(12);
   lines.forEach((l) => {
-    if (y > pageHeight - 20) { doc.addPage(); y = margin; }
+    if (y > pageHeight - 20) { ensureFooter(); doc.addPage(); y = ensureHeader('Resumen Global') + 12; }
     doc.text(l, margin, y);
     y += 8;
   });
 
+    ensureHeader('Resumen Global');
+    ensureFooter();
     return doc.output('blob');
 }

@@ -1136,17 +1136,24 @@ export interface ActividadPlanificada {
 
 // --- Análisis Taxonómico ---
 export type BloomLevel = 'Recordar' | 'Comprender' | 'Aplicar' | 'Analizar' | 'Evaluar' | 'Crear';
+export type BloomAnalysisResult = {
+  question: string;
+  habilidadBloom: BloomLevel;
+};
+export type BloomSummary = Record<BloomLevel, number>;
 
 export interface AnalisisTaxonomico {
-    id: string;
-    documentName: string;
-    uploadDate: string; // ISO String
-    userId: string;
-    analysisResults: {
-        question: string;
-        habilidadBloom: BloomLevel;
-    }[];
-    summary: Record<BloomLevel, number>;
+  id: string;
+  documentName: string;
+  uploadDate: string; // ISO String
+  userId: string;
+  analysisResults: BloomAnalysisResult[];
+  summary: BloomSummary;
+  nivel?: string | null;
+  asignatura?: string | null;
+  sourceSolicitudId?: string;
+  solicitanteId?: string;
+  solicitanteNombre?: string;
 }
 
 // --- Materiales Didácticos ---
@@ -1246,6 +1253,8 @@ export interface SolicitudMulticopia {
   completadoPor?: string;
   motivoRechazo?: string;
   analisisPedagogico?: string; // Análisis generado por IA
+  analysisResults?: BloomAnalysisResult[];
+  summary?: BloomSummary;
   // Timestamps (ISO en frontend)
   createdAt?: string;
   updatedAt?: string;

@@ -28,7 +28,7 @@ import {
   Download,
 } from "lucide-react";
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import autoTable, { UserOptions } from 'jspdf-autotable';
 
 // === Integraciones que ya existen en tu proyecto (NO cambiar rutas) ===
 import {
@@ -57,6 +57,43 @@ import { User } from "../../types";
 type Tab = "responder" | "dashboard" | "crear" | "respuestas_individuales" | "documentacion";
 
 const MAX_WORDS = 500;
+const KEYWORD_STOPWORDS = new Set([
+  "y", "o", "u", "de", "del", "la", "las", "el", "los", "un", "una", "que", "para", "con", "sin", "sobre", "entre",
+  "por", "en", "se", "ser", "estar", "haber", "tener", "hacer", "realizar", "aplicar", "utilizar", "usar", "ver",
+  "analizar", "comprender", "reflexionar", "trabajar", "desarrollar", "generar", "mejorar", "lograr", "pensar",
+  "poder", "permitir", "crear", "obtener", "saber"
+]);
+
+const sanitizeKeywords = (items: { keyword: string; score: number }[]): { keyword: string; score: number }[] => {
+  const normalize = (word: string) => word
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  const cleaned = items
+    .map((item) => {
+      const tokens = normalize(item.keyword)
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .map((token) => token.trim())
+        .filter(Boolean);
+      const filteredTokens = tokens.filter((token) => !KEYWORD_STOPWORDS.has(token));
+      if (!filteredTokens.length) return null;
+      const rebuilt = filteredTokens
+        .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+        .join(" ");
+      return rebuilt.trim().length >= 3 ? { keyword: rebuilt, score: item.score } : null;
+    })
+    .filter((item): item is { keyword: string; score: number } => Boolean(item));
+
+  const unique = new Map<string, { keyword: string; score: number }>();
+  cleaned.forEach((item) => {
+    if (!unique.has(item.keyword)) {
+      unique.set(item.keyword, item);
+    }
+  });
+  return Array.from(unique.values());
+};
 
 type ExtendedDPDQuestion =
   | {
@@ -102,6 +139,20 @@ const defaultForm = (): FormState => ({
   aiTema: "",
   aiCantidad: 3,
 });
+
+const fetchImageAsDataURL = async (url: string): Promise<string> => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`No se pudo cargar la imagen (${response.status})`);
+  }
+  const blob = await response.blob();
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
 
 /* -------------------------------------------------------------------------- */
 /*                     Subcomponentes ESTABLES (fuera)                        */
@@ -597,7 +648,7 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
         try {
           const kws = await extractKeywordsWithAI(allOpen, 30);
           console.log('Keywords generadas:', kws);
-          setKeywords(kws);
+          setKeywords(sanitizeKeywords(kws));
         } catch (error) {
           console.error('Error al extraer keywords:', error);
           setKeywords([]);
@@ -720,87 +771,149 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
   const downloadReport = useCallback(async () => {
     if (!selectedActivity || !respuestasActividad.length) return;
 
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const margin = 20;
-    let yPos = margin;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'legal' });
+    const margin = 10;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    let yCursor = margin;
 
-    // Título del informe
-    pdf.setFontSize(20);
-    pdf.text(`Informe: ${selectedActivity.titulo}`, margin, yPos);
-    yPos += 10;
+    let logoLeft: string | null = null;
+    let logoRight: string | null = null;
+    try {
+      const [left, right] = await Promise.all([
+        fetchImageAsDataURL('https://res.cloudinary.com/dwncmu1wu/image/upload/v1764096456/Captura_de_pantalla_2025-11-25_a_la_s_3.47.16_p._m._p7m2xy.png'),
+        fetchImageAsDataURL('https://res.cloudinary.com/dwncmu1wu/image/upload/v1753209432/LIR_fpq2lc.png')
+      ]);
+      logoLeft = left;
+      logoRight = right;
+    } catch (error) {
+      console.error('No se pudieron cargar los logos del informe DPD:', error);
+    }
 
-    // Información general
-    pdf.setFontSize(12);
-    pdf.text(`Dimensión: ${selectedActivity.dimension}`, margin, yPos += 10);
-    pdf.text(`Subdimensión: ${selectedActivity.subdimension}`, margin, yPos += 7);
-    pdf.text(`Creador: ${selectedActivity.creadorNombre} (${selectedActivity.creadorPerfil})`, margin, yPos += 7);
-    pdf.text(`Total de respuestas: ${respuestasActividad.length}`, margin, yPos += 7);
-    
-    yPos += 10;
+    const placeLogo = (data: string | null, x: number) => {
+      if (!data) return;
+      pdf.addImage(data, 'PNG', x, yCursor, 15, 20);
+    };
 
-    // Para cada pregunta
-    for (const pregunta of selectedActivity.preguntas) {
-      // Si no hay espacio suficiente en la página actual, crear nueva página
-      if (yPos > 250) {
+    placeLogo(logoLeft, margin);
+    placeLogo(logoRight, pageWidth - margin - 15);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(16);
+    pdf.text('Informe Global de Desarrollo Profesional Docente', pageWidth / 2, yCursor + 9, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(11);
+    pdf.text(selectedActivity.titulo, pageWidth / 2, yCursor + 17, { align: 'center' });
+    yCursor += 26;
+    pdf.setFontSize(9);
+    pdf.setTextColor(100, 116, 139);
+    const fechaEmision = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' });
+    pdf.text(`Emitido el ${fechaEmision}`, pageWidth / 2, yCursor, { align: 'center' });
+    pdf.setTextColor(0, 0, 0);
+    yCursor += 8;
+
+    const ensureSpace = (height: number) => {
+      if (yCursor + height > pageHeight - margin) {
         pdf.addPage();
-        yPos = margin;
+        yCursor = margin;
       }
+    };
 
-      pdf.setFontSize(14);
-      pdf.text(`Pregunta: ${pregunta.enunciado}`, margin, yPos += 10);
-      yPos += 5;
+    const addSectionTitle = (title: string) => {
+      ensureSpace(8);
+      pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(12);
+      pdf.text(title, margin, yCursor);
+      yCursor += 6;
+    };
 
-      if (pregunta.tipo === "seleccion_multiple") {
-        // Resultados de selección múltiple
+    const addTable = (options: UserOptions) => {
+      autoTable(pdf, {
+        startY: yCursor,
+        margin: { left: margin, right: margin },
+        styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak' },
+        headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: 'bold' },
+        ...options,
+      });
+      yCursor = (pdf as any).lastAutoTable.finalY + 8;
+    };
+
+    const orientaciones = (selectedActivity as any)?.orientaciones || '';
+    const planningRows = [
+      ['Título de la unidad', selectedActivity.titulo],
+      ['Dimensión', selectedActivity.dimension],
+      ['Subdimensión', selectedActivity.subdimension],
+      ['Perfil que crea la actividad', `${selectedActivity.creadorNombre} (${selectedActivity.creadorPerfil})`],
+      ['Total de preguntas', `${selectedActivity.preguntas.length}`],
+      ['Total de respuestas', `${respuestasActividad.length}`],
+      ['Orientaciones metodológicas', orientaciones || '—'],
+    ];
+
+    addSectionTitle('Planificación de la unidad');
+    addTable({ head: [['Elemento', 'Detalle']], body: planningRows });
+
+    const questionRows = selectedActivity.preguntas.map((pregunta, idx) => {
+      const tipo = pregunta.tipo === 'seleccion_multiple' ? 'Selección múltiple' : 'Pregunta abierta';
+      const detalles = pregunta.tipo === 'seleccion_multiple'
+        ? ((pregunta as any).opciones || []).join('\n')
+        : (pregunta.maxPalabras ? `Límite: ${pregunta.maxPalabras} palabras` : 'Sin límite definido');
+      return [`P${idx + 1}`, tipo, pregunta.enunciado, detalles || '—'];
+    });
+
+    addSectionTitle('Preguntas planificadas');
+    addTable({
+      head: [['#', 'Tipo', 'Enunciado', 'Detalles']],
+      body: questionRows.length ? questionRows : [['—', '—', 'No hay preguntas registradas', '—']],
+      styles: { fontSize: 9 },
+    });
+
+    addSectionTitle('Resultados por pregunta');
+    selectedActivity.preguntas.forEach((pregunta, idx) => {
+      ensureSpace(10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.text(`${idx + 1}. ${pregunta.enunciado}`, margin, yCursor);
+      yCursor += 6;
+
+      if (pregunta.tipo === 'seleccion_multiple') {
         const stats = choiceStats[pregunta.id] || {};
-        const total = respuestasActividad.length;
-
-        Object.entries(stats).forEach(([opcion, count]) => {
-          const porcentaje = total > 0 ? Math.round((count as number / total) * 100) : 0;
-          pdf.text(`${opcion}: ${count} respuestas (${porcentaje}%)`, margin + 5, yPos += 7);
+        const total = respuestasActividad.length || 1;
+        const rows = Object.entries(stats).map(([opcion, count]) => {
+          const porcentaje = Math.round(((count as number) / total) * 100);
+          return [opcion, String(count), `${porcentaje}%`];
+        });
+        addTable({
+          head: [['Opción', 'Respuestas', '%']],
+          body: rows.length ? rows : [['Sin respuestas registradas', '0', '0%']],
         });
       } else {
-        // Respuestas abiertas
-        pdf.text("Respuestas:", margin, yPos += 7);
-        for (const respuesta of respuestasActividad) {
-          const resp = respuesta.respuestas[pregunta.id];
-          if (resp?.tipo === "abierta" && resp.valorTexto) {
-            // Verificar espacio disponible
-            if (yPos > 250) {
-              pdf.addPage();
-              yPos = margin;
-            }
-            pdf.text(`${respuesta.userNombre}:`, margin + 5, yPos += 7);
-            const lines = pdf.splitTextToSize(resp.valorTexto, 170);
-            pdf.text(lines, margin + 10, yPos += 7);
-            yPos += (lines.length * 7);
+        const rows: string[][] = [];
+        respuestasActividad.forEach((respuesta) => {
+          const registro = respuesta.respuestas[pregunta.id];
+          if (registro?.tipo === 'abierta' && registro.valorTexto) {
+            rows.push([respuesta.userNombre || 'Participante', registro.valorTexto]);
           }
-        }
+        });
+        addTable({
+          head: [['Participante', 'Respuesta']],
+          body: rows.length ? rows : [['—', 'Sin respuestas registradas']],
+          styles: { fontSize: 9 },
+        });
       }
-      yPos += 10;
+    });
+
+    if (keywords.length) {
+      addSectionTitle('Conceptos clave detectados');
+      const keywordRows = keywords.map((item) => [
+        item.keyword,
+        `${Math.round(item.score * 100)}%`,
+      ]);
+      addTable({
+        head: [['Concepto', 'Relevancia']],
+        body: keywordRows,
+      });
     }
 
-    // Palabras clave (si existen)
-    if (keywords.length > 0) {
-      if (yPos > 250) {
-        pdf.addPage();
-        yPos = margin;
-      }
-      
-      pdf.setFontSize(14);
-      pdf.text("Conceptos clave detectados:", margin, yPos += 10);
-      pdf.setFontSize(12);
-      
-      const keywordText = keywords
-        .map(k => `${k.keyword} (${Math.round(k.score * 100)}%)`)
-        .join(", ");
-      
-      const lines = pdf.splitTextToSize(keywordText, 170);
-      pdf.text(lines, margin, yPos += 7);
-    }
-
-    // Descargar el PDF
     pdf.save(`informe_${selectedActivity.titulo.replace(/\s+/g, '_')}.pdf`);
   }, [selectedActivity, respuestasActividad, choiceStats, keywords]);
 

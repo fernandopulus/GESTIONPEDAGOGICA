@@ -585,8 +585,9 @@ const CrearHorarios: React.FC = () => {
         establecimiento: 'Liceo Industrial de Recoleta',
         directora: 'Patricia Silva Sánchez',
         incluirFecha: true,
-        headerImageUrl: 'https://res.cloudinary.com/dwncmu1wu/image/upload/v1756260600/Captura_de_pantalla_2025-08-26_a_la_s_10.09.17_p._m._aakgkt.png',
-        headerImageHeightCm: 1.5
+        logoLeftUrl: 'https://res.cloudinary.com/dwncmu1wu/image/upload/v1764096456/Captura_de_pantalla_2025-11-25_a_la_s_3.47.16_p._m._p7m2xy.png',
+        logoRightUrl: 'https://res.cloudinary.com/dwncmu1wu/image/upload/v1753209432/LIR_fpq2lc.png',
+        logoHeightCm: 2
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

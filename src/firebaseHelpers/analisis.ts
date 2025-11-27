@@ -1,4 +1,4 @@
-import { collection, addDoc, getDocs, doc, deleteDoc, query, orderBy, where, getDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, deleteDoc, query, orderBy, where, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase'; // Ajusta la ruta según tu configuración
 import { AnalisisTaxonomico } from '../../types';
 
@@ -55,6 +55,21 @@ export const createAnalisis = async (data: Omit<AnalisisTaxonomico, 'id'>): Prom
     } catch (error) {
         console.error('Error al crear análisis:', error);
         throw new Error('No se pudo crear el análisis taxonómico');
+    }
+};
+
+export const upsertAnalisisFromSolicitud = async (
+    solicitudId: string,
+    data: Omit<AnalisisTaxonomico, 'id'>
+): Promise<void> => {
+    if (!solicitudId) throw new Error('upsertAnalisisFromSolicitud requiere solicitudId');
+    try {
+        const docId = `multicopia_${solicitudId}`;
+        const docRef = doc(db, COLLECTION_NAME, docId);
+        await setDoc(docRef, data);
+    } catch (error) {
+        console.error('Error al sincronizar análisis desde Multicopias:', error);
+        throw new Error('No se pudo guardar el análisis taxonómico vinculado a la solicitud.');
     }
 };
 

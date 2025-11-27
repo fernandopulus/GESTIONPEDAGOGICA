@@ -15,7 +15,7 @@ export const useAuth = () => {
             if (firebaseUser && firebaseUser.email) {
                 // El usuario está autenticado en Firebase, ahora buscamos su perfil en Firestore
                 try {
-                    const userProfile = await getUserProfile(firebaseUser.email); // ✅ USAMOS TU FUNCIÓN
+                    const userProfile = await getUserProfile(firebaseUser.email, firebaseUser.uid); // ✅ USAMOS TU FUNCIÓN
                     console.log('[useAuth] Perfil Firestore:', userProfile);
                     setCurrentUser(userProfile ? { ...userProfile, uid: firebaseUser.uid } : null);
                 } catch (error) {

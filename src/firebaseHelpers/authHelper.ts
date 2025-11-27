@@ -5,7 +5,7 @@ import {
     sendPasswordResetEmail,
     User as FirebaseUser
 } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { auth, db } from "../firebase"; // Ajusta la ruta si es necesario
 import { User } from "../../types"; // Ajusta la ruta si es necesario
 
@@ -52,19 +52,52 @@ export const resetPassword = async (email: string): Promise<void> => {
  * @param email El email del usuario a buscar.
  * @returns El objeto de usuario con datos de Firestore.
  */
-export const getUserProfile = async (email: string): Promise<User | null> => {
-    try {
-        const userDocRef = doc(db, "usuarios", email);
-        const userDocSnap = await getDoc(userDocRef);
+export const getUserProfile = async (email?: string | null, uid?: string | null): Promise<User | null> => {
+    if (!email && !uid) {
+        throw new Error("Se requiere email o UID para obtener el perfil de usuario.");
+    }
 
-        if (userDocSnap.exists()) {
-            return { ...userDocSnap.data(), id: userDocSnap.id } as User;
-        } else {
-            console.warn(`No se encontró perfil en Firestore para: ${email}`);
-            return null;
+    const attemptedDocIds = [email, uid].filter((value, index, self) => !!value && self.indexOf(value) === index) as string[];
+    try {
+        for (const docId of attemptedDocIds) {
+            const snapshot = await getDoc(doc(db, "usuarios", docId));
+            if (snapshot.exists()) {
+                return { ...snapshot.data(), id: snapshot.id } as User;
+            }
         }
+
+        if (email) {
+            const usuariosRef = collection(db, "usuarios");
+            const q = query(usuariosRef, where("email", "==", email));
+            const querySnap = await getDocs(q);
+            if (!querySnap.empty) {
+                const docSnap = querySnap.docs[0];
+                return { ...docSnap.data(), id: docSnap.id } as User;
+            }
+        }
+
+        console.warn(`No se encontró perfil en Firestore para identificadores: email=${email}, uid=${uid}`);
+        return null;
     } catch (error) {
         console.error("Error en getUserProfile helper:", error);
+        throw error;
+    }
+};
+
+/**
+ * Actualiza campos del perfil de usuario en Firestore.
+ * Se usa para reflejar cambios hechos desde el modal de perfil (nombre/foto, etc.).
+ */
+export const updateUserProfile = async (docId: string, updates: Partial<User>): Promise<void> => {
+    if (!docId) {
+        throw new Error("No se pudo determinar el identificador del usuario a actualizar.");
+    }
+
+    try {
+        const userDocRef = doc(db, "usuarios", docId);
+        await updateDoc(userDocRef, updates);
+    } catch (error) {
+        console.error("Error en updateUserProfile helper:", error);
         throw error;
     }
 };

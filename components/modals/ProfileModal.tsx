@@ -1,6 +1,7 @@
 import React, { useState, FormEvent, ChangeEvent } from 'react';
 import { User } from '../../types';
 import { auth, storage } from '../../src/firebase';
+import { updateUserProfile } from '../../src/firebaseHelpers/authHelper';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 interface ProfileModalProps {
@@ -53,6 +54,17 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ user, onClose, onSave }) =>
                 email: formData.email,
                 fotoUrl: fotoUrlFinal,
             };
+
+            const docKey = user.id || user.email;
+            if (!docKey) {
+                throw new Error('No se encontró identificador del usuario para actualizar.');
+            }
+
+            await updateUserProfile(docKey, {
+                nombreCompleto: formData.nombreCompleto,
+                email: formData.email,
+                fotoUrl: fotoUrlFinal,
+            });
 
             const allUsersData = localStorage.getItem(USERS_KEY);
             let allUsers: User[] = allUsersData ? JSON.parse(allUsersData) : [];

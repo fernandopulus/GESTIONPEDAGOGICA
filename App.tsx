@@ -56,7 +56,7 @@ const App: React.FC = () => {
       
       if (user) {
         try {
-          const userProfile = await getUserProfile(user.email!);
+          const userProfile = await getUserProfile(user.email, user.uid);
           if (userProfile) {
             setFirestoreUser(userProfile);
             if (userProfile.profile === Profile.SUBDIRECCION) {
