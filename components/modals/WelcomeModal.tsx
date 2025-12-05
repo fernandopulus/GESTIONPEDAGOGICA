@@ -12,6 +12,17 @@ const WelcomeModal: React.FC<WelcomeModalProps> = ({ userName, events, onClose }
   // Imagen de fondo proporcionada
   const bgImage = "https://res.cloudinary.com/dwncmu1wu/image/upload/v1764174220/Captura_de_pantalla_2025-11-26_a_la_s_1.16.16_p._m._gp4lmp.png";
 
+  const firstName = React.useMemo(() => {
+    const raw = (userName || '').trim();
+    if (!raw) return '';
+
+    const tokens = raw.split(/\s+/).filter(Boolean);
+    if (tokens.length >= 3) {
+      return tokens[2];
+    }
+    return tokens[tokens.length - 1] || '';
+  }, [userName]);
+
   // Formatear fecha para mostrar
   const formatDate = (dateString: string) => {
     if (!dateString) return '';
@@ -92,7 +103,7 @@ const WelcomeModal: React.FC<WelcomeModalProps> = ({ userName, events, onClose }
           </div>
           
           <div className="absolute bottom-0 left-0 p-6 text-white w-full">
-            <h2 className="text-3xl md:text-4xl font-bold mb-2 drop-shadow-lg">¡Hola, {(userName || '').split(' ')[0]}!</h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-2 drop-shadow-lg">¡Hola, {firstName}!</h2>
             <p className="text-white/90 text-sm md:text-base drop-shadow-md">Bienvenido/a nuevamente al sistema de gestión.</p>
           </div>
         </div>

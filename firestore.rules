@@ -84,6 +84,18 @@ service cloud.firestore {
       allow create, update, delete: if isAdminOrSubdir();
     }
 
+    // Desarrollo Profesional Docente (DPD)
+    match /dpd_actividades/{id} {
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+    }
+
+    match /dpd_respuestas/{id} {
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow update, delete: if isAdminOrSubdir();
+    }
+
     // Intranet (blog interno)
     match /intranet_entries/{id} {
       // Lectura: Subdirección, Profesorado, Coordinación TP
@@ -264,6 +276,22 @@ service cloud.firestore {
 
       // Eliminación: staff o profesor
       allow delete: if isAdminOrSubdir() || isProfesor();
+    }
+
+    match /presentacion_dual_evaluaciones/{id} {
+      function isOwnerPresentacionDual() {
+        return isSignedIn() && (
+          (resource.data.estudianteId != null && (
+            resource.data.estudianteId == request.auth.uid ||
+            resource.data.estudianteId == request.auth.token.email ||
+            (userDoc().data.id != null && resource.data.estudianteId == userDoc().data.id)
+          )) ||
+          (resource.data.estudianteEmail != null && resource.data.estudianteEmail == request.auth.token.email)
+        );
+      }
+
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP' || isOwnerPresentacionDual();
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
     }
 
     // Respuestas de Actividades (entregas de estudiantes)
@@ -497,6 +525,12 @@ service cloud.firestore {
           (resource.data.userId != null && resource.data.userId == request.auth.uid)
         )
       );
+    }
+
+    // Calendario global (events)
+    match /events/{id} {
+      allow read: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
+      allow create, update, delete: if isAdminOrSubdir() || isProfesor() || currentUserProfile() == 'COORDINACION_TP';
     }
 
     // =====================

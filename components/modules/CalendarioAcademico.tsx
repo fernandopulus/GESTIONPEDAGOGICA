@@ -36,10 +36,16 @@ const TYPE_ICONS: Record<EventType, JSX.Element> = {
   [EventType.SALIDA_PEDAGOGICA]: <Route className="h-4 w-4" />,
 } as const;
 
+const PRUEBA_GLOBAL_NIVELES = ['Iº Medio', 'IIº Medio', 'IIIº Medio'];
+
 const getEventTitle = (event: CalendarEvent): string => {
   switch (event.type) {
     case EventType.EVALUACION:
-      return `${event.subtype} - ${event.asignatura}`;
+      if (event.subtype === EvaluacionSubtype.PRUEBA_GLOBAL) {
+        const nivelLabel = 'nivel' in event && event.nivel ? ` • ${event.nivel}` : '';
+        return `${event.subtype} - ${event.asignatura}${nivelLabel}`;
+      }
+      return `${event.subtype} - ${event.asignatura}${event.curso ? ` • ${event.curso}` : ''}`;
     case EventType.ACTO:
       return `Acto: ${event.ubicacion}`;
     case EventType.ACTIVIDAD_FOCALIZADA:
@@ -51,6 +57,8 @@ const getEventTitle = (event: CalendarEvent): string => {
   }
 };
 
+type CalendarFormState = Partial<CalendarEvent> & { nivel?: string };
+
 const EventModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -60,11 +68,15 @@ const EventModal: React.FC<{
   date: string;
   isLoading?: boolean;
 }> = ({ isOpen, onClose, onSave, onDelete, event, date, isLoading }) => {
-  const [formState, setFormState] = useState<Partial<CalendarEvent>>({});
+  const [formState, setFormState] = useState<CalendarFormState>({});
 
   useEffect(() => {
     if (event) {
-      setFormState(event);
+      if (event.type === EventType.EVALUACION && event.subtype === EvaluacionSubtype.PRUEBA_GLOBAL) {
+        setFormState({ ...event, nivel: event.nivel || PRUEBA_GLOBAL_NIVELES[0] });
+      } else {
+        setFormState(event);
+      }
     } else {
       // Default new event state
       setFormState({
@@ -72,6 +84,7 @@ const EventModal: React.FC<{
         subtype: EvaluacionSubtype.PRUEBA_PARCIAL,
         asignatura: ASIGNATURAS[0],
         curso: CURSOS[0],
+        nivel: PRUEBA_GLOBAL_NIVELES[0],
         contenidos: '',
         enlace: '',
         responsables: '',
@@ -91,7 +104,23 @@ const EventModal: React.FC<{
 
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormState(prev => ({ ...prev, [name]: value }));
+    setFormState(prev => {
+      if (name === 'subtype') {
+        const nextSubtype = value as EvaluacionSubtype;
+        const nextState: CalendarFormState = { ...prev, subtype: nextSubtype };
+
+        if (nextSubtype === EvaluacionSubtype.PRUEBA_GLOBAL) {
+          nextState.nivel = prev.nivel || PRUEBA_GLOBAL_NIVELES[0];
+          nextState.curso = undefined;
+        } else {
+          nextState.nivel = undefined;
+          nextState.curso = prev.curso || CURSOS[0];
+        }
+
+        return nextState;
+      }
+      return { ...prev, [name]: value };
+    });
   };
 
   const handleCursoMultiSelect = (curso: string) => {
@@ -114,14 +143,28 @@ const EventModal: React.FC<{
 
     switch (formState.type) {
       case EventType.EVALUACION: {
+        const isPruebaGlobal = formState.subtype === EvaluacionSubtype.PRUEBA_GLOBAL;
+        if (isPruebaGlobal && !formState.nivel) {
+          alert('Debes seleccionar un nivel para la Prueba Global.');
+          return;
+        }
+        if (!isPruebaGlobal && !formState.curso) {
+          alert('Debes seleccionar un curso para esta evaluación.');
+          return;
+        }
         const evaluacionData: Omit<EvaluacionEvent, 'id'> = {
           date,
           type: EventType.EVALUACION,
           subtype: formState.subtype!,
           asignatura: formState.asignatura!,
-          curso: formState.curso!,
           contenidos: formState.contenidos!,
         };
+
+        if (isPruebaGlobal) {
+          evaluacionData.nivel = formState.nivel!;
+        } else {
+          evaluacionData.curso = formState.curso!;
+        }
 
         if (
           (formState.subtype === EvaluacionSubtype.RUBRICA ||
@@ -182,7 +225,8 @@ const EventModal: React.FC<{
 
   const renderDynamicFields = () => {
     switch (formState.type) {
-      case EventType.EVALUACION:
+      case EventType.EVALUACION: {
+        const isPruebaGlobal = formState.subtype === EvaluacionSubtype.PRUEBA_GLOBAL;
         return (
           <>
             <div>
@@ -197,6 +241,27 @@ const EventModal: React.FC<{
                 ))}
               </select>
             </div>
+            {isPruebaGlobal && (
+              <div>
+                <label htmlFor="nivel" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Nivel (Prueba Global)
+                </label>
+                <select
+                  id="nivel"
+                  name="nivel"
+                  value={formState.nivel || PRUEBA_GLOBAL_NIVELES[0]}
+                  onChange={handleChange}
+                  required
+                  className={inputStyles}
+                >
+                  {PRUEBA_GLOBAL_NIVELES.map(nivel => (
+                    <option key={nivel} value={nivel}>
+                      {nivel}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label htmlFor="asignatura" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Asignatura
@@ -213,13 +278,23 @@ const EventModal: React.FC<{
               <label htmlFor="curso" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Curso
               </label>
-              <select id="curso" name="curso" value={formState.curso} onChange={handleChange} required className={inputStyles}>
+              <select
+                id="curso"
+                name="curso"
+                value={formState.curso || ''}
+                onChange={handleChange}
+                required={!isPruebaGlobal}
+                disabled={isPruebaGlobal}
+                className={`${inputStyles} ${isPruebaGlobal ? 'opacity-60 cursor-not-allowed' : ''}`}
+              >
+                {!isPruebaGlobal && !formState.curso && <option value="">Seleccione…</option>}
                 {CURSOS.map(c => (
                   <option key={c} value={c}>
                     {c}
                   </option>
                 ))}
               </select>
+              {isPruebaGlobal && <p className="text-xs text-slate-500 mt-1">Para Prueba Global selecciona solo el nivel.</p>}
             </div>
             <div>
               <label htmlFor="contenidos" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -238,6 +313,7 @@ const EventModal: React.FC<{
             )}
           </>
         );
+      }
       case EventType.ACTO:
       case EventType.ACTIVIDAD_FOCALIZADA:
         return (

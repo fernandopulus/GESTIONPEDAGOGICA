@@ -37,6 +37,7 @@ import Multicopias from './modules/Multicopias';
 import EvaluacionEnsayo from './modules/EvaluacionEnsayo';
 import Intranet from './modules/Intranet';
 import Documentacion from './modules/Documentacion';
+import PresentacionDual from './modules/PresentacionDual';
 
 // UI
 import { Menu, ChevronLeft, ChevronRight, GraduationCap, ChevronDown } from 'lucide-react';
@@ -428,6 +429,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                   'Desarrollo Profesional',
                   'Evaluación de Ensayo',
                   'SIMCE',
+                  'Presentación Dual',
                 ],
               },
               {
@@ -539,6 +541,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     // Bloquear acceso a Documentación para estudiantes aunque intenten acceder por deep-link o estado previo
     if (activeModule.name === 'Documentación' && profile !== Profile.ESTUDIANTE) return <Documentacion currentUser={currentUser} />;
     if (activeModule.name === 'Calendario Académico') return <CalendarioAcademico profile={profile} />;
+    if (activeModule.name === 'Presentación Dual') return <PresentacionDual currentUser={currentUser} />;
     
     
     

@@ -27,7 +27,8 @@ import {
   ArrowRight,
   Shield,
   FileQuestion,
-  Copy
+  Copy,
+  Presentation
 } from 'lucide-react';
 
 /**
@@ -80,6 +81,7 @@ const ICONS: Record<string, React.ReactNode> = {
   evaluacion_ensayo: <FileText className="w-5 h-5" aria-hidden />,
   multicopias: <Copy className="w-5 h-5" aria-hidden />,
   documentacion: <FileText className="w-5 h-5" aria-hidden />,
+  presentacion_dual: <Presentation className="w-5 h-5" aria-hidden />,
 };
 
 /** Gradientes por módulo (ligeros, accesibles) */
@@ -111,6 +113,7 @@ const ACCENTS: Record<string, string> = {
   calendario: 'from-indigo-500/20 to-blue-500/10',
   evaluacion_ensayo: 'from-purple-500/20 to-violet-500/10',
   multicopias: 'from-slate-500/20 to-slate-400/10',
+  presentacion_dual: 'from-rose-500/20 to-orange-500/10',
 };
 
 /** Etiqueta legible del perfil */
@@ -159,6 +162,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'evaluaciones_formativas', name: 'Evaluaciones Formativas', icon: ICONS.evaluaciones_formativas, accent: ACCENTS.evaluaciones_formativas },
         { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
         { id: 'desarrollo_profesional', name: 'Desarrollo Profesional', icon: ICONS.desarrollo_profesional, accent: ACCENTS.desarrollo_profesional },
+        { id: 'presentacion_dual', name: 'Presentación Dual', icon: ICONS.presentacion_dual, accent: ACCENTS.presentacion_dual, description: 'Rúbrica de desempeño para IIIº y IVº TP.' },
         ...commonModules,
       ];
 
@@ -174,6 +178,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'evaluacion_ensayo', name: 'Evaluación de Ensayo', icon: ICONS.evaluacion_ensayo, accent: ACCENTS.evaluacion_ensayo },
         { id: 'documentacion', name: 'Documentación', icon: ICONS.documentacion, accent: ACCENTS.documentacion },
         { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
+        { id: 'presentacion_dual', name: 'Presentación Dual', icon: ICONS.presentacion_dual, accent: ACCENTS.presentacion_dual, description: 'Seguimiento de presentaciones duales.' },
         ...commonModules,
         { id: 'multicopias', name: 'Multicopias', icon: ICONS.multicopias, accent: ACCENTS.multicopias },
       ];
@@ -194,6 +199,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'inclusion', name: 'Inclusión', icon: ICONS.inclusion, accent: ACCENTS.inclusion },
         { id: 'documentacion', name: 'Documentación', icon: ICONS.documentacion, accent: ACCENTS.documentacion },
         { id: 'simce', name: 'SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Evaluación y preparación para pruebas SIMCE' },
+        { id: 'presentacion_dual', name: 'Presentación Dual', icon: ICONS.presentacion_dual, accent: ACCENTS.presentacion_dual, description: 'Rúbrica de desempeño TP.' },
         ...commonModules,
       ];
 
@@ -204,6 +210,7 @@ const getModulesForProfile = (profile: Profile): Module[] => {
         { id: 'evaluacion_formativa', name: 'Evaluación Formativa', icon: ICONS.evaluacion_formativa, accent: ACCENTS.evaluacion_formativa },
         { id: 'tareas_interdisciplinarias', name: 'Tareas Interdisciplinarias', icon: ICONS.tareas_interdisciplinarias, accent: ACCENTS.tareas_interdisciplinarias },
         { id: 'simce', name: 'Práctica SIMCE', icon: ICONS.simce, accent: ACCENTS.simce, description: 'Práctica y evaluación para SIMCE' },
+        { id: 'presentacion_dual', name: 'Presentación Dual', icon: ICONS.presentacion_dual, accent: ACCENTS.presentacion_dual, description: 'Visualiza tu evaluación dual.' },
         ...commonModules,
       ];
 
@@ -334,6 +341,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
           pick('recursos'),
           pick('interdisciplinario'),
           pick('inclusion'),
+          pick('presentacion_dual', 'Presentación Dual'),
         ].filter(Boolean) as Module[],
       },
       {
@@ -403,6 +411,7 @@ const ModuleSelector: React.FC<ModuleSelectorProps> = ({
           pick('desarrollo_profesional', 'Desarrollo Profesional'),
           pick('evaluacion_ensayo', 'Evaluación de Ensayo'),
           pick('simce', 'SIMCE'),
+          pick('presentacion_dual', 'Presentación Dual'),
         ].filter(Boolean) as Module[],
       },
       {

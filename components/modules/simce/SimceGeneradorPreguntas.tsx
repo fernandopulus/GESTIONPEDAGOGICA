@@ -17,7 +17,12 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 
 // Importar los tipos
-import { Pregunta, Alternativa, SetPreguntas } from '../../../types/simce';
+import { 
+  Pregunta, 
+  SetPreguntas, 
+  AsignaturaSimce, 
+  GeneracionSimceOptions 
+} from '../../../types/simce';
 
 // Importar helpers de Firebase
 import { 
@@ -25,6 +30,10 @@ import {
   actualizarEvaluacionSimce, 
   obtenerEvaluacionesProfesor 
 } from '@/firebaseHelpers/simceHelperExt';
+import { generarPreguntasSimce as generarPreguntasSimceLocal } from '../../../src/ai/simceGenerator';
+import { generarPreguntasSimceCloud } from '../../../src/firebaseHelpers/simceCloudFunctions';
+
+type PreguntaConRespuesta = Pregunta & { respuestaCorrecta?: string };
 
 interface SimceGeneradorPreguntasProps {
   currentUser: User;
@@ -35,11 +44,11 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
   const [cantidadPreguntas, setCantidadPreguntas] = useState<number>(4);
   const [titulo, setTitulo] = useState<string>('');
   const [descripcion, setDescripcion] = useState<string>('');
-  const [preguntas, setPreguntas] = useState<Pregunta[]>([]);
+  const [preguntas, setPreguntas] = useState<PreguntaConRespuesta[]>([]);
   const [cargando, setCargando] = useState<boolean>(false);
   const [guardando, setGuardando] = useState<boolean>(false);
   const [editando, setEditando] = useState<string | null>(null); // ID de la pregunta que se está editando
-  const [preguntaActual, setPreguntaActual] = useState<Pregunta | null>(null);
+  const [preguntaActual, setPreguntaActual] = useState<PreguntaConRespuesta | null>(null);
   const [modo, setModo] = useState<'creacion' | 'edicion'>('creacion');
   const [evaluaciones, setEvaluaciones] = useState<SetPreguntas[]>([]);
   const [evaluacionSeleccionada, setEvaluacionSeleccionada] = useState<string | null>(null);
@@ -95,30 +104,95 @@ export const SimceGeneradorPreguntas: React.FC<SimceGeneradorPreguntasProps> = (
 
   const handleGenerarPreguntas = async () => {
     setError(null);
+    setExito(null);
     setCargando(true);
-    
-    try {
-      // Llamar función backend (Cloud Function) para generar preguntas
-      const response = await fetch('/api/generarPreguntasSimce', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          asignatura,
-          cantidadPreguntas
-        })
+
+    const asignaturaCanonica: AsignaturaSimce = (() => {
+      const value = asignatura.toLowerCase();
+      if (value.includes('lect')) return 'Lectura';
+      if (value.includes('matem') || value.includes('ló')) return 'Matemática';
+      return asignatura;
+    })();
+
+    const opcionesGeneracion: GeneracionSimceOptions = {
+      asignatura: asignaturaCanonica,
+      cantidad: cantidadPreguntas,
+      opcionesPorPregunta: 4,
+      dificultad: 'media',
+      contextoCurricular: descripcion?.trim() || undefined
+    };
+
+    const validarPreguntas = (items: Pregunta[]) => {
+      if (!Array.isArray(items) || items.length === 0) {
+        throw new Error('La respuesta no contiene preguntas válidas');
+      }
+      items.forEach((pregunta, index) => {
+        if (!pregunta.enunciado || !Array.isArray(pregunta.alternativas) || pregunta.alternativas.length !== 4) {
+          throw new Error(`La pregunta ${index + 1} tiene una estructura inválida`);
+        }
       });
-      if (!response.ok) throw new Error('Error al generar preguntas');
-      const data = await response.json();
-      if (!Array.isArray(data)) throw new Error('Respuesta inesperada del servidor');
-      // Añadir IDs únicos a las preguntas
-      const preguntasConId = data.map((pregunta: any) => ({
-        ...pregunta,
-        id: uuidv4()
-      }));
-      setPreguntas(preguntasConId);
+    };
+
+    try {
+      let preguntasGeneradas: Pregunta[] | undefined;
+      const metodosIntentados: string[] = [];
+
+      try {
+        metodosIntentados.push('Cloud Function');
+        preguntasGeneradas = await generarPreguntasSimceCloud(opcionesGeneracion);
+        validarPreguntas(preguntasGeneradas);
+      } catch (cloudError) {
+        console.error('Error con Cloud Function SIMCE:', cloudError);
+        try {
+          metodosIntentados.push('Generador local');
+          preguntasGeneradas = await generarPreguntasSimceLocal(opcionesGeneracion);
+          validarPreguntas(preguntasGeneradas);
+        } catch (localError) {
+          console.error('Error con generador local SIMCE:', localError);
+          const detalles: string[] = [];
+          if (cloudError instanceof Error) detalles.push(`Cloud: ${cloudError.message}`);
+          if (localError instanceof Error) detalles.push(`Local: ${localError.message}`);
+          throw new Error(
+            `No se pudieron generar preguntas (${metodosIntentados.join(' → ')}). ` +
+            (detalles.length ? `Detalles: ${detalles.join(' | ')}` : 'Intente nuevamente más tarde.')
+          );
+        }
+      }
+
+      if (!preguntasGeneradas || preguntasGeneradas.length === 0) {
+        throw new Error('No se generaron preguntas válidas después de todos los intentos');
+      }
+
+      let textoBaseGlobal: string | undefined;
+      if (asignaturaCanonica === 'Lectura') {
+        textoBaseGlobal = preguntasGeneradas.find(p => p.textoBase?.trim())?.textoBase?.trim();
+        if (!textoBaseGlobal) {
+          textoBaseGlobal = 'Texto de comprensión generado automáticamente.';
+        }
+      }
+
+      const preguntasNormalizadas: PreguntaConRespuesta[] = preguntasGeneradas.map((pregunta, index) => {
+        const respuestaCorrecta = pregunta.alternativas.find(alt => alt.esCorrecta)?.id
+          || (pregunta as any).respuestaCorrecta
+          || 'A';
+        return {
+          ...pregunta,
+          id: pregunta.id || `pregunta-${index + 1}-${uuidv4()}`,
+          respuestaCorrecta,
+          textoBase: asignaturaCanonica === 'Lectura' && textoBaseGlobal
+            ? (index === 0 ? textoBaseGlobal : undefined)
+            : pregunta.textoBase
+        };
+      });
+
+      setPreguntas(preguntasNormalizadas);
+      setExito(`Se generaron ${preguntasNormalizadas.length} preguntas usando ${metodosIntentados[metodosIntentados.length - 1]}.`);
     } catch (error) {
       console.error('Error al generar preguntas:', error);
-      setError('Ocurrió un error al generar las preguntas. Intente nuevamente.');
+      const mensaje = error instanceof Error
+        ? error.message
+        : 'Ocurrió un error al generar las preguntas. Intente nuevamente.';
+      setError(mensaje);
     } finally {
       setCargando(false);
     }

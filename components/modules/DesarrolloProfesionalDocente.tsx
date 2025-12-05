@@ -1,5 +1,7 @@
 // components/modules/DesarrolloProfesionalDocente.tsx
-import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import ReactQuill from "../common/PatchedReactQuill";
+import "react-quill/dist/quill.snow.css";
 import {
   Layers,
   ClipboardList,
@@ -29,6 +31,7 @@ import {
 } from "lucide-react";
 import jsPDF from 'jspdf';
 import autoTable, { UserOptions } from 'jspdf-autotable';
+import UltraSafeRenderer from "../common/UltraSafeRenderer";
 
 // === Integraciones que ya existen en tu proyecto (NO cambiar rutas) ===
 import {
@@ -94,6 +97,45 @@ const sanitizeKeywords = (items: { keyword: string; score: number }[]): { keywor
   });
   return Array.from(unique.values());
 };
+
+const richTextModules = {
+  toolbar: [
+    [{ font: [] }],
+    [{ size: [] }],
+    [{ header: [1, 2, 3, false] }],
+    ['bold', 'italic', 'underline'],
+    [{ color: [] }, { background: [] }],
+    [{ list: 'ordered' }, { list: 'bullet' }],
+    ['link', 'clean'],
+  ],
+};
+
+const richTextFormats = [
+  'header',
+  'font',
+  'size',
+  'bold',
+  'italic',
+  'underline',
+  'color',
+  'background',
+  'list',
+  'bullet',
+  'link',
+];
+
+const htmlToPlainText = (value: string): string => {
+  if (!value) return "";
+  return value
+    .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+    .replace(/<br\s*\/?>(?!\n)/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const hasRichContent = (value: string): boolean => htmlToPlainText(value).length > 0;
 
 type ExtendedDPDQuestion =
   | {
@@ -444,22 +486,25 @@ const AnswerCard: React.FC<{
   respuestas: Record<string, any>;
   onChange: (q: DPDQuestion, value: any) => void;
 }> = React.memo(({ q, respuestas, onChange }) => {
-  const onText = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => onChange(q, e.target.value), [q, onChange]);
+  const onRichTextChange = useCallback((content: string) => onChange(q, content), [q, onChange]);
 
   if (q.tipo === "abierta") {
     const val = respuestas[q.id]?.valorTexto || "";
+    const plainText = htmlToPlainText(val);
+    const totalWords = countWords(plainText);
     return (
       <div className="border rounded-xl p-3">
         <p className="font-medium mb-2">{q.enunciado}</p>
-        <textarea
-          rows={5}
+        <ReactQuill
+          theme="snow"
           value={val}
-          onChange={onText}
+          onChange={onRichTextChange}
+          modules={richTextModules}
+          formats={richTextFormats}
           placeholder={`Máximo ${q.maxPalabras || MAX_WORDS} palabras…`}
-          className="w-full border rounded-lg px-3 py-2"
         />
         <div className="text-xs text-slate-500 mt-1">
-          {countWords(val)} / {q.maxPalabras || MAX_WORDS} palabras
+          {totalWords} / {q.maxPalabras || MAX_WORDS} palabras
         </div>
       </div>
     );
@@ -512,6 +557,7 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
 
   // Form (estado local, no se toca al cambiar de pestaña)
   const [form, setForm] = useState<FormState>(defaultForm());
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const patchForm = useCallback((p: Partial<FormState>) => setForm((prev) => ({ ...prev, ...p })), []);
 
   // Usuarios para creador
@@ -553,6 +599,8 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
 
   /* ----------------------------- Derivados ------------------------------ */
   const selectedActivity = useMemo(() => actividades.find((a) => a.id === selectedId), [actividades, selectedId]);
+  const selectedOrientaciones = selectedActivity?.orientaciones || "";
+  const hasOrientaciones = hasRichContent(selectedOrientaciones);
   const subdims = useMemo(() => PME_DIMENSIONES[form.dimension] || [], [form.dimension]);
 
   // Corrige subdimension cuando cambia dimension
@@ -636,8 +684,11 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
           if (!q || q.tipo !== "abierta") continue;
           
           const respuesta = val as { tipo: "abierta"; valorTexto: string };
-          if (respuesta.tipo === "abierta" && respuesta.valorTexto?.trim()) {
-            allOpen.push(respuesta.valorTexto.trim());
+          if (respuesta.tipo === "abierta") {
+            const plain = htmlToPlainText(respuesta.valorTexto || "");
+            if (plain) {
+              allOpen.push(plain);
+            }
           }
         }
       }
@@ -696,7 +747,10 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
     });
   }, []);
 
-  const resetForm = useCallback(() => setForm(defaultForm()), []);
+  const resetForm = useCallback(() => {
+    setForm(defaultForm());
+    setEditingActivityId(null);
+  }, []);
 
   // Cargar una actividad existente en el formulario para edición
   const loadActivityIntoForm = useCallback((activity: DPDActivity) => {
@@ -718,12 +772,14 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
       aiTema: "",
       aiCantidad: 3,
     });
+    setEditingActivityId(activity.id);
   }, []);
 
   const handleSave = useCallback(async () => {
     if (!form.titulo.trim()) return alert("Debes ingresar un título");
     if (!form.creadorId) return alert("Debes seleccionar un creador");
 
+    const orientacionesHtml = form.orientaciones || "";
     const payload = {
       titulo: form.titulo,
       dimension: form.dimension,
@@ -731,16 +787,23 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
       creadorId: form.creadorId,
       creadorNombre: form.creadorNombre,
       creadorPerfil: form.creadorPerfil,
-      orientaciones: form.orientaciones?.trim() || "",
+      orientaciones: hasRichContent(orientacionesHtml) ? orientacionesHtml : "",
       preguntas: convertToSaveFormat(form.preguntas),
     };
-    // Si hay una actividad seleccionada y el usuario es su creador (o admin), actualizamos; si no, creamos nueva
-    const selected = actividades.find((a) => a.id === selectedId);
-    const isAdmin = (currentUser as any)?.isAdmin;
-    const isCreator = selected && selected.creadorId === (currentUser as any)?.uid;
+    const activityBeingEdited = editingActivityId
+      ? actividades.find((a) => a.id === editingActivityId)
+      : null;
 
-    if (selected && (isCreator || isAdmin)) {
-      await updateActividad(selected.id, payload as any);
+    if (activityBeingEdited) {
+      const currentUserId = (currentUser as any)?.uid || (currentUser as any)?.id;
+      const isAdmin = Boolean((currentUser as any)?.isAdmin);
+      const isCreator = Boolean(currentUserId && activityBeingEdited.creadorId === currentUserId);
+      if (!isAdmin && !isCreator) {
+        alert("Solo el creador o un administrador puede actualizar esta actividad.");
+        return;
+      }
+      await updateActividad(activityBeingEdited.id, payload as any);
+      resetForm();
       setTab("responder");
     } else {
       const id = await createActividad(payload as any);
@@ -748,7 +811,7 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
       setSelectedId(id);
       setTab("responder");
     }
-  }, [form, convertToSaveFormat, resetForm]);
+  }, [form, convertToSaveFormat, resetForm, actividades, editingActivityId, currentUser]);
 
   const handleDeleteActivity = useCallback(
     async (activityId: string, titulo: string) => {
@@ -838,7 +901,7 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
       yCursor = (pdf as any).lastAutoTable.finalY + 8;
     };
 
-    const orientaciones = (selectedActivity as any)?.orientaciones || '';
+    const orientaciones = htmlToPlainText((selectedActivity as any)?.orientaciones || '');
     const planningRows = [
       ['Título de la unidad', selectedActivity.titulo],
       ['Dimensión', selectedActivity.dimension],
@@ -891,7 +954,7 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
         respuestasActividad.forEach((respuesta) => {
           const registro = respuesta.respuestas[pregunta.id];
           if (registro?.tipo === 'abierta' && registro.valorTexto) {
-            rows.push([respuesta.userNombre || 'Participante', registro.valorTexto]);
+            rows.push([respuesta.userNombre || 'Participante', htmlToPlainText(registro.valorTexto)]);
           }
         });
         addTable({
@@ -944,7 +1007,7 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
       const r = (respuestas as any)[q.id];
       if (!r) continue;
       if (q.tipo === "abierta" && q.maxPalabras) {
-        const words = countWords(r.valorTexto || "");
+        const words = countWords(htmlToPlainText(r.valorTexto || ""));
         if (words > q.maxPalabras) {
           return alert(
             `La respuesta a "${q.enunciado}" supera el máximo de ${q.maxPalabras} palabras (${words}).`
@@ -1035,13 +1098,27 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
               title="Nueva actividad / sesión"
               icon={<NotebookPen className="w-5 h-5 text-indigo-600" />}
               right={
-                <button
-                  onClick={handleSave}
-                  className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:opacity-90"
-                >
-                  <Save className="w-4 h-4" />
-                  Guardar
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {editingActivityId && (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-1">
+                      <NotebookPen className="w-3 h-3" /> Editando existente
+                    </span>
+                  )}
+                  <button
+                    onClick={resetForm}
+                    className="inline-flex items-center gap-2 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-50 text-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Nueva actividad
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:opacity-90"
+                  >
+                    <Save className="w-4 h-4" />
+                    Guardar
+                  </button>
+                </div>
               }
             >
               {/* BASICOS */}
@@ -1131,13 +1208,16 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
                   acuerdos previos o sugerencias de conducción de la sesión. Solo es editable por el
                   creador o perfiles con permisos.
                 </p>
-                <textarea
-                  value={form.orientaciones}
-                  onChange={(e) => patchForm({ orientaciones: e.target.value })}
-                  rows={4}
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="Ej.: Explicar el propósito de la sesión, acordar normas de participación, conectar con el PME o el plan de formación interna, etc."
-                />
+                <div className="border rounded-lg">
+                  <ReactQuill
+                    theme="snow"
+                    value={form.orientaciones}
+                    onChange={(value) => patchForm({ orientaciones: value })}
+                    modules={richTextModules}
+                    formats={richTextFormats}
+                    placeholder="Ej.: Explicar el propósito de la sesión, acordar normas de participación, conectar con el PME o el plan de formación interna, etc."
+                  />
+                </div>
               </div>
 
               {/* PREGUNTAS */}
@@ -1226,15 +1306,15 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
                   <InfoRow pill label="Creador" value={`${selectedActivity.creadorNombre} • ${selectedActivity.creadorPerfil}`} />
                 </div>
 
-                {selectedActivity.orientaciones?.trim() && (
+                {hasOrientaciones && (
                   <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm text-slate-800">
                     <div className="flex items-center gap-2 mb-1">
                       <NotebookPen className="w-4 h-4 text-indigo-600" />
                       <span className="font-semibold">Orientaciones del creador para esta actividad</span>
                     </div>
-                    <p className="whitespace-pre-wrap text-xs md:text-sm text-slate-700">
-                      {selectedActivity.orientaciones}
-                    </p>
+                    <div className="text-xs md:text-sm text-slate-700 space-y-2 rich-text-content">
+                      <UltraSafeRenderer content={selectedOrientaciones} context="dpd-orientaciones-responder" />
+                    </div>
                   </div>
                 )}
 
@@ -1361,8 +1441,8 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
                               
                               {pregunta.tipo === "abierta" ? (
                                 respuesta?.tipo === "abierta" && respuesta.valorTexto ? (
-                                  <div className="mt-3 bg-slate-50 rounded-lg p-4">
-                                    <p className="text-slate-700 whitespace-pre-wrap">{respuesta.valorTexto}</p>
+                                  <div className="mt-3 bg-slate-50 rounded-lg p-4 text-sm text-slate-700 space-y-2 rich-text-content">
+                                    <UltraSafeRenderer content={respuesta.valorTexto} context={`dpd-respuesta-individual-${pregunta.id}`} />
                                   </div>
                                 ) : (
                                   <p className="text-slate-500 italic mt-3">Sin respuesta</p>
@@ -1453,15 +1533,15 @@ const DesarrolloProfesionalDocente: React.FC<Props> = ({ currentUser }) => {
                   </button>
                 </div>
 
-                {selectedActivity.orientaciones?.trim() && (
+                {hasOrientaciones && (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
                     <div className="flex items-center gap-2 mb-1">
                       <NotebookPen className="w-4 h-4 text-indigo-600" />
                       <span className="font-semibold">Orientaciones del creador</span>
                     </div>
-                    <p className="whitespace-pre-wrap text-xs md:text-sm text-slate-700">
-                      {selectedActivity.orientaciones}
-                    </p>
+                    <div className="text-xs md:text-sm text-slate-700 space-y-2 rich-text-content">
+                      <UltraSafeRenderer content={selectedOrientaciones} context="dpd-orientaciones-dashboard" />
+                    </div>
                   </div>
                 )}
               </div>

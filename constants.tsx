@@ -6,6 +6,8 @@ export const BuildingIcon = () => (
 );
 import React from 'react';
 import { Wrench, Cog as CogLucide } from 'lucide-react';
+import { Wrench, Cog as CogLucide, Presentation } from 'lucide-react';
+const PresentationDualIcon = () => <Presentation className={iconClass} />;
 import { Profile, Module, NivelPlanificacion, EstadoAccion, EventType, EvaluacionSubtype, TipoReunion, TipoInstrumento, EscalaCalificacion, PruebaItemTipo, NivelLogro, EstadoSeguimientoDual, TipoActividadRemota, DificultadAprendizaje, Insignia } from './types';
 
 // --- Estilos base ---
@@ -125,6 +127,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Seguimiento de acciones pedagógicas', icon: <TrendingUpIcon /> },
         { name: 'Inclusión', icon: <AcademicCapIcon /> },
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
+        { name: 'Presentación Dual', icon: <PresentationDualIcon /> },
         
     ],
     [Profile.PROFESORADO]: [
@@ -143,6 +146,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Evaluaciones Formativas', icon: <TrendingUpIcon /> },
         { name: 'Desarrollo Profesional', icon: <AcademicCapIcon /> },
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
+        { name: 'Presentación Dual', icon: <PresentationDualIcon /> },
         
     ],
     [Profile.COORDINACION_TP]: [
@@ -159,6 +163,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         
         { name: 'Alternancia TP', icon: '🔄' }, // Ícono de ciclo o sincronización
         { name: 'Desarrollo Profesional', icon: <AcademicCapIcon /> },
+        { name: 'Presentación Dual', icon: <PresentationDualIcon /> },
     ],
     [Profile.ESTUDIANTE]: [
         { name: 'Auto-aprendizaje', icon: <BookOpenIcon /> },
@@ -167,6 +172,7 @@ export const MODULES_BY_PROFILE: Record<Profile, Module[]> = {
         { name: 'Tareas Interdisciplinarias', icon: <GlobeAltIcon /> },
         { name: 'Asistencia a Empresa', icon: <ClockIcon /> },
         { name: 'Calendario Académico', icon: <CalendarIcon /> },
+        { name: 'Presentación Dual', icon: <PresentationDualIcon /> },
         
     ]
 };

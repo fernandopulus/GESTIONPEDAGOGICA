@@ -17,3 +17,24 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+.rich-text-content {
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.rich-text-content p,
+.rich-text-content div {
+  margin: 0 0 0.5rem;
+}
+
+.rich-text-content ul,
+.rich-text-content ol {
+  margin: 0.5rem 0 0.5rem 1.25rem;
+  padding: 0;
+}
+
+.rich-text-content a {
+  color: #2563eb;
+  text-decoration: underline;
+}

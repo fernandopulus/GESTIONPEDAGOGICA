@@ -197,10 +197,9 @@ const usePlanificaciones = (userId: string | null, currentUser?: User | null) =>
   };
 };
 
-import React, { useState, useEffect, useCallback, ChangeEvent, FormEvent } from 'react';
+import React, { useState, useEffect, useCallback, ChangeEvent, FormEvent, useMemo, useRef } from 'react';
 import { auth } from '../../src/firebase';
 import type { PlanificacionUnidad, PlanificacionClase, DetalleLeccion, ActividadPlanificada, TareaActividad, User, NivelPlanificacion, ActividadFocalizadaEvent, MomentosClase, PlanificacionDocente } from '../../types';
-import { useMemo } from 'react';
 import { EventType } from '../../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -221,7 +220,10 @@ import {
   Sparkles,
   LayoutDashboard,
   PresentationIcon,
-  Download
+  Download,
+  UploadCloud,
+  Paperclip,
+  FileText
 } from 'lucide-react';
 import MaterialesDidacticosSubmodule from './MaterialesDidacticosSubmodule';
 // import { saveCalendarEvent } from '../../src/firebaseHelpers/calendar'; // Función no disponible
@@ -1649,6 +1651,21 @@ interface PlanificacionDocenteProps {
   currentUser: User;
 }
 
+type ContextAttachment = {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  data: string;
+};
+
+const CONTEXT_FILE_LIMIT = 3;
+const CONTEXT_FILE_MAX_BYTES = 5 * 1024 * 1024; // 5MB por archivo
+const GEMINI_SUPPORTED_ATTACHMENT_TYPES = [
+  'application/pdf',
+  'text/plain',
+];
+
 const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser }) => {
   // Usa uid como identificador principal, luego id, luego email como fallbacks
   const userId = currentUser?.uid || currentUser?.id || currentUser?.email || '';
@@ -1693,7 +1710,8 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
   const [editingLesson, setEditingLesson] = useState<{ planId: string; lessonIndex: number; lessonData: DetalleLeccion } | null>(null);
   // Documentos institucionales para planificación (tag: 'planificacion')
   const [planDocs, setPlanDocs] = useState<DocuMeta[]>([]);
-  const [selectedPlanDocIds, setSelectedPlanDocIds] = useState<string[]>([]);
+  const [contextFiles, setContextFiles] = useState<ContextAttachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadDesc, setUploadDesc] = useState('');
   const [uploadTags, setUploadTags] = useState<string>('planificacion');
@@ -1791,15 +1809,74 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
     };
   }, []);
 
-  const toggleSelectPlanDoc = (id: string) => {
-    setSelectedPlanDocIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const formatFileSize = (size: number) => {
+    if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${size} B`;
+  };
+
+  const handleBrowseContextFile = () => fileInputRef.current?.click();
+
+  const handleContextFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (contextFiles.length >= CONTEXT_FILE_LIMIT) {
+      alert(`Puedes adjuntar hasta ${CONTEXT_FILE_LIMIT} documentos por planificación.`);
+      e.target.value = '';
+      return;
+    }
+
+    if (file.size > CONTEXT_FILE_MAX_BYTES) {
+      alert(`"${file.name}" supera el límite de ${(CONTEXT_FILE_MAX_BYTES / (1024 * 1024)).toFixed(1)} MB.`);
+      e.target.value = '';
+      return;
+    }
+
+    if (file.type && !GEMINI_SUPPORTED_ATTACHMENT_TYPES.includes(file.type)) {
+      const accepted = GEMINI_SUPPORTED_ATTACHMENT_TYPES.join(', ');
+      alert(`El modelo de IA solo acepta documentos en formato PDF o texto plano. Convierte "${file.name}" y vuelve a intentarlo. Tipos permitidos: ${accepted}`);
+      e.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1];
+      if (!base64) {
+        alert('No se pudo leer el archivo. Intente nuevamente.');
+        return;
+      }
+
+      setContextFiles(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          name: file.name,
+          size: file.size,
+          type: file.type || 'application/octet-stream',
+          data: base64,
+        },
+      ]);
+    };
+    reader.onerror = () => {
+      console.error('Error leyendo archivo de contexto:', reader.error);
+      alert('No se pudo leer el archivo adjunto.');
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleRemoveContextFile = (id: string) => {
+    setContextFiles(prev => prev.filter(file => file.id !== id));
   };
 
   const buildUnidadPrompt = () => {
     const { asignatura, nivel, nombreUnidad, contenidos, cantidadClases, observaciones, ideasParaUnidad } = unidadFormData;
-    const selectedDocs = planDocs.filter(d => selectedPlanDocIds.includes(d.id));
-    const docsContext = selectedDocs.length > 0
-      ? `\n\nDocumentos institucionales a considerar (Subdirección):\n${selectedDocs.map(d => `- ${d.title}${d.description ? `: ${d.description}` : ''}`).join('\n')}\n\nUsa estas referencias para alinear la planificación con los lineamientos institucionales.`
+
+    const attachmentsContext = contextFiles.length > 0
+      ? `\n\nSe adjuntan ${contextFiles.length} documento(s) institucionales (plan de estudios, PEI, lineamientos específicos). Analiza su contenido y prioriza cualquier indicación explícita para mantener coherencia institucional.`
       : '';
 
     return `Eres un experto diseñador curricular para la educación media técnico profesional en Chile. Tu tarea es generar una planificación de unidad didáctica siguiendo fielmente las bases curriculares y los objetivos de aprendizaje del Currículum Nacional Chileno (MINEDUC) para ${asignatura} en ${nivel}. La planificación debe presentarse en formato JSON estructurado.
@@ -1830,7 +1907,7 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         - **actividades**: Sugiere 1 o 2 actividades concretas, indicando el número de clase entre paréntesis (ej: "Debate grupal (Clase 1)").
         - **asignaturasInterdisciplinariedad**: Sugiere una asignatura con la que se podría realizar un trabajo interdisciplinario.
 
-    Asegúrate de que el contenido generado sea coherente, pedagógicamente sólido y esté directamente relacionado con los contenidos clave proporcionados por el docente. El nombre de la unidad debe ser exactamente el proporcionado.${docsContext}`;
+    Asegúrate de que el contenido generado sea coherente, pedagógicamente sólido y esté directamente relacionado con los contenidos clave proporcionados por el docente. El nombre de la unidad debe ser exactamente el proporcionado.${attachmentsContext}`;
   };
 
   const handleGenerateUnidad = async (e: FormEvent) => {
@@ -1860,13 +1937,28 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ prompt, unidadFormData })
+        body: JSON.stringify({
+          prompt,
+          unidadFormData,
+          contextFiles: contextFiles.map(file => ({
+            name: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            data: file.data,
+          })),
+        })
       });
 
       if (!response.ok) {
         const errorBody = await response.text();
         console.error("Error response from backend:", errorBody);
-        throw new Error(`Error al generar la unidad con IA: ${response.statusText}`);
+        let backendMessage = response.statusText;
+        try {
+          const parsed = JSON.parse(errorBody);
+          if (parsed?.error) backendMessage = parsed.error;
+        } catch (_) {
+          // ignora errores de parseo
+        }
+        throw new Error(`Error al generar la unidad con IA: ${backendMessage}`);
       }
 
       const generatedData = await response.json();
@@ -1886,7 +1978,6 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
         objetivosAprendizaje: generatedData.objetivosAprendizaje,
         indicadoresEvaluacion: generatedData.indicadoresEvaluacion,
         detallesLeccion: generatedData.detallesLeccion,
-        documentosInstitucionales: planDocs.filter(d => selectedPlanDocIds.includes(d.id)).map(d => ({ id: d.id, title: d.title })),
       };
       if (editingPlanificacion) {
         await updatePlan(editingPlanificacion.id, newPlan);
@@ -1897,7 +1988,8 @@ const PlanificacionDocente: React.FC<PlanificacionDocenteProps> = ({ currentUser
       }
     } catch (e) {
       console.error("Error al generar planificación con IA", e);
-      setError("Ocurrió un error al contactar con la IA. Verifique la configuración y reintente.");
+      const message = e instanceof Error ? e.message : 'Ocurrió un error al contactar con la IA. Verifique la configuración y reintente.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -2750,25 +2842,72 @@ const renderUnidadTab = () => (
               <button onClick={() => setActiveTab('config')} className="text-sm px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white">Ir a Configuración</button>
             </div>
           )}
-          {/* Filtro/selector de documentos institucionales */}
-          <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-md">
-            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-3">Documentación institucional (opcional)</h3>
-            {planDocs.length === 0 ? (
-              <p className="text-slate-500 dark:text-slate-400">Subdirección aún no ha cargado documentos. Cuando existan, podrás seleccionarlos aquí para considerar en la generación.</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {planDocs.map(doc => (
-                  <label key={doc.id} className="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer">
-                    <input type="checkbox" className="mt-1" checked={selectedPlanDocIds.includes(doc.id)} onChange={()=>toggleSelectPlanDoc(doc.id)} />
-                    <div>
-                      <p className="font-medium text-slate-800 dark:text-slate-100">{doc.title}</p>
-                      {doc.description && <p className="text-sm text-slate-500 dark:text-slate-400">{doc.description}</p>}
-                    </div>
-                  </label>
-                ))}
+          <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-white via-slate-50 to-slate-100 dark:from-slate-900/40 dark:via-slate-900/20 dark:to-slate-900/60 shadow-lg">
+            <div className="flex flex-col gap-6 md:flex-row md:items-start">
+              <div className="flex-1 p-6 md:p-8 space-y-4">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-200">
+                    <Paperclip className="w-5 h-5" />
+                  </span>
+                  <div>
+                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Adjunta documentos propios</h3>
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Complementa la generación con lineamientos específicos del PEI o pautas internas. Solo se enviarán para esta planificación.</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                  <span className="px-2.5 py-0.5 rounded-full bg-white/80 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700">PDF o TXT</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-white/80 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700">Máx. {(CONTEXT_FILE_MAX_BYTES / (1024 * 1024)).toFixed(0)} MB</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-white/80 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700">Hasta {CONTEXT_FILE_LIMIT} archivos</span>
+                </div>
+                <div className="flex flex-wrap gap-3 items-center">
+                  <button
+                    type="button"
+                    onClick={handleBrowseContextFile}
+                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 text-white px-5 py-2.5 text-sm font-semibold shadow-md shadow-indigo-500/30 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  >
+                    <UploadCloud className="w-4 h-4" />
+                    Seleccionar archivo
+                  </button>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Evita DOCX u otros formatos cerrados: la IA no los procesa.</span>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/pdf,text/plain"
+                  onChange={handleContextFileSelect}
+                  className="hidden"
+                />
               </div>
-            )}
-          </div>
+              <div className="md:w-72 border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/40 rounded-b-2xl md:rounded-b-none md:rounded-r-2xl p-5">
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-100">Archivos seleccionados ({contextFiles.length}/{CONTEXT_FILE_LIMIT})</p>
+                {contextFiles.length > 0 ? (
+                  <div className="mt-3 space-y-3 max-h-56 overflow-auto pr-1">
+                    {contextFiles.map(file => (
+                      <div key={file.id} className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate max-w-[10rem]" title={file.name}>{file.name}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{formatFileSize(file.size)} • {(file.type || 'Archivo').split('/').pop()}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveContextFile(file.id)}
+                          className="text-xs font-semibold text-red-500 hover:text-red-400"
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-6 flex flex-col items-center text-center gap-2 text-slate-500 dark:text-slate-400">
+                    <FileText className="w-8 h-8 text-slate-400 dark:text-slate-500" />
+                    <p className="text-sm">Aún no adjuntas documentos complementarios.</p>
+                    <p className="text-xs">Recuerda que puedes eliminar los archivos antes de generar la planificación.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
           {renderUnidadTab()}
         </div>
       )}

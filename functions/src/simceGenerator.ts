@@ -319,8 +319,8 @@ function validarYNormalizarPreguntas(data: any, cantidadSolicitada: number): any
  */
 export const generarPreguntasSimce = onCall({
   enforceAppCheck: false, // Cambiar a true en producción
-  timeoutSeconds: 120, // Timeout de 2 minutos
-  memory: "1GiB", // Aumentar memoria para Gemini
+  timeoutSeconds: 300, // Extiende a 5 minutos para prompts largos
+  memory: "2GiB", // Más memoria para respuestas extensas de Gemini
   secrets: ["GEMINI_API_KEY"],
 }, async (request) => {
   try {

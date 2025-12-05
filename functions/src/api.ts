@@ -16,7 +16,7 @@ const GOOGLE_MAPS_API_KEY = defineSecret("GOOGLE_MAPS_API_KEY");
 
 // ---- Express app ----
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "8mb" }));
 
 // CORS global
 app.use(
@@ -52,21 +52,40 @@ const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
 };
 
 // ---- Gemini helper ----
-const callGeminiText = async (prompt: string, modelName = "gemini-2.5-pro") => {
+type GeminiAttachment = { mimeType: string; data: string };
+const GEMINI_INLINE_SUPPORTED_MIMES = new Set(['application/pdf', 'text/plain']);
+
+const callGeminiText = async (
+  prompt: string,
+  modelName = "gemini-2.5-pro",
+  attachments?: GeminiAttachment[]
+) => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("No Gemini API Key configured");
   const ai = new GoogleGenerativeAI(apiKey);
   const model = ai.getGenerativeModel({ model: modelName });
-  const result = await model.generateContent(prompt);
+  const parts: any[] = [{ text: prompt }];
+  if (attachments?.length) {
+    attachments.forEach(file => {
+      parts.push({
+        inlineData: {
+          mimeType: file.mimeType,
+          data: file.data,
+        },
+      });
+    });
+  }
+  const result = await model.generateContent(parts);
   return result.response.text();
 };
 
 const respondJsonFromGemini = async (
   res: Response,
   prompt: string,
-  modelName?: string
+  modelName?: string,
+  attachments?: GeminiAttachment[]
 ) => {
-  let text = await callGeminiText(prompt, modelName);
+  let text = await callGeminiText(prompt, modelName, attachments);
   try {
     // Clean potential markdown code block from Gemini response
     const match = text.match(/```(json)?\n([\s\S]*?)\n```/);
@@ -487,9 +506,42 @@ apiRouter.post("/generarConceptosPlanificacion", requireAuth, async (req, res) =
 
 apiRouter.post("/generarUnidadPlanificacion", requireAuth, async (req, res) => {
   try {
-    const { prompt } = req.body || {};
+    const { prompt, contextFiles } = req.body || {};
     if (!prompt) return res.status(400).json({ error: "Prompt requerido" });
-    return await respondJsonFromGemini(res, prompt);
+
+    const unsupportedAttachment = Array.isArray(contextFiles)
+      ? contextFiles.find((file: any) => {
+          const mimeType = typeof file?.mimeType === 'string' ? file.mimeType.trim() : '';
+          return !mimeType || !GEMINI_INLINE_SUPPORTED_MIMES.has(mimeType);
+        })
+      : null;
+
+    if (unsupportedAttachment) {
+      return res.status(400).json({
+        error: `El archivo "${unsupportedAttachment.name || 'adjunto'}" no está en un formato permitido (${unsupportedAttachment.mimeType || 'desconocido'}). Convierte a PDF o texto plano antes de enviarlo a la IA.`,
+      });
+    }
+
+    const MAX_INLINE_BYTES = 5 * 1024 * 1024; // 5MB por archivo dentro del request
+    const attachments: GeminiAttachment[] | undefined = Array.isArray(contextFiles)
+      ? contextFiles
+          .filter((file: any) => file && typeof file.data === "string" && file.data.trim().length > 0)
+          .map((file: any) => {
+            const mimeType = typeof file.mimeType === "string" && file.mimeType.trim().length > 0
+              ? file.mimeType
+              : "application/octet-stream";
+            const data = file.data.trim();
+            const approxBytes = (data.length * 3) / 4;
+            if (approxBytes > MAX_INLINE_BYTES) {
+              console.warn(`Archivo adjunto ignorado por exceder límite (${approxBytes} bytes)`);
+              return null;
+            }
+            return { mimeType, data } as GeminiAttachment;
+          })
+          .filter((file: GeminiAttachment | null): file is GeminiAttachment => file !== null)
+      : undefined;
+
+    return await respondJsonFromGemini(res, prompt, undefined, attachments);
   } catch (error) {
     console.error("generarUnidadPlanificacion error:", error);
     return res.status(500).json({ error: "IA call failed" });

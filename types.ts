@@ -343,6 +343,9 @@ export enum EvaluacionSubtype {
     GUIA_APRENDIZAJE = 'Guía de Aprendizaje',
     RUBRICA = 'Rúbrica',
     PAUTA_COTEJO = 'Pauta de Cotejo',
+  PRUEBA_GLOBAL = 'Prueba Global',
+  PRESENTACION_DUAL = 'Presentación Dual',
+  PRUEBA_PERFIL_EGRESO = 'Prueba de Perfil de Egreso',
 }
 
 interface BaseEvent {
@@ -354,9 +357,10 @@ export interface EvaluacionEvent extends BaseEvent {
   type: EventType.EVALUACION;
   subtype: EvaluacionSubtype;
   asignatura: string;
-  curso: string;
+  curso?: string;
   contenidos: string;
   enlace?: string;
+  nivel?: string;
 }
 
 export interface ActoEvent extends BaseEvent {
@@ -1203,4 +1207,54 @@ export interface EvaluacionEmpresaEstudiante {
   updatedAt?: any;
   updatedBy?: { id?: string; nombre?: string };
   createdAt?: any;
+}
+
+// --- Presentación Dual ---
+export type PresentacionDualEstado = 'Pendiente' | 'Retroalimentada' | 'Aprobada';
+
+export type NivelLogroPresentacionDual = 'DEBIL' | 'INCIPIENTE' | 'SATISFACTORIO' | 'AVANZADO';
+
+export interface PresentacionDualNivelDescriptor {
+  label: 'Débil' | 'Incipiente' | 'Satisfactorio' | 'Avanzado';
+  puntaje: 1 | 2 | 3 | 4;
+  descripcion: string;
+}
+
+export interface PresentacionDualIndicador {
+  id: number;
+  indicador: string;
+  niveles: Record<NivelLogroPresentacionDual, PresentacionDualNivelDescriptor>;
+}
+
+export interface PresentacionDualRubricSelection {
+  indicadorId: number;
+  nivel: NivelLogroPresentacionDual;
+  puntaje: number;
+  comentario?: string;
+  updatedAt?: string;
+  updatedBy?: { id?: string; nombre?: string };
+}
+
+export interface PresentacionDualEvaluation {
+  id: string;
+  estudianteId: string;
+  estudianteNombre: string;
+  estudianteEmail?: string;
+  curso: string;
+  especialidad: 'Mecánica Industrial' | 'Mecánica Automotriz';
+  nivel: 'IIIº Medio' | 'IVº Medio';
+  fechaPresentacion: string; // YYYY-MM-DD
+  estado: PresentacionDualEstado;
+  rubric: PresentacionDualRubricSelection[];
+  retroalimentacion?: string;
+  evidencias?: { nombre: string; url: string }[];
+  puntajeTotal: number;
+  puntajeMaximo: number;
+  notaFinal: number;
+  exigencia: number; // e.g. 0.6 (60% exigencia)
+  notaTexto?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  creadoPor?: { id?: string; nombre?: string; profile?: Profile };
+  actualizadoPor?: { id?: string; nombre?: string; profile?: Profile };
 }
