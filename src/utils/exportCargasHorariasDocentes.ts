@@ -172,11 +172,11 @@ export async function exportCargasHorariasDocentes(
       const head = [
         [
           'Asignatura',
-          'Sala',
+          'Sala de clases',
           ...cursosUsados,
           'Total Asig.',
           'Funciones Lectivas',
-          'Funciones Extraordinarias'
+          'Acompañamiento a curso'
         ]
       ];
 
@@ -184,7 +184,10 @@ export async function exportCargasHorariasDocentes(
         const funcionesTxt = (a.funcionesLectivas || [])
           .map(f => `${f.nombre || 'Función'} (${f.horas}h)`).join('\n');
         const funcionesExtraTxt = (a.funcionesExtraordinarias || [])
-          .map(f => `${f.tipo}: ${(f.cursos && f.cursos.length) ? f.cursos.join(', ') : 'Sin cursos asignados'}`)
+          .map(f => {
+            const cursosAsignados = f.cursos && f.cursos.length ? f.cursos.join(', ') : 'Sin cursos definidos';
+            return `Acompañamiento a curso: ${cursosAsignados}`;
+          })
           .join('\n');
         const totalAsig = a.horasXAsig || 0;
         const row = [
@@ -200,7 +203,7 @@ export async function exportCargasHorariasDocentes(
 
       // Calcular estilos de columnas adaptativos
       const asignaturaColWidth = isLandscape ? 65 : 50;
-      const salaColWidth = 30;
+      const salaColWidth = 34;
       const funcionesColWidth = isLandscape ? 80 : 60;
       const funcionesExtraColWidth = isLandscape ? 90 : 65;
       const cursosStartIndex = 2; // después de Asignatura y Sala
