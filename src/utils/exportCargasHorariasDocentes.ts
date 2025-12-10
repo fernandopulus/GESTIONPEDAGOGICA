@@ -166,75 +166,77 @@ export async function exportCargasHorariasDocentes(
       doc.setFont('helvetica', 'italic');
       doc.text('Este docente no tiene asignaciones registradas.', margin, currentY);
     } else {
-      // Determinar cursos utilizados para columnas dinámicas
-      const cursosUsados = CURSOS.filter(c => asignacionesDoc.some(a => a.horasPorCurso[c as CursoId]));
-      // Construir cabecera
+      // Construir cabecera fija, evitando desbordes horizontales
       const head = [
         [
           'Asignatura',
+          'Cursos asignatura',
           'Sala de clases',
-          ...cursosUsados,
           'Total Asig.',
           'Funciones Lectivas',
-          'Acompañamiento a curso'
+          'Tutoría / Orientación',
+          'Cursos T/O'
         ]
       ];
 
       const body = asignacionesDoc.map(a => {
         const funcionesTxt = (a.funcionesLectivas || [])
           .map(f => `${f.nombre || 'Función'} (${f.horas}h)`).join('\n');
-        const funcionesExtraTxt = (a.funcionesExtraordinarias || [])
-          .map(f => {
-            const cursosAsignados = f.cursos && f.cursos.length ? f.cursos.join(', ') : 'Sin cursos definidos';
-            return `Acompañamiento a curso: ${cursosAsignados}`;
-          })
+        const funcionesExtra = (a.funcionesExtraordinarias || []);
+        const funcionesExtraTxt = funcionesExtra
+          .map(f => f.tipo)
+          .join('\n');
+        const cursosExtraTxt = funcionesExtra
+          .map(f => (f.cursos && f.cursos.length ? f.cursos.join(', ') : 'Sin cursos definidos'))
           .join('\n');
         const totalAsig = a.horasXAsig || 0;
-        const row = [
+        const cursosAsignaturaTxt = Object.entries(a.horasPorCurso || {})
+          .filter(([, horas]) => typeof horas === 'number' && horas > 0)
+          .map(([curso]) => curso)
+          .join(', ');
+        return [
           a.asignaturaOModulo || '—',
+          cursosAsignaturaTxt || '—',
           a.salaDeClases || '—',
-          ...cursosUsados.map(c => String(a.horasPorCurso[c as CursoId] || '')),
           String(totalAsig),
           funcionesTxt || '—',
-          funcionesExtraTxt || '—'
+          funcionesExtraTxt || '—',
+          cursosExtraTxt || '—'
         ];
-        return row;
       });
 
-      // Calcular estilos de columnas adaptativos
-      const asignaturaColWidth = isLandscape ? 65 : 50;
-      const salaColWidth = 34;
-      const funcionesColWidth = isLandscape ? 80 : 60;
-      const funcionesExtraColWidth = isLandscape ? 90 : 65;
-      const cursosStartIndex = 2; // después de Asignatura y Sala
-      const totalColIndex = cursosStartIndex + cursosUsados.length;
-      const funcionesLectivasIndex = totalColIndex + 1;
-      const funcionesExtraIndex = funcionesLectivasIndex + 1;
+      const asignaturaColWidth = 45;
+      const cursosAsignaturaColWidth = 55;
+      const salaColWidth = 28;
+      const totalColWidth = 24;
+      const funcionesColWidth = 58;
+      const funcionesExtraColWidth = 40;
+      const cursosExtraColWidth = 65;
 
       autoTable(doc, {
         head,
         body,
         startY: currentY,
         margin: { left: margin, right: margin, top: headerBottom + 8, bottom: margin },
-        tableWidth: 'wrap',
+        tableWidth: 'auto',
         styles: { fontSize: 9, cellPadding: 3, lineWidth: 0.1, overflow: 'linebreak', valign: 'middle' },
         headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], halign: 'center' },
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
           0: { cellWidth: asignaturaColWidth },
-          1: { cellWidth: salaColWidth, halign: 'center' },
-          // columnas de cursos (2..n) centradas automáticamente
-          [totalColIndex]: { halign: 'center', cellWidth: isLandscape ? 20 : 16 },
-          [funcionesLectivasIndex]: { cellWidth: funcionesColWidth, halign: 'left' },
-          [funcionesExtraIndex]: { cellWidth: funcionesExtraColWidth, halign: 'left' }
-        } as any,
+          1: { cellWidth: cursosAsignaturaColWidth, halign: 'left' },
+          2: { cellWidth: salaColWidth, halign: 'center' },
+          3: { cellWidth: totalColWidth, halign: 'center' },
+          4: { cellWidth: funcionesColWidth, halign: 'left' },
+          5: { cellWidth: funcionesExtraColWidth, halign: 'left' },
+          6: { cellWidth: cursosExtraColWidth, halign: 'left' }
+        },
         didDrawPage: () => {
           ensureHeader(titulo);
           ensureFooter();
         }
       });
-      // Actualizar Y después de la tabla
-      // @ts-ignore
+      // @ts-ignore - posición final de la tabla
       currentY = (doc as any).lastAutoTable.finalY + 8;
     }
 
