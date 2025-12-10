@@ -172,28 +172,41 @@ export async function exportCargasHorariasDocentes(
       const head = [
         [
           'Asignatura',
+          'Sala',
           ...cursosUsados,
           'Total Asig.',
-          'Funciones Lectivas'
+          'Funciones Lectivas',
+          'Funciones Extraordinarias'
         ]
       ];
 
       const body = asignacionesDoc.map(a => {
         const funcionesTxt = (a.funcionesLectivas || [])
           .map(f => `${f.nombre || 'Función'} (${f.horas}h)`).join('\n');
+        const funcionesExtraTxt = (a.funcionesExtraordinarias || [])
+          .map(f => `${f.tipo}: ${(f.cursos && f.cursos.length) ? f.cursos.join(', ') : 'Sin cursos asignados'}`)
+          .join('\n');
         const totalAsig = a.horasXAsig || 0;
         const row = [
           a.asignaturaOModulo || '—',
+          a.salaDeClases || '—',
           ...cursosUsados.map(c => String(a.horasPorCurso[c as CursoId] || '')),
           String(totalAsig),
-          funcionesTxt || '—'
+          funcionesTxt || '—',
+          funcionesExtraTxt || '—'
         ];
         return row;
       });
 
       // Calcular estilos de columnas adaptativos
       const asignaturaColWidth = isLandscape ? 65 : 50;
+      const salaColWidth = 30;
       const funcionesColWidth = isLandscape ? 80 : 60;
+      const funcionesExtraColWidth = isLandscape ? 90 : 65;
+      const cursosStartIndex = 2; // después de Asignatura y Sala
+      const totalColIndex = cursosStartIndex + cursosUsados.length;
+      const funcionesLectivasIndex = totalColIndex + 1;
+      const funcionesExtraIndex = funcionesLectivasIndex + 1;
 
       autoTable(doc, {
         head,
@@ -206,11 +219,11 @@ export async function exportCargasHorariasDocentes(
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
           0: { cellWidth: asignaturaColWidth },
-          // columnas de cursos (1..n) centradas automáticamente
-          // la penúltima (Total Asig.):
-          [1 + cursosUsados.length]: { halign: 'center', cellWidth: isLandscape ? 20 : 16 },
-          // última (Funciones Lectivas):
-          [2 + cursosUsados.length]: { cellWidth: funcionesColWidth, halign: 'left' }
+          1: { cellWidth: salaColWidth, halign: 'center' },
+          // columnas de cursos (2..n) centradas automáticamente
+          [totalColIndex]: { halign: 'center', cellWidth: isLandscape ? 20 : 16 },
+          [funcionesLectivasIndex]: { cellWidth: funcionesColWidth, halign: 'left' },
+          [funcionesExtraIndex]: { cellWidth: funcionesExtraColWidth, halign: 'left' }
         } as any,
         didDrawPage: () => {
           ensureHeader(titulo);

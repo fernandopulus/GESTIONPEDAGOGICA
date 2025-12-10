@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -24,6 +24,7 @@ const datosEjemplo = [
       '3°C': 8,
       '4°A': 6
     },
+    salaDeClases: 'Sala 3',
     ha: 38,
     deltaHA: 0,
     hb: 6,
@@ -41,6 +42,7 @@ const datosEjemplo = [
       '2°B': 8,
       '3°A': 8
     },
+    salaDeClases: 'CRA',
     ha: 30,
     deltaHA: -6,
     hb: 14,
@@ -59,6 +61,7 @@ const datosEjemplo = [
       '3°C': 10,
       '4°B': 12
     },
+    salaDeClases: 'Sala 12',
     ha: 35,
     deltaHA: 7,
     hb: 0,
@@ -76,7 +79,7 @@ const cursos = [
 ];
 
 // Lista de asignaturas
-const asignaturas = [
+const asignaturasIniciales = [
   'Matemáticas',
   'Lenguaje',
   'Historia',
@@ -90,7 +93,7 @@ const asignaturas = [
 ];
 
 // Lista de docentes
-const docentes = [
+const docentesIniciales = [
   'Juan Pérez',
   'María González',
   'Pedro Sánchez',
@@ -101,9 +104,43 @@ const docentes = [
   'Isabel Castro'
 ];
 
+const salasDisponibles = [
+  ...Array.from({ length: 20 }, (_, index) => `Sala ${index + 1}`),
+  'CRA',
+  'Gimnasio',
+  'Sala Maker'
+];
+
+type AsignacionCargaDemo = typeof datosEjemplo[number];
+
+const crearMapaCursosVacio = () =>
+  cursos.reduce<Record<string, number>>((acc, curso) => {
+    acc[curso] = 0;
+    return acc;
+  }, {});
+
 const AsignacionesCargaHoraria: React.FC = () => {
   const [datos, setDatos] = useState(datosEjemplo);
   const [cursoSeleccionado, setCursoSeleccionado] = useState<string | null>(null);
+  const [docentesDisponibles, setDocentesDisponibles] = useState(docentesIniciales);
+  const [asignaturasDisponibles, setAsignaturasDisponibles] = useState(asignaturasIniciales);
+  const [nuevoDocente, setNuevoDocente] = useState('');
+  const [nuevaAsignatura, setNuevaAsignatura] = useState('');
+
+  const crearAsignacionVacia = useCallback((): AsignacionCargaDemo => ({
+    id: `temp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    docente: docentesDisponibles[0] || 'Docente por asignar',
+    asignatura: asignaturasDisponibles[0] || 'Asignatura pendiente',
+    funcionesLectivas: [],
+    horasAsignadas: 0,
+    cursos: crearMapaCursosVacio(),
+    salaDeClases: '',
+    ha: 0,
+    deltaHA: 0,
+    hb: 0,
+    deltaHB: 0,
+    estado: 'correcto'
+  }), [docentesDisponibles, asignaturasDisponibles]);
 
   // Manejadores de eventos
   const agregarFuncion = (id: string) => {
@@ -112,18 +149,38 @@ const AsignacionesCargaHoraria: React.FC = () => {
   };
 
   const agregarAsignacion = () => {
-    // Aquí iría la lógica para agregar una nueva asignación
-    console.log('Agregar nueva asignación');
+    setDatos((prev) => [...prev, crearAsignacionVacia()]);
   };
 
   const eliminarAsignacion = (id: string) => {
-    // Aquí iría la lógica para eliminar una asignación
-    console.log(`Eliminar asignación ${id}`);
+    setDatos((prev) => prev.filter((asignacion) => asignacion.id !== id));
   };
+
+  const actualizarAsignacionCampo = useCallback((id: string, campo: keyof AsignacionCargaDemo, valor: any) => {
+    setDatos((prev) => prev.map((asignacion) => (asignacion.id === id ? { ...asignacion, [campo]: valor } : asignacion)));
+  }, []);
 
   const asignarHorasCurso = (id: string, curso: string, horas: number) => {
     // Aquí iría la lógica para asignar horas a un curso
     console.log(`Asignar ${horas} horas al curso ${curso} para la asignación ${id}`);
+  };
+
+  const asignarSala = (id: string, sala: string) => {
+    setDatos(prev => prev.map(asignacion => asignacion.id === id ? { ...asignacion, salaDeClases: sala } : asignacion));
+  };
+
+  const handleAgregarDocenteDisponible = () => {
+    const nombre = nuevoDocente.trim();
+    if (!nombre) return;
+    setDocentesDisponibles((prev) => (prev.includes(nombre) ? prev : [...prev, nombre]));
+    setNuevoDocente('');
+  };
+
+  const handleAgregarAsignaturaDisponible = () => {
+    const nombre = nuevaAsignatura.trim();
+    if (!nombre) return;
+    setAsignaturasDisponibles((prev) => (prev.includes(nombre) ? prev : [...prev, nombre]));
+    setNuevaAsignatura('');
   };
 
   // Renderizadores de componentes
@@ -184,6 +241,48 @@ const AsignacionesCargaHoraria: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Controles para agregar docentes y asignaturas */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="p-4 border border-slate-200 rounded-2xl bg-slate-50">
+          <p className="text-[11px] uppercase tracking-wider text-slate-500 font-medium mb-2">Nuevo docente</p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={nuevoDocente}
+              onChange={(e) => setNuevoDocente(e.target.value)}
+              placeholder="Ej: Marcela Díaz"
+              className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-[13px] text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+            />
+            <button
+              onClick={handleAgregarDocenteDisponible}
+              className="px-4 py-2 rounded-xl bg-sky-600 text-white text-sm font-medium hover:bg-sky-700 transition-colors"
+            >
+              Agregar docente
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-2">Se sumará a la lista desplegable de docentes.</p>
+        </div>
+        <div className="p-4 border border-slate-200 rounded-2xl bg-slate-50">
+          <p className="text-[11px] uppercase tracking-wider text-slate-500 font-medium mb-2">Nueva asignatura</p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={nuevaAsignatura}
+              onChange={(e) => setNuevaAsignatura(e.target.value)}
+              placeholder="Ej: Ciencias Sociales"
+              className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-[13px] text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+            />
+            <button
+              onClick={handleAgregarAsignaturaDisponible}
+              className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors"
+            >
+              Agregar asignatura
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-2">Se sumará a la lista desplegable de asignaturas.</p>
+        </div>
+      </div>
       
       {/* Encabezados de columnas */}
       <div className="hidden lg:grid grid-cols-12 gap-4 px-4 py-2 border-b border-slate-200">
@@ -220,10 +319,11 @@ const AsignacionesCargaHoraria: React.FC = () => {
                 </div>
                 <div className="relative">
                   <select
-                    defaultValue={asignacion.docente}
+                    value={asignacion.docente}
+                    onChange={(e) => actualizarAsignacionCampo(asignacion.id, 'docente', e.target.value)}
                     className="w-full h-10 appearance-none rounded-xl border border-slate-300 px-3 py-2 pr-8 text-[13px] text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
                   >
-                    {docentes.map(doc => (
+                    {docentesDisponibles.map(doc => (
                       <option key={doc} value={doc}>{doc}</option>
                     ))}
                   </select>
@@ -239,10 +339,11 @@ const AsignacionesCargaHoraria: React.FC = () => {
                 <div className="space-y-4">
                   <div className="relative">
                     <select
-                      defaultValue={asignacion.asignatura}
+                      value={asignacion.asignatura}
+                      onChange={(e) => actualizarAsignacionCampo(asignacion.id, 'asignatura', e.target.value)}
                       className="w-full h-10 appearance-none rounded-xl border border-slate-300 px-3 py-2 pr-8 text-[13px] text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
                     >
-                      {asignaturas.map(asig => (
+                      {asignaturasDisponibles.map(asig => (
                         <option key={asig} value={asig}>{asig}</option>
                       ))}
                     </select>
@@ -289,6 +390,21 @@ const AsignacionesCargaHoraria: React.FC = () => {
                   {cursos.slice(0, 8).map(curso => 
                     renderCursoChip(curso, asignacion.cursos[curso], asignacion.id)
                   )}
+                </div>
+                <div className="mt-3">
+                  <label className="text-[11px] uppercase tracking-wider text-slate-500 font-medium block mb-1">
+                    Sala de clases
+                  </label>
+                  <select
+                    value={asignacion.salaDeClases || ''}
+                    onChange={(e) => asignarSala(asignacion.id, e.target.value)}
+                    className="w-full h-10 appearance-none rounded-xl border border-slate-300 px-3 py-2 pr-8 text-[13px] text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+                  >
+                    <option value="">Seleccionar sala</option>
+                    {salasDisponibles.map((sala) => (
+                      <option key={sala} value={sala}>{sala}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               

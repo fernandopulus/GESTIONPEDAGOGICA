@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Search,
   Upload,
@@ -27,6 +27,7 @@ import {
   HelpCircle,
   Users,
   Edit,
+  MapPin,
 } from 'lucide-react';
 import { exportCargasHorariasDocentes } from '../../src/utils/exportCargasHorariasDocentes';
 
@@ -118,8 +119,41 @@ import type {
   DocenteCargaHoraria, 
   ValidationResultCarga, 
   TotalesDocenteCarga, 
-  FuncionLectiva 
+  FuncionLectiva,
+  FuncionExtraordinaria,
+  FuncionExtraordinariaTipo
 } from '../../types';
+
+type PerfilDocenteNuevo = 'PROFESORADO' | 'SUBDIRECCION' | 'COORDINACION_TP';
+
+type NuevoDocenteFormState = {
+  nombre: string;
+  email: string;
+  departamento: string;
+  horasContrato: number;
+  perfil: PerfilDocenteNuevo;
+};
+
+const createNuevoDocenteFormState = (): NuevoDocenteFormState => ({
+  nombre: '',
+  email: '',
+  departamento: 'General',
+  horasContrato: 44,
+  perfil: 'PROFESORADO',
+});
+
+const SALAS_PREDEFINIDAS = [
+  ...Array.from({ length: 20 }, (_, index) => `Sala ${index + 1}`),
+  'CRA',
+  'Laboratorio',
+  'Sala Maker',
+  'Gimnasio',
+  'Biblioteca',
+];
+
+const FUNCIONES_EXTRA_TIPOS: FuncionExtraordinariaTipo[] = ['Orientación', 'Tutoría'];
+
+const ASIGNATURAS_STORAGE_KEY = 'gp:cargaHoraria:asignaturasPersonalizadas';
 
 const CrearHorarios: React.FC = () => {
   // Añadir estilos CSS para animaciones y elementos personalizados
@@ -156,20 +190,51 @@ const CrearHorarios: React.FC = () => {
   });
 
   const [showAddDocenteModal, setShowAddDocenteModal] = useState(false);
-  const [nuevoDocente, setNuevoDocente] = useState<{
-    nombre: string;
-    email: string;
-    departamento: string;
-    horasContrato: number;
-    perfil: 'PROFESORADO' | 'SUBDIRECCION' | 'COORDINACION_TP';
-  }>({ nombre: '', email: '', departamento: 'General', horasContrato: 44, perfil: 'PROFESORADO' });
   const [docenteSearch, setDocenteSearch] = useState('');
+  const [asignaturasPersonalizadas, setAsignaturasPersonalizadas] = useState<string[]>([]);
+  const [nuevaAsignatura, setNuevaAsignatura] = useState('');
+  const [feedbackAsignatura, setFeedbackAsignatura] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
+  const feedbackAsignaturaTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [extraModalState, setExtraModalState] = useState<{ asignacionId: string; tipo: FuncionExtraordinariaTipo; cursos: CursoId[] } | null>(null);
   
   const [editingDocente, setEditingDocente] = useState<DocenteCargaHoraria | null>(null);
   const [showEditDocenteModal, setShowEditDocenteModal] = useState(false);
   const [tempHorasContrato, setTempHorasContrato] = useState<number>(44);
 
   // Nota: estados exportandoPDF y errorExportacion ya declarados arriba; se eliminaron duplicados.
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.localStorage.getItem(ASIGNATURAS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          const sanitised = parsed
+            .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+            .map((item) => item.trim());
+          if (sanitised.length > 0) {
+            setAsignaturasPersonalizadas(sanitised);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[CrearHorarios] No se pudo cargar asignaturas personalizadas desde localStorage:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(ASIGNATURAS_STORAGE_KEY, JSON.stringify(asignaturasPersonalizadas));
+  }, [asignaturasPersonalizadas]);
+
+  useEffect(() => {
+    return () => {
+      if (feedbackAsignaturaTimeout.current) {
+        clearTimeout(feedbackAsignaturaTimeout.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const unsub = subscribeToDocentes((d) => setDocentes(d));
@@ -188,12 +253,38 @@ const CrearHorarios: React.FC = () => {
           ];
         }
         const { funcionesNoLectivas, otraFuncion, ...rest } = asig as any;
-        return { ...rest, funcionesLectivas } as AsignacionCargaHoraria;
+        return { ...rest, funcionesLectivas, funcionesExtraordinarias: rest.funcionesExtraordinarias || [] } as AsignacionCargaHoraria;
       });
       setAsignaciones(asignacionesConvertidas);
     });
     return unsub;
   }, []);
+
+  useEffect(() => {
+    const nuevas = new Set<string>();
+    asignaciones.forEach((asig) => {
+      const nombre = (asig.asignaturaOModulo || '').trim();
+      if (!nombre) return;
+      const yaExisteEnBase = ASIGNATURAS.some((base) => base.toLowerCase() === nombre.toLowerCase());
+      if (yaExisteEnBase) return;
+      nuevas.add(nombre);
+    });
+    if (nuevas.size === 0) return;
+    setAsignaturasPersonalizadas((prev) => {
+      const existentes = new Set(prev.map((item) => item.toLowerCase()));
+      let seAgrego = false;
+      const actualizadas = [...prev];
+      nuevas.forEach((item) => {
+        const lower = item.toLowerCase();
+        if (!existentes.has(lower)) {
+          actualizadas.push(item);
+          existentes.add(lower);
+          seAgrego = true;
+        }
+      });
+      return seAgrego ? actualizadas : prev;
+    });
+  }, [asignaciones]);
 
   // Cargar horarios actuales guardados en Firestore
   useEffect(() => {
@@ -242,6 +333,29 @@ const CrearHorarios: React.FC = () => {
     return docentes.filter((d) => d.nombre.toLowerCase().includes(docenteSearch.toLowerCase()) || d.email?.toLowerCase().includes(docenteSearch.toLowerCase()));
   }, [docentes, docenteSearch]);
 
+  const asignaturasDisponibles = useMemo(() => {
+    const mapa = new Map<string, string>();
+    ASIGNATURAS.forEach((asignatura) => mapa.set(asignatura.toLowerCase(), asignatura));
+    asignaturasPersonalizadas.forEach((asignatura) => {
+      const normalizado = asignatura.trim();
+      if (!normalizado) return;
+      mapa.set(normalizado.toLowerCase(), normalizado);
+    });
+    return Array.from(mapa.values()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [asignaturasPersonalizadas]);
+
+  const salasDisponibles = useMemo(() => {
+    const conjunto = new Map<string, string>();
+    SALAS_PREDEFINIDAS.forEach((sala) => conjunto.set(sala.toLowerCase(), sala));
+    asignaciones.forEach((asig) => {
+      if (asig.salaDeClases) {
+        const nombre = asig.salaDeClases.trim();
+        if (nombre) conjunto.set(nombre.toLowerCase(), nombre);
+      }
+    });
+    return Array.from(conjunto.values()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [asignaciones]);
+
   const asignacionesFiltradas = useMemo(() => {
     const filtradas = asignaciones.filter((a) => {
       const d = docentes.find((dd) => dd.id === a.docenteId);
@@ -258,17 +372,15 @@ const CrearHorarios: React.FC = () => {
     return filtradas.sort((a, b) => (a.docenteId !== b.docenteId ? a.docenteId.localeCompare(b.docenteId) : (a.asignaturaOModulo || '').localeCompare(b.asignaturaOModulo || '')));
   }, [asignaciones, docentes, filtros]);
 
-  const handleCrearDocente = async () => {
+  const handleCrearDocente = async (nuevoDocenteData: NuevoDocenteFormState) => {
     try {
       setLoading(true);
-      if (!nuevoDocente.nombre || !nuevoDocente.email) {
+      if (!nuevoDocenteData.nombre || !nuevoDocenteData.email) {
         alert('El nombre y email son obligatorios');
-        setLoading(false);
         return;
       }
-      await crearNuevoDocente(nuevoDocente);
+      await crearNuevoDocente(nuevoDocenteData);
       setShowAddDocenteModal(false);
-      setNuevoDocente({ nombre: '', email: '', departamento: 'General', horasContrato: 44, perfil: 'PROFESORADO' });
       alert('Docente creado exitosamente');
     } catch (e) {
       console.error(e);
@@ -278,34 +390,79 @@ const CrearHorarios: React.FC = () => {
     }
   };
 
+  const mostrarFeedbackAsignatura = useCallback((tipo: 'success' | 'error', mensaje: string) => {
+    if (feedbackAsignaturaTimeout.current) {
+      clearTimeout(feedbackAsignaturaTimeout.current);
+    }
+    setFeedbackAsignatura({ tipo, mensaje });
+    feedbackAsignaturaTimeout.current = setTimeout(() => {
+      setFeedbackAsignatura(null);
+      feedbackAsignaturaTimeout.current = null;
+    }, 4000);
+  }, []);
+
+  const agregarAsignaturaPersonalizada = useCallback(() => {
+    const nombreNormalizado = nuevaAsignatura.trim();
+    if (!nombreNormalizado) {
+      mostrarFeedbackAsignatura('error', 'Ingresa un nombre válido para la asignatura.');
+      return;
+    }
+    const yaExiste = asignaturasDisponibles.some((asig) => asig.toLowerCase() === nombreNormalizado.toLowerCase());
+    if (yaExiste) {
+      mostrarFeedbackAsignatura('error', 'La asignatura ya existe en la lista.');
+      return;
+    }
+    setAsignaturasPersonalizadas((prev) => [...prev, nombreNormalizado]);
+    setNuevaAsignatura('');
+    mostrarFeedbackAsignatura('success', `“${nombreNormalizado}” se agregó a la lista de asignaturas.`);
+  }, [nuevaAsignatura, asignaturasDisponibles, mostrarFeedbackAsignatura]);
+
+  const eliminarAsignaturaPersonalizada = useCallback((asignatura: string) => {
+    setAsignaturasPersonalizadas((prev) => prev.filter((item) => item.toLowerCase() !== asignatura.toLowerCase()));
+    mostrarFeedbackAsignatura('success', `“${asignatura}” se eliminó de las asignaturas personalizadas.`);
+  }, [mostrarFeedbackAsignatura]);
+
   const agregarAsignacion = useCallback(() => {
     if (docentes.length === 0) return;
+    const asignaturaInicial = asignaturasDisponibles[0] || '';
     const n: AsignacionCargaHoraria = {
       id: `asig_${Date.now()}`,
       docenteId: docentes[0].id,
       docenteNombre: docentes[0].nombre,
-      asignaturaOModulo: ASIGNATURAS[0],
+      asignaturaOModulo: asignaturaInicial,
       funcionesLectivas: [],
+      funcionesExtraordinarias: [],
       horasPorCurso: {},
       horasXAsig: 0,
+      salaDeClases: '',
     };
     setAsignaciones((p) => [...p, n]);
-  }, [docentes]);
+  }, [docentes, asignaturasDisponibles]);
 
   const agregarAsignaturaMismoDocente = useCallback(
     (docenteId: string, docenteNombre: string) => {
       const actuales = asignaciones.filter((a) => a.docenteId === docenteId).map((a) => a.asignaturaOModulo);
-      let nueva = ASIGNATURAS[0];
-      for (const a of ASIGNATURAS) {
+      let nueva = asignaturasDisponibles[0] || '';
+      for (const a of asignaturasDisponibles) {
         if (!actuales.includes(a)) {
           nueva = a;
           break;
         }
       }
-      const n: AsignacionCargaHoraria = { id: `asig_${Date.now()}`, docenteId, docenteNombre, asignaturaOModulo: nueva, funcionesLectivas: [], horasPorCurso: {}, horasXAsig: 0 };
+      const n: AsignacionCargaHoraria = {
+        id: `asig_${Date.now()}`,
+        docenteId,
+        docenteNombre,
+        asignaturaOModulo: nueva,
+        funcionesLectivas: [],
+        funcionesExtraordinarias: [],
+        horasPorCurso: {},
+        horasXAsig: 0,
+        salaDeClases: '',
+      };
       setAsignaciones((p) => [...p, n]);
     },
-    [asignaciones]
+    [asignaciones, asignaturasDisponibles]
   );
 
   const eliminarAsignacion = useCallback((id: string) => setAsignaciones((p) => p.filter((a) => a.id !== id)), []);
@@ -338,6 +495,46 @@ const CrearHorarios: React.FC = () => {
         return { ...asig, funcionesLectivas: funciones };
       })
     );
+  }, []);
+
+  const upsertFuncionExtraordinaria = useCallback((asignacionId: string, funcion: FuncionExtraordinaria) => {
+    setAsignaciones((prev) =>
+      prev.map((asig) => {
+        if (asig.id !== asignacionId) return asig;
+        const otras = (asig.funcionesExtraordinarias || []).filter((f) => f.tipo !== funcion.tipo);
+        return { ...asig, funcionesExtraordinarias: [...otras, funcion] };
+      })
+    );
+  }, []);
+
+  const eliminarFuncionExtraordinaria = useCallback((asignacionId: string, tipo: FuncionExtraordinariaTipo) => {
+    setAsignaciones((prev) =>
+      prev.map((asig) => {
+        if (asig.id !== asignacionId) return asig;
+        const restantes = (asig.funcionesExtraordinarias || []).filter((funcion) => funcion.tipo !== tipo);
+        return { ...asig, funcionesExtraordinarias: restantes };
+      })
+    );
+  }, []);
+
+  const openFuncionExtraordinariaModal = useCallback(
+    (asignacionId: string, tipo?: FuncionExtraordinariaTipo) => {
+      const asignacion = asignaciones.find((a) => a.id === asignacionId);
+      if (!asignacion) return;
+      const tipoSeleccionado: FuncionExtraordinariaTipo =
+        tipo || asignacion.funcionesExtraordinarias?.[0]?.tipo || FUNCIONES_EXTRA_TIPOS[0];
+      const existente = asignacion.funcionesExtraordinarias?.find((funcion) => funcion.tipo === tipoSeleccionado);
+      setExtraModalState({
+        asignacionId,
+        tipo: tipoSeleccionado,
+        cursos: existente?.cursos || [],
+      });
+    },
+    [asignaciones]
+  );
+
+  const cerrarFuncionExtraordinariaModal = useCallback(() => {
+    setExtraModalState(null);
   }, []);
 
   const actualizarAsignacion = useCallback(
@@ -661,6 +858,20 @@ const CrearHorarios: React.FC = () => {
   };
 
   const AddDocenteModal = () => {
+    const [formState, setFormState] = useState<NuevoDocenteFormState>(() => createNuevoDocenteFormState());
+
+    useEffect(() => {
+      if (showAddDocenteModal) {
+        setFormState(createNuevoDocenteFormState());
+      }
+    }, [showAddDocenteModal]);
+
+    const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (loading) return;
+      handleCrearDocente(formState);
+    };
+
     if (!showAddDocenteModal) return null;
     return (
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
@@ -683,7 +894,7 @@ const CrearHorarios: React.FC = () => {
           </div>
           
           {/* Cuerpo del modal */}
-          <div className="p-6">
+          <form className="p-6" onSubmit={handleSubmit}>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 flex items-center gap-1.5">
@@ -693,8 +904,8 @@ const CrearHorarios: React.FC = () => {
                 <div className="relative">
                   <input 
                     type="text" 
-                    value={nuevoDocente.nombre} 
-                    onChange={(e) => setNuevoDocente({ ...nuevoDocente, nombre: e.target.value })} 
+                    value={formState.nombre} 
+                    onChange={(e) => setFormState((prev) => ({ ...prev, nombre: e.target.value }))} 
                     className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200" 
                     placeholder="Nombre Apellido" 
                     required 
@@ -710,8 +921,8 @@ const CrearHorarios: React.FC = () => {
                 <div className="relative">
                   <input 
                     type="email" 
-                    value={nuevoDocente.email} 
-                    onChange={(e) => setNuevoDocente({ ...nuevoDocente, email: e.target.value })} 
+                    value={formState.email} 
+                    onChange={(e) => setFormState((prev) => ({ ...prev, email: e.target.value }))} 
                     className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200" 
                     placeholder="correo@ejemplo.com" 
                     required 
@@ -726,8 +937,8 @@ const CrearHorarios: React.FC = () => {
                 <div className="relative">
                   <input 
                     type="text" 
-                    value={nuevoDocente.departamento} 
-                    onChange={(e) => setNuevoDocente({ ...nuevoDocente, departamento: e.target.value })} 
+                    value={formState.departamento} 
+                    onChange={(e) => setFormState((prev) => ({ ...prev, departamento: e.target.value }))} 
                     className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200" 
                     placeholder="Ej: Matemáticas, Lenguaje, etc." 
                   />
@@ -741,8 +952,8 @@ const CrearHorarios: React.FC = () => {
                 <div className="relative">
                   <input 
                     type="number" 
-                    value={nuevoDocente.horasContrato} 
-                    onChange={(e) => setNuevoDocente({ ...nuevoDocente, horasContrato: parseInt(e.target.value) || 0 })} 
+                    value={formState.horasContrato} 
+                    onChange={(e) => setFormState((prev) => ({ ...prev, horasContrato: parseInt(e.target.value) || 0 }))} 
                     className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200" 
                     min={1} 
                     max={44} 
@@ -759,8 +970,8 @@ const CrearHorarios: React.FC = () => {
                 </label>
                 <div className="relative">
                   <select 
-                    value={nuevoDocente.perfil} 
-                    onChange={(e) => setNuevoDocente({ ...nuevoDocente, perfil: e.target.value as any })} 
+                    value={formState.perfil} 
+                    onChange={(e) => setFormState((prev) => ({ ...prev, perfil: e.target.value as PerfilDocenteNuevo }))} 
                     className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 appearance-none"
                   >
                     <option value="PROFESORADO">Profesorado</option>
@@ -778,6 +989,7 @@ const CrearHorarios: React.FC = () => {
             
             <div className="mt-8 flex justify-end gap-3">
               <button 
+                type="button"
                 onClick={() => setShowAddDocenteModal(false)} 
                 className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200" 
                 disabled={loading}
@@ -785,9 +997,9 @@ const CrearHorarios: React.FC = () => {
                 Cancelar
               </button>
               <button 
-                onClick={handleCrearDocente} 
+                type="submit"
                 className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg shadow-sm disabled:opacity-50 transition-all duration-200 flex items-center gap-2" 
-                disabled={loading || !nuevoDocente.nombre || !nuevoDocente.email}
+                disabled={loading || !formState.nombre || !formState.email}
               >
                 {loading ? (
                   <>
@@ -802,7 +1014,7 @@ const CrearHorarios: React.FC = () => {
                 )}
               </button>
             </div>
-          </div>
+          </form>
           
           <div className="bg-gray-50 dark:bg-gray-750 px-6 py-3 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-1">
@@ -810,6 +1022,153 @@ const CrearHorarios: React.FC = () => {
               <span>Los campos marcados con <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span> son obligatorios</span>
             </div>
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  const FuncionExtraordinariaModal = () => {
+    const modalState = extraModalState;
+    const [tipoSeleccionado, setTipoSeleccionado] = useState<FuncionExtraordinariaTipo>(FUNCIONES_EXTRA_TIPOS[0]);
+    const [cursosSeleccionados, setCursosSeleccionados] = useState<CursoId[]>([]);
+
+    useEffect(() => {
+      if (!modalState) return;
+      setTipoSeleccionado(modalState.tipo);
+      setCursosSeleccionados(modalState.cursos);
+    }, [modalState]);
+
+    useEffect(() => {
+      if (!modalState) return;
+      const asignacion = asignaciones.find((a) => a.id === modalState.asignacionId);
+      if (!asignacion) return;
+      const existente = asignacion.funcionesExtraordinarias?.find((funcion) => funcion.tipo === tipoSeleccionado);
+      if (existente) {
+        setCursosSeleccionados(existente.cursos);
+      } else if (modalState.tipo !== tipoSeleccionado) {
+        setCursosSeleccionados([]);
+      }
+    }, [tipoSeleccionado, modalState, asignaciones]);
+
+    if (!modalState) return null;
+
+    const asignacion = asignaciones.find((a) => a.id === modalState.asignacionId);
+    const docente = docentes.find((d) => d.id === asignacion?.docenteId);
+    const existeFuncion = asignacion?.funcionesExtraordinarias?.some((funcion) => funcion.tipo === tipoSeleccionado) ?? false;
+
+    const toggleCurso = (curso: CursoId) => {
+      setCursosSeleccionados((prev) => {
+        if (prev.includes(curso)) {
+          return prev.filter((item) => item !== curso);
+        }
+        return [...prev, curso];
+      });
+    };
+
+    const handleGuardar = (event: React.FormEvent) => {
+      event.preventDefault();
+      if (!modalState) return;
+      upsertFuncionExtraordinaria(modalState.asignacionId, {
+        tipo: tipoSeleccionado,
+        cursos: cursosSeleccionados,
+      });
+      cerrarFuncionExtraordinariaModal();
+    };
+
+    const handleEliminar = () => {
+      if (!modalState || !existeFuncion) return;
+      eliminarFuncionExtraordinaria(modalState.asignacionId, tipoSeleccionado);
+      cerrarFuncionExtraordinariaModal();
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-xl overflow-hidden animate-scaleIn">
+          <div className="p-5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Funciones extraordinarias</h2>
+              {docente && (
+                <p className="text-xs text-white/80">{docente.nombre} • {asignacion?.asignaturaOModulo || 'Sin asignatura'}</p>
+              )}
+            </div>
+            <button
+              onClick={cerrarFuncionExtraordinariaModal}
+              className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/20 transition-all duration-200"
+            >
+              <CloseIcon className="w-5 h-5" />
+            </button>
+          </div>
+
+          <form onSubmit={handleGuardar} className="p-6 space-y-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tipo de función</label>
+                <select
+                  value={tipoSeleccionado}
+                  onChange={(event) => setTipoSeleccionado(event.target.value as FuncionExtraordinariaTipo)}
+                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200"
+                >
+                  {FUNCIONES_EXTRA_TIPOS.map((tipo) => (
+                    <option key={tipo} value={tipo}>{tipo}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cursos vinculados</label>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Selecciona los cursos donde aplica esta función.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {CURSOS.map((curso) => {
+                const checked = cursosSeleccionados.includes(curso);
+                return (
+                  <label
+                    key={curso}
+                    className={`flex items-center justify-between gap-2 px-3 py-2 text-xs rounded-lg border transition-all duration-200 cursor-pointer ${
+                      checked
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-900/30 dark:text-indigo-100'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-300 dark:border-gray-600 dark:bg-gray-750 dark:text-gray-300'
+                    }`}
+                  >
+                    <span>{curso}</span>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleCurso(curso as CursoId)}
+                      className="form-checkbox h-3 w-3 text-indigo-600"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-between items-center">
+              <button
+                type="button"
+                onClick={handleEliminar}
+                disabled={!existeFuncion}
+                className="text-sm px-3 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed text-red-500 hover:text-red-600"
+              >
+                Quitar asignación
+              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={cerrarFuncionExtraordinariaModal}
+                  className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-all duration-200"
+                >
+                  Guardar
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
       </div>
     );
@@ -909,7 +1268,7 @@ const CrearHorarios: React.FC = () => {
                   onChange={(e) => setFiltros((p) => ({ ...p, asignatura: e.target.value }))}
                 >
                   <option value="">Todas las asignaturas</option>
-                  {ASIGNATURAS.map((asig) => (
+                  {asignaturasDisponibles.map((asig) => (
                     <option key={asig} value={asig}>{asig}</option>
                   ))}
                 </select>
@@ -917,6 +1276,72 @@ const CrearHorarios: React.FC = () => {
             </div>
           </div>
           
+          {/* Gestión de asignaturas personalizadas */}
+          <div className="grid gap-4 md:grid-cols-2 mb-6">
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Agregar nueva asignatura</label>
+              <div className="mt-2 flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={nuevaAsignatura}
+                  onChange={(event) => setNuevaAsignatura(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      agregarAsignaturaPersonalizada();
+                    }
+                  }}
+                  placeholder="Ej: Ciencias Sociales Integradas"
+                  className="flex-1 px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
+                />
+                <button
+                  type="button"
+                  onClick={agregarAsignaturaPersonalizada}
+                  className="px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg shadow-sm transition-all duration-200 text-sm font-medium"
+                >
+                  Agregar
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Se añadirá a las listas desplegables y se guarda en este navegador.</p>
+              {feedbackAsignatura && (
+                <div
+                  className={`mt-2 text-xs font-medium ${
+                    feedbackAsignatura.tipo === 'success'
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-red-600 dark:text-red-400'
+                  }`}
+                >
+                  {feedbackAsignatura.mensaje}
+                </div>
+              )}
+            </div>
+            <div>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Asignaturas personalizadas</span>
+              {asignaturasPersonalizadas.length === 0 ? (
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">No hay asignaturas agregadas manualmente.</p>
+              ) : (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {asignaturasPersonalizadas.map((asig) => (
+                    <span
+                      key={asig}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-xs"
+                    >
+                      <span>{asig}</span>
+                      <button
+                        type="button"
+                        onClick={() => eliminarAsignaturaPersonalizada(asig)}
+                        className="p-1 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-600 dark:text-blue-200"
+                        title="Eliminar asignatura personalizada"
+                      >
+                        <CloseIcon className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Fila de botones de acción */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <button 
@@ -1102,6 +1527,12 @@ const CrearHorarios: React.FC = () => {
                 </th>
                 <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   <div className="flex items-center justify-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>Sala</span>
+                  </div>
+                </th>
+                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <div className="flex items-center justify-center gap-1.5">
                     <PieChart className="w-3.5 h-3.5" />
                     <span>HA/HB</span>
                   </div>
@@ -1188,7 +1619,7 @@ const CrearHorarios: React.FC = () => {
                         className={`w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs ${tieneMultiplesAsignaturas ? 'border-blue-300 dark:border-blue-700' : ''}`}
                       >
                         <option value="">Seleccionar...</option>
-                        {ASIGNATURAS.map((asig) => (
+                        {asignaturasDisponibles.map((asig) => (
                           <option key={asig} value={asig}>{asig}</option>
                         ))}
                       </select>
@@ -1196,51 +1627,101 @@ const CrearHorarios: React.FC = () => {
                         <div className="mt-1 text-xs text-blue-600 dark:text-blue-400">Adicional</div>
                       )}
                     </td>
-                    {/* Funciones lectivas */}
+                    {/* Funciones lectivas y extraordinarias */}
                     <td className="px-1 py-2">
-                      <div className="space-y-1 w-full min-w-[200px]">
-                        {(asignacion.funcionesLectivas || []).map((funcion) => (
-                          <div key={funcion.id} className="flex gap-1 items-center">
-                            <input
-                              type="text"
-                              value={funcion.nombre}
-                              onChange={(e) => actualizarFuncionLectiva(asignacion.id, funcion.id, 'nombre', e.target.value)}
-                              placeholder="Nombre"
-                              className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-l bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs"
-                            />
-                            <input
-                              type="number"
-                              value={funcion.horas}
-                              onChange={(e) => actualizarFuncionLectiva(asignacion.id, funcion.id, 'horas', parseInt(e.target.value) || 0)}
-                              min={0} max={44}
-                              className="w-10 px-1 py-1 border-y border-r border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center"
-                            />
-                            <button
-                              onClick={() => eliminarFuncionLectiva(asignacion.id, funcion.id)}
-                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-r"
-                              title="Eliminar función"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                        {!asignacion.funcionesLectivas && (
-                          <div className="flex gap-1 items-center">
-                            <input
-                              type="text"
-                              value={(asignacion as any).otraFuncion || ''}
-                              onChange={(e) => actualizarAsignacion(asignacion.id, 'otraFuncion', e.target.value)}
-                              placeholder="Ej: Coordinador"
-                              className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs"
-                            />
-                          </div>
-                        )}
-                        <button
-                          onClick={() => agregarFuncionLectiva(asignacion.id)}
-                          className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 px-2 py-0.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
-                        >
-                          <Plus className="w-3 h-3" /> <span className="text-xs">Agregar</span>
-                        </button>
+                      <div className="space-y-3 w-full min-w-[220px]">
+                        <div className="space-y-1">
+                          {(asignacion.funcionesLectivas || []).map((funcion) => (
+                            <div key={funcion.id} className="flex gap-1 items-center">
+                              <input
+                                type="text"
+                                value={funcion.nombre}
+                                onChange={(e) => actualizarFuncionLectiva(asignacion.id, funcion.id, 'nombre', e.target.value)}
+                                placeholder="Nombre"
+                                className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-l bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs"
+                              />
+                              <input
+                                type="number"
+                                value={funcion.horas}
+                                onChange={(e) => actualizarFuncionLectiva(asignacion.id, funcion.id, 'horas', parseInt(e.target.value) || 0)}
+                                min={0}
+                                max={44}
+                                className="w-10 px-1 py-1 border-y border-r border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs text-center"
+                              />
+                              <button
+                                onClick={() => eliminarFuncionLectiva(asignacion.id, funcion.id)}
+                                className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-r"
+                                title="Eliminar función"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                          {(!asignacion.funcionesLectivas || asignacion.funcionesLectivas.length === 0) && (
+                            <div className="flex gap-1 items-center">
+                              <input
+                                type="text"
+                                value={(asignacion as any).otraFuncion || ''}
+                                onChange={(e) => actualizarAsignacion(asignacion.id, 'otraFuncion', e.target.value)}
+                                placeholder="Ej: Coordinador"
+                                className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs"
+                              />
+                            </div>
+                          )}
+                          <button
+                            onClick={() => agregarFuncionLectiva(asignacion.id)}
+                            className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 px-2 py-0.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
+                          >
+                            <Plus className="w-3 h-3" /> <span className="text-xs">Agregar función lectiva</span>
+                          </button>
+                        </div>
+
+                        <div className="pt-2 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                          <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Funciones extraordinarias</p>
+                          {(asignacion.funcionesExtraordinarias || []).length === 0 ? (
+                            <p className="text-[11px] text-gray-500 dark:text-gray-500">No hay funciones extraordinarias asignadas.</p>
+                          ) : (
+                            <div className="space-y-1">
+                              {(asignacion.funcionesExtraordinarias || []).map((funcion) => (
+                                <div
+                                  key={`${asignacion.id}_${funcion.tipo}`}
+                                  className="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-200 text-xs"
+                                >
+                                  <div className="flex-1">
+                                    <span className="font-semibold">{funcion.tipo}</span>
+                                    <span className="ml-2 text-[11px] text-indigo-600 dark:text-indigo-200">
+                                      {funcion.cursos.length > 0 ? funcion.cursos.join(', ') : 'Sin cursos definidos'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => openFuncionExtraordinariaModal(asignacion.id, funcion.tipo)}
+                                      className="px-2 py-0.5 rounded bg-white/80 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-100 hover:bg-white"
+                                    >
+                                      Editar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => eliminarFuncionExtraordinaria(asignacion.id, funcion.tipo)}
+                                      className="px-2 py-0.5 rounded bg-transparent text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30"
+                                      title="Eliminar función extraordinaria"
+                                    >
+                                      Quitar
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openFuncionExtraordinariaModal(asignacion.id)}
+                            className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 px-2 py-0.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 rounded"
+                          >
+                            <Plus className="w-3 h-3" /> <span className="text-xs">Asignar función extraordinaria</span>
+                          </button>
+                        </div>
                       </div>
                     </td>
                     {/* Horas por asignatura */}
@@ -1263,6 +1744,19 @@ const CrearHorarios: React.FC = () => {
                           </div>
                         ))}
                       </div>
+                    </td>
+                    {/* Sala de clases */}
+                    <td className="px-1 py-2 text-center">
+                      <select
+                        value={asignacion.salaDeClases || ''}
+                        onChange={(event) => actualizarAsignacion(asignacion.id, 'salaDeClases', event.target.value)}
+                        className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs"
+                      >
+                        <option value="">Seleccionar sala</option>
+                        {salasDisponibles.map((sala) => (
+                          <option key={sala} value={sala}>{sala}</option>
+                        ))}
+                      </select>
                     </td>
                     {/* HA/HB */}
                     <td className="px-1 py-2 text-center whitespace-nowrap">
@@ -1827,6 +2321,7 @@ const CrearHorarios: React.FC = () => {
       </div>
 
       <AddDocenteModal />
+  <FuncionExtraordinariaModal />
 
       {showEditDocenteModal && editingDocente && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">

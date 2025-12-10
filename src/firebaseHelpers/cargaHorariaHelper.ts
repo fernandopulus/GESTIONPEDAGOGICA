@@ -248,22 +248,23 @@ export const saveAsignacionesBatch = async (
         const esExistente = !!asig.id && existingDocs.has(asig.id);
 
         if (esExistente) {
-          // Actualizar existente
+          // Actualizar existente sobrescribiendo por completo para mantener exactamente las horas asignadas
           const docRef = existingDocs.get(asig.id)!;
-          const { id, ...data } = asig;
+          const { id, createdAt, ...data } = asig as any;
           const cleanData = cleanUndefined(data);
-          
-          // FIX: Asegurar que horasPorCurso se procese correctamente
-          // Forzamos la inclusión directa para evitar que cleanUndefined elimine algo indebido
-          // o que se pierda en la limpieza si es un objeto vacío
-          if (asig.horasPorCurso) {
-            // Copia profunda para asegurar que es un objeto plano y evitar referencias extrañas
-            const horasCopy = JSON.parse(JSON.stringify(asig.horasPorCurso));
-            cleanData.horasPorCurso = horasCopy;
-            console.log(`[saveAsignacionesBatch] Actualizando ${asig.docenteNombre} (docId=${docRef.id}):`, horasCopy);
+
+          const horasCopy = asig.horasPorCurso
+            ? JSON.parse(JSON.stringify(asig.horasPorCurso))
+            : {};
+          cleanData.horasPorCurso = horasCopy;
+
+          if (createdAt) {
+            cleanData.createdAt = createdAt;
           }
 
-          currentBatch.set(docRef, { ...cleanData, updatedAt: serverTimestamp() }, { merge: true });
+          console.log(`[saveAsignacionesBatch] Actualizando ${asig.docenteNombre} (docId=${docRef.id}):`, horasCopy);
+
+          currentBatch.set(docRef, { ...cleanData, updatedAt: serverTimestamp() });
           existingDocs.delete(asig.id); // Marcar como procesado (no eliminar)
         } else {
           // Crear nuevo
@@ -271,12 +272,11 @@ export const saveAsignacionesBatch = async (
           const { id, ...data } = asig; // Ignoramos ID temporal
           const cleanData = cleanUndefined(data);
 
-          if (asig.horasPorCurso) {
-            // Copia profunda para asegurar que es un objeto plano
-            const horasCopy = JSON.parse(JSON.stringify(asig.horasPorCurso));
-            cleanData.horasPorCurso = horasCopy;
-            console.log(`[saveAsignacionesBatch] Creando ${asig.docenteNombre}:`, horasCopy);
-          }
+          const horasCopy = asig.horasPorCurso
+            ? JSON.parse(JSON.stringify(asig.horasPorCurso))
+            : {};
+          cleanData.horasPorCurso = horasCopy;
+          console.log(`[saveAsignacionesBatch] Creando ${asig.docenteNombre}:`, horasCopy);
 
           currentBatch.set(newDocRef, { ...cleanData, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
         }

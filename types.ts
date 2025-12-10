@@ -133,6 +133,13 @@ export interface FuncionLectiva {
   horas: number;
 }
 
+export type FuncionExtraordinariaTipo = 'Orientación' | 'Tutoría';
+
+export interface FuncionExtraordinaria {
+  tipo: FuncionExtraordinariaTipo;
+  cursos: CursoId[];
+}
+
 export interface AsignacionCargaHoraria {
   id: string;
   docenteId: string;
@@ -143,6 +150,8 @@ export interface AsignacionCargaHoraria {
   funcionesNoLectivas?: FuncionLectiva[]; // Mantener por compatibilidad
   horasPorCurso: Partial<Record<CursoId, number>>;
   horasXAsig?: number;
+  salaDeClases?: string;
+  funcionesExtraordinarias?: FuncionExtraordinaria[];
 }
 
 export interface TotalesDocenteCarga {
